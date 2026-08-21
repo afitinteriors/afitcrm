@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import type { LeadRow, LeadStatus } from "@/lib/supabase/types";
 import { LEAD_STATUSES } from "@/lib/constants";
+import { getCurrentProfile } from "@/lib/auth";
 
 function isLeadStatus(value: string): value is LeadStatus {
   return (LEAD_STATUSES as string[]).includes(value);
@@ -18,13 +19,25 @@ function sanitizeForFilter(value: string) {
   return value.replace(/[,()]/g, "").trim();
 }
 
+// RLS on leads is still permissive (Phase 3B has not replaced it yet), so
+// every read here enforces ownership explicitly in application code rather
+// than relying on the database. Staff sees only assigned_to_id = their own
+// id; admin is unrestricted. A missing profile fails closed to no access.
+
 export async function getLeads(filters: LeadFilters): Promise<LeadRow[]> {
+  const profile = await getCurrentProfile();
+  if (!profile) return [];
+
   const supabase = await createClient();
 
   let query = supabase
     .from("leads")
     .select("*")
     .order("created_at", { ascending: false });
+
+  if (profile.role === "staff") {
+    query = query.eq("assigned_to_id", profile.id);
+  }
 
   const search = filters.search ? sanitizeForFilter(filters.search) : "";
   if (search) {
@@ -43,11 +56,17 @@ export async function getLeads(filters: LeadFilters): Promise<LeadRow[]> {
 }
 
 export async function getCampaignOptions(): Promise<string[]> {
+  const profile = await getCurrentProfile();
+  if (!profile) return [];
+
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("leads")
-    .select("campaign_name")
-    .not("campaign_name", "is", null);
+  let query = supabase.from("leads").select("campaign_name").not("campaign_name", "is", null);
+
+  if (profile.role === "staff") {
+    query = query.eq("assigned_to_id", profile.id);
+  }
+
+  const { data, error } = await query;
   if (error) throw new Error(error.message);
   const unique = new Set((data ?? []).map((row) => row.campaign_name as string));
   return Array.from(unique).sort();
@@ -64,9 +83,29 @@ export type DashboardStats = {
   revenue: number;
 };
 
+const EMPTY_DASHBOARD_STATS: DashboardStats = {
+  totalLeads: 0,
+  newLeads: 0,
+  qualifiedLeads: 0,
+  siteVisits: 0,
+  quotations: 0,
+  wonJobs: 0,
+  lostLeads: 0,
+  revenue: 0,
+};
+
 export async function getDashboardStats(): Promise<DashboardStats> {
+  const profile = await getCurrentProfile();
+  if (!profile) return EMPTY_DASHBOARD_STATS;
+
   const supabase = await createClient();
-  const { data, error } = await supabase.from("leads").select("status, job_value");
+  let query = supabase.from("leads").select("status, job_value");
+
+  if (profile.role === "staff") {
+    query = query.eq("assigned_to_id", profile.id);
+  }
+
+  const { data, error } = await query;
   if (error) throw new Error(error.message);
 
   const rows = data ?? [];
@@ -87,8 +126,16 @@ export async function getDashboardStats(): Promise<DashboardStats> {
 }
 
 export async function getLeadById(id: string): Promise<LeadRow | null> {
+  const profile = await getCurrentProfile();
+  if (!profile) return null;
+
   const supabase = await createClient();
   const { data, error } = await supabase.from("leads").select("*").eq("id", id).single();
-  if (error) return null;
+  if (error || !data) return null;
+
+  if (profile.role === "staff" && data.assigned_to_id !== profile.id) {
+    return null;
+  }
+
   return data;
 }

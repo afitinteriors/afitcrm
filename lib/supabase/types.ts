@@ -38,6 +38,7 @@ export type LeadRow = {
   job_value: number | null;
   lost_reason: string | null;
   assigned_to: string | null;
+  assigned_to_id: string | null;
   created_at: string;
   updated_at: string;
   wa_message_id: string | null;
@@ -51,6 +52,16 @@ export type LeadInsert = Partial<Omit<LeadRow, "id" | "created_at" | "updated_at
 
 export type LeadUpdate = Partial<Omit<LeadRow, "id" | "created_at" | "updated_at">>;
 
+export type ProfileRole = "admin" | "staff";
+
+export type ProfileRow = {
+  id: string;
+  role: ProfileRole;
+  display_name: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -58,6 +69,12 @@ export type Database = {
         Row: LeadRow;
         Insert: LeadInsert;
         Update: LeadUpdate;
+        Relationships: [];
+      };
+      profiles: {
+        Row: ProfileRow;
+        Insert: never;
+        Update: never;
         Relationships: [];
       };
     };
