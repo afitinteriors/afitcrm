@@ -62,6 +62,50 @@ export type ProfileRow = {
   updated_at: string;
 };
 
+export type ConversationStatus = "open" | "closed";
+
+export type ConversationRow = {
+  id: string;
+  lead_id: string | null;
+  wa_id: string;
+  phone_number_id: string;
+  status: ConversationStatus;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ConversationInsert = Partial<Omit<ConversationRow, "id" | "created_at" | "updated_at">> & {
+  wa_id: string;
+  phone_number_id: string;
+};
+
+export type ConversationUpdate = Partial<Omit<ConversationRow, "id" | "created_at" | "updated_at">>;
+
+export type MessageDirection = "inbound" | "outbound";
+
+export type MessageRow = {
+  id: string;
+  conversation_id: string;
+  wa_message_id: string | null;
+  direction: MessageDirection;
+  message_type: string;
+  body: string | null;
+  media_id: string | null;
+  media_storage_path: string | null;
+  status: string | null;
+  raw_payload: unknown;
+  created_at: string;
+  updated_at: string;
+};
+
+export type MessageInsert = Partial<Omit<MessageRow, "id" | "created_at" | "updated_at">> & {
+  conversation_id: string;
+  direction: MessageDirection;
+  message_type: string;
+};
+
+export type MessageUpdate = Partial<Omit<MessageRow, "id" | "created_at" | "updated_at">>;
+
 export type Database = {
   public: {
     Tables: {
@@ -75,6 +119,18 @@ export type Database = {
         Row: ProfileRow;
         Insert: never;
         Update: never;
+        Relationships: [];
+      };
+      conversations: {
+        Row: ConversationRow;
+        Insert: ConversationInsert;
+        Update: ConversationUpdate;
+        Relationships: [];
+      };
+      messages: {
+        Row: MessageRow;
+        Insert: MessageInsert;
+        Update: MessageUpdate;
         Relationships: [];
       };
     };
