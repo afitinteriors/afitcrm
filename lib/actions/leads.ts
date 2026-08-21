@@ -32,11 +32,11 @@ function revalidateLead(leadId: string) {
   revalidatePath("/dashboard");
 }
 
-// RLS on leads is still permissive (Phase 3B has not replaced it yet), so
-// every write here enforces authorization explicitly rather than relying
-// on the database. Admin is unrestricted. Staff may only act on a lead
-// already assigned to them, and never touches assigned_to_id (no action
-// below reads or writes that column).
+// leads RLS now enforces ownership independently (see the leads_*_admin_or_*
+// policies), but every write here still checks explicitly rather than
+// relying on the database alone. Admin is unrestricted. Staff may only
+// act on a lead already assigned to them via this helper; separately,
+// createLead below forces assigned_to_id for a staff-created lead.
 async function checkLeadAccess(
   supabase: SupabaseClient<Database>,
   leadId: string
@@ -60,10 +60,16 @@ async function checkLeadAccess(
 export async function createLead(_prevState: ActionState, formData: FormData): Promise<ActionState> {
   const profile = await getCurrentProfile();
   if (!profile) return { error: "Not signed in." };
-  if (profile.role !== "admin") return { error: "Only admins can create leads." };
 
   const phone = str(formData, "phone");
   if (!phone) return { error: "Phone number is required." };
+
+  // Staff-created leads are always self-owned. assigned_to_id is never
+  // read from client input -- formData.get("assigned_to_id") is never
+  // called here at all, so a crafted request field can't reach the
+  // insert regardless of caller. Admin-created leads stay unassigned
+  // (no assignee picker in this phase).
+  const assignedToId = profile.role === "staff" ? profile.id : null;
 
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -80,6 +86,7 @@ export async function createLead(_prevState: ActionState, formData: FormData): P
       estimated_sqft: optionalNumber(formData, "estimated_sqft"),
       expected_start_date: optionalStr(formData, "expected_start_date"),
       assigned_to: optionalStr(formData, "assigned_to"),
+      assigned_to_id: assignedToId,
       status: "new",
     })
     .select("id")
