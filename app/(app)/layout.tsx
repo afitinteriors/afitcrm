@@ -1,48 +1,43 @@
 import Link from "next/link";
-import { getCurrentUserEmail } from "@/lib/auth";
+import { getCurrentProfile } from "@/lib/auth";
+import { Sidebar } from "@/components/Sidebar";
 import { SignOutButton } from "@/components/SignOutButton";
 
 export default async function AppLayout({ children }: LayoutProps<"/">) {
-  const email = await getCurrentUserEmail();
+  const profile = await getCurrentProfile();
 
   return (
-    <div className="min-h-screen">
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
-          <div className="flex items-center gap-6">
-            <Link href="/dashboard" className="text-sm font-semibold text-slate-900">
-              AFIT Leads CRM
-            </Link>
-            <nav className="hidden items-center gap-4 sm:flex">
-              <Link href="/dashboard" className="text-sm text-slate-600 hover:text-slate-900">
+    <div className="flex min-h-screen bg-slate-50">
+      <Sidebar profile={profile} />
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        {/* Mobile nav (sidebar is lg+ only) */}
+        <div className="flex items-center justify-between border-b border-slate-200 bg-slate-900 px-4 py-3 lg:hidden">
+          <div className="flex items-center gap-4">
+            <span className="text-sm font-semibold text-white">AFIT CRM</span>
+            <nav className="flex items-center gap-3">
+              <Link href="/dashboard" className="text-sm text-slate-300 hover:text-white">
                 Dashboard
               </Link>
-              <Link href="/leads" className="text-sm text-slate-600 hover:text-slate-900">
+              <Link href="/leads" className="text-sm text-slate-300 hover:text-white">
                 Leads
               </Link>
             </nav>
           </div>
-          <div className="flex items-center gap-4">
-            <Link
-              href="/leads/new"
-              className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800"
-            >
-              New Lead
-            </Link>
-            {email && <span className="hidden text-sm text-slate-500 sm:inline">{email}</span>}
-            <SignOutButton />
-          </div>
+          <SignOutButton className="text-xs font-medium text-slate-400 hover:text-white" />
         </div>
-        <nav className="flex items-center gap-4 border-t border-slate-100 px-4 py-2 sm:hidden">
-          <Link href="/dashboard" className="text-sm text-slate-600 hover:text-slate-900">
-            Dashboard
+
+        <header className="flex items-center justify-end border-b border-slate-200 bg-white px-4 py-3 sm:px-6">
+          <Link
+            href="/leads/new"
+            className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+          >
+            + New Lead
           </Link>
-          <Link href="/leads" className="text-sm text-slate-600 hover:text-slate-900">
-            Leads
-          </Link>
-        </nav>
-      </header>
-      <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6">{children}</main>
+        </header>
+
+        <main className="flex-1 px-4 py-6 sm:px-6">{children}</main>
+      </div>
     </div>
   );
 }

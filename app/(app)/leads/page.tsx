@@ -3,6 +3,7 @@ import { getCampaignOptions, getLeads } from "@/lib/leads";
 import { LeadsFilterBar } from "@/components/LeadsFilterBar";
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatDate } from "@/lib/format";
+import { getCurrentProfile } from "@/lib/auth";
 
 export default async function LeadsPage({
   searchParams,
@@ -14,22 +15,17 @@ export default async function LeadsPage({
   const status = params.status ?? "";
   const campaign = params.campaign ?? "";
 
-  const [leads, campaignOptions] = await Promise.all([
+  const [leads, campaignOptions, profile] = await Promise.all([
     getLeads({ search, status, campaign }),
     getCampaignOptions(),
+    getCurrentProfile(),
   ]);
+
+  const heading = profile?.role === "staff" ? "My Leads" : "Leads";
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-slate-900">Leads</h1>
-        <Link
-          href="/leads/new"
-          className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800 sm:hidden"
-        >
-          New Lead
-        </Link>
-      </div>
+      <h1 className="text-xl font-semibold text-slate-900">{heading}</h1>
 
       <div className="mt-4">
         <LeadsFilterBar

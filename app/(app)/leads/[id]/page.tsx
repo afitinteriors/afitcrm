@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getLeadById } from "@/lib/leads";
 import { StatusBadge } from "@/components/StatusBadge";
+import { Card } from "@/components/Card";
 import { StatusSelect } from "@/components/lead-actions/StatusSelect";
 import { QualificationForm } from "@/components/lead-actions/QualificationForm";
 import { SiteVisitForm } from "@/components/lead-actions/SiteVisitForm";
@@ -53,7 +54,7 @@ export default async function LeadDetailPage({ params }: PageProps<"/leads/[id]"
           </a>
           <Link
             href={`/leads/${lead.id}/edit`}
-            className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800"
+            className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
           >
             Edit
           </Link>
@@ -143,15 +144,6 @@ export default async function LeadDetailPage({ params }: PageProps<"/leads/[id]"
           </Card>
         </div>
       </div>
-    </div>
-  );
-}
-
-function Card({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-      <h2 className="mb-3 text-sm font-semibold text-slate-900">{title}</h2>
-      {children}
     </div>
   );
 }

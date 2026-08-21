@@ -1,0 +1,100 @@
+"use client";
+
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { SignOutButton } from "@/components/SignOutButton";
+import type { CurrentProfile } from "@/lib/auth";
+
+const NAV_ITEMS = [
+  {
+    href: "/dashboard",
+    label: "Dashboard",
+    icon: (
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={1.75}
+        d="M3.75 12l8.25-8.25L20.25 12M5.25 10.5V20a.75.75 0 00.75.75h4.5v-5.25h3V20.75h4.5a.75.75 0 00.75-.75v-9.5"
+      />
+    ),
+  },
+  {
+    href: "/leads",
+    label: "Leads",
+    icon: (
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={1.75}
+        d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.5 20.25a7.5 7.5 0 0115 0"
+      />
+    ),
+  },
+];
+
+const ROLE_LABELS: Record<string, string> = {
+  admin: "Administrator",
+  staff: "Staff",
+};
+
+export function Sidebar({ profile }: { profile: CurrentProfile | null }) {
+  const pathname = usePathname();
+
+  return (
+    <aside className="hidden w-60 shrink-0 flex-col bg-slate-900 lg:flex">
+      <div className="flex items-center gap-2 px-5 py-5">
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-sm font-bold text-white">
+          A
+        </div>
+        <span className="text-sm font-semibold text-white">AFIT CRM</span>
+      </div>
+
+      <nav className="flex-1 space-y-1 px-3">
+        {NAV_ITEMS.map((item) => {
+          const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                active
+                  ? "bg-blue-600 text-white"
+                  : "text-slate-300 hover:bg-slate-800 hover:text-white"
+              }`}
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                className="h-5 w-5 shrink-0"
+              >
+                {item.icon}
+              </svg>
+              {item.label}
+            </Link>
+          );
+        })}
+      </nav>
+
+      <div className="border-t border-slate-800 p-3">
+        <div className="flex items-center gap-3 rounded-lg px-2 py-2">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-700 text-sm font-semibold text-white">
+            {(profile?.displayName ?? "?").charAt(0).toUpperCase()}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium text-white">
+              {profile?.displayName ?? "Unknown user"}
+            </p>
+            <p className="truncate text-xs text-slate-400">
+              {profile ? (ROLE_LABELS[profile.role] ?? profile.role) : ""}
+            </p>
+          </div>
+        </div>
+        <div className="mt-1 px-2">
+          <SignOutButton className="text-xs font-medium text-slate-400 transition-colors hover:text-white disabled:opacity-60" />
+        </div>
+      </div>
+    </aside>
+  );
+}
