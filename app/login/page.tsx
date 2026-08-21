@@ -1,4 +1,5 @@
 import { LoginForm } from "@/components/LoginForm";
+import { sanitizeRedirectPath } from "@/lib/safe-redirect";
 
 export default async function LoginPage({
   searchParams,
@@ -14,7 +15,7 @@ export default async function LoginPage({
           <h1 className="text-lg font-semibold text-slate-900">AFIT Leads CRM</h1>
           <p className="mt-1 text-sm text-slate-500">Sign in to manage your leads</p>
         </div>
-        <LoginForm next={next ?? "/dashboard"} />
+        <LoginForm next={sanitizeRedirectPath(next)} />
       </div>
     </div>
   );
