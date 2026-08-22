@@ -1,4 +1,4 @@
-import type { LeadStatus } from "@/lib/supabase/types";
+import type { FollowUpType, LeadStatus } from "@/lib/supabase/types";
 
 // Order mirrors the pipeline. WON/LOST/INVALID are terminal states.
 export const LEAD_STATUSES: LeadStatus[] = [
@@ -66,4 +66,22 @@ export const LEAD_SOURCE_LABELS: Record<string, string> = {
   walk_in: "Walk-in",
   manual: "Manual",
   other: "Other",
+};
+
+export const FOLLOW_UP_TYPES: FollowUpType[] = [
+  "follow_up",
+  "call",
+  "whatsapp_message",
+  "site_visit",
+  "quotation",
+  "meeting",
+];
+
+export const FOLLOW_UP_TYPE_LABELS: Record<FollowUpType, string> = {
+  follow_up: "Follow-up",
+  call: "Call",
+  whatsapp_message: "WhatsApp message",
+  site_visit: "Site visit",
+  quotation: "Quotation",
+  meeting: "Meeting",
 };

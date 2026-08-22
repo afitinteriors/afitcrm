@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getLeadById } from "@/lib/leads";
+import { getFollowUpsForLead } from "@/lib/follow-ups";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Card } from "@/components/Card";
 import { StatusSelect } from "@/components/lead-actions/StatusSelect";
@@ -9,6 +10,7 @@ import { SiteVisitForm } from "@/components/lead-actions/SiteVisitForm";
 import { QuotationForm } from "@/components/lead-actions/QuotationForm";
 import { JobValueForm } from "@/components/lead-actions/JobValueForm";
 import { MarkLostForm, MarkWonForm } from "@/components/lead-actions/WonLostForms";
+import { FollowUpsCard } from "@/components/lead-actions/FollowUpsCard";
 import {
   formatCurrency,
   formatDate,
@@ -20,7 +22,7 @@ import { LEAD_SOURCE_LABELS } from "@/lib/constants";
 
 export default async function LeadDetailPage({ params }: PageProps<"/leads/[id]">) {
   const { id } = await params;
-  const lead = await getLeadById(id);
+  const [lead, followUps] = await Promise.all([getLeadById(id), getFollowUpsForLead(id)]);
   if (!lead) notFound();
 
   return (
@@ -113,6 +115,8 @@ export default async function LeadDetailPage({ params }: PageProps<"/leads/[id]"
           <Card title="Status">
             <StatusSelect leadId={lead.id} status={lead.status} />
           </Card>
+
+          <FollowUpsCard leadId={lead.id} followUps={followUps} />
 
           <Card title="Site visit">
             <p className="mb-3 text-sm text-slate-600">

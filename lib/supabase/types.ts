@@ -106,6 +106,30 @@ export type MessageInsert = Partial<Omit<MessageRow, "id" | "created_at" | "upda
 
 export type MessageUpdate = Partial<Omit<MessageRow, "id" | "created_at" | "updated_at">>;
 
+export type FollowUpType = "call" | "whatsapp_message" | "site_visit" | "quotation" | "meeting" | "follow_up";
+export type FollowUpStatus = "pending" | "completed";
+
+export type FollowUpRow = {
+  id: string;
+  lead_id: string;
+  type: FollowUpType;
+  due_date: string;
+  due_time: string | null;
+  status: FollowUpStatus;
+  notes: string | null;
+  assigned_to_id: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type FollowUpInsert = Partial<Omit<FollowUpRow, "id" | "created_at" | "updated_at">> & {
+  lead_id: string;
+  due_date: string;
+};
+
+export type FollowUpUpdate = Partial<Omit<FollowUpRow, "id" | "created_at" | "updated_at">>;
+
 export type Database = {
   public: {
     Tables: {
@@ -131,6 +155,12 @@ export type Database = {
         Row: MessageRow;
         Insert: MessageInsert;
         Update: MessageUpdate;
+        Relationships: [];
+      };
+      follow_ups: {
+        Row: FollowUpRow;
+        Insert: FollowUpInsert;
+        Update: FollowUpUpdate;
         Relationships: [];
       };
     };
