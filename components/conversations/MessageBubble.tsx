@@ -4,6 +4,13 @@ import { MediaMessage } from "@/components/conversations/MediaMessage";
 
 const MEDIA_TYPES = new Set(["image", "video", "audio", "document", "sticker"]);
 
+const STATUS_LABELS: Record<string, string> = {
+  sent: "Sent",
+  delivered: "Delivered",
+  read: "Read",
+  failed: "Failed to send",
+};
+
 export function MessageBubble({ message }: { message: MessageListItem }) {
   const isOutbound = message.direction === "outbound";
   const isMedia = MEDIA_TYPES.has(message.message_type) && message.media_id;
@@ -24,9 +31,17 @@ export function MessageBubble({ message }: { message: MessageListItem }) {
             Unsupported message type: {message.message_type}
           </p>
         )}
-        <p className={`mt-1 text-[11px] ${isOutbound ? "text-blue-100" : "text-slate-400"}`}>
+        <p
+          className={`mt-1 text-[11px] ${
+            isOutbound && message.status === "failed"
+              ? "text-red-200"
+              : isOutbound
+                ? "text-blue-100"
+                : "text-slate-400"
+          }`}
+        >
           {formatDateTime(message.created_at)}
-          {message.status ? ` · ${message.status}` : ""}
+          {isOutbound && message.status ? ` · ${STATUS_LABELS[message.status] ?? message.status}` : ""}
         </p>
       </div>
     </div>

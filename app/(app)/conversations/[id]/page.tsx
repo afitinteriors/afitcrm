@@ -4,6 +4,7 @@ import { getConversationById, getMessagesForConversation } from "@/lib/conversat
 import { MessageBubble } from "@/components/conversations/MessageBubble";
 import { MobileChatHeader } from "@/components/conversations/MobileChatHeader";
 import { LeadDetailsContent } from "@/components/conversations/LeadDetailsContent";
+import { ReplyComposer } from "@/components/conversations/ReplyComposer";
 
 export default async function ConversationDetailPage({ params }: PageProps<"/conversations/[id]">) {
   const { id } = await params;
@@ -33,6 +34,7 @@ export default async function ConversationDetailPage({ params }: PageProps<"/con
             <p className="py-8 text-center text-sm text-slate-500">No messages in this conversation yet.</p>
           )}
         </div>
+        <ReplyComposer conversationId={conversation.id} />
       </div>
 
       {/* Desktop: three-column workspace -- this thread is the center
@@ -56,6 +58,7 @@ export default async function ConversationDetailPage({ params }: PageProps<"/con
               <p className="py-8 text-center text-sm text-slate-500">No messages in this conversation yet.</p>
             )}
           </div>
+          <ReplyComposer conversationId={conversation.id} />
         </div>
 
         <div className="w-72 shrink-0 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-sm">
