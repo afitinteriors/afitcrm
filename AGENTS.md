@@ -639,6 +639,43 @@ Before implementing the redesigned UI or advanced WhatsApp features:
 
 Only after these are verified should feature development continue.
 
+==================================================
+25. WHATSAPP INTEGRATION STATUS
+==================================================
+
+Meta Direct WhatsApp media handling:
+
+Phase B3 (on-demand Meta media download to private Supabase Storage) is
+COMPLETE.
+
+Commits: 54a8c11, 3c0f004.
+
+B3 was verified end-to-end against a real Meta-delivered inbound image
+message (not a simulated payload), received through the Meta TEST
+WhatsApp Business Account:
+
+Test WABA: 1093817206430417
+Test Phone Number ID: 1259504780587760
+
+Confirmed working for that real message:
+
+- Media metadata lookup from Meta
+- Media download using the test-scoped access token
+- MIME type validation
+- File size validation
+- SHA-256 integrity verification
+- Upload to the private whatsapp-media Supabase Storage bucket
+- media_storage_path written to the message record
+- Signed URL retrieval of the stored media
+- Reuse of already-downloaded media without a repeat Meta download
+
+The production WABA was not accessed, modified, or contacted at any point
+during B3 implementation or verification.
+
+No access tokens, App Secrets, verify tokens, PINs, phone numbers, media
+IDs, or other credentials/PII are recorded in this document. That
+configuration lives in environment variables and the Meta App Dashboard.
+
 <!-- BEGIN:nextjs-agent-rules -->
 
 # This is NOT the Next.js you know
