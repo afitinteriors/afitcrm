@@ -59,7 +59,13 @@ export function toDateTimeLocal(value: string | null | undefined): string {
 }
 
 function normalizeIndianPhone(phone: string): string {
-  const digits = phone.replace(/\D/g, "");
+  let digits = phone.replace(/\D/g, "");
+  // A manually-typed number sometimes keeps the domestic trunk prefix "0"
+  // (e.g. "09633603670") -- left in place, that becomes part of the
+  // country code below and produces a WhatsApp link to the wrong number.
+  if (digits.length === 11 && digits.startsWith("0")) {
+    digits = digits.slice(1);
+  }
   if (digits.length === 10) return `91${digits}`;
   return digits;
 }
