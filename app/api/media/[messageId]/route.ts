@@ -5,6 +5,7 @@ import {
   MediaError,
   canAccessConversationMedia,
   createMediaSignedUrl,
+  extractOriginalFilename,
   resolveMediaStoragePath,
   SIGNED_URL_TTL_SECONDS,
 } from "@/lib/whatsapp/media";
@@ -31,7 +32,7 @@ export async function GET(
 
   const { data: message, error: messageError } = await admin
     .from("messages")
-    .select("id, conversation_id, media_id, media_storage_path")
+    .select("id, conversation_id, media_id, media_storage_path, message_type, raw_payload")
     .eq("id", messageId)
     .maybeSingle();
 
@@ -68,7 +69,8 @@ export async function GET(
 
   try {
     const { path } = await resolveMediaStoragePath(admin, message);
-    const url = await createMediaSignedUrl(admin, path);
+    const filename = extractOriginalFilename(message.message_type, message.raw_payload);
+    const url = await createMediaSignedUrl(admin, path, filename);
     return NextResponse.json({ url, expiresIn: SIGNED_URL_TTL_SECONDS });
   } catch (err) {
     if (err instanceof MediaError) {

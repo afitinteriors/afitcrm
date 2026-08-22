@@ -83,6 +83,30 @@ export function extensionForMimeType(mimeType: string): string | null {
   return MEDIA_EXTENSIONS[mimeType] ?? null;
 }
 
+// Meta only sends an original filename for document-type messages
+// (message.document.filename). It's untrusted external input, so it's only
+// ever used for the Content-Disposition header on download -- never for the
+// storage path, which stays the deterministic conversation/message UUID path.
+export function extractOriginalFilename(messageType: string, rawPayload: unknown): string | null {
+  if (messageType !== "document" || !rawPayload || typeof rawPayload !== "object") return null;
+
+  const document = (rawPayload as Record<string, unknown>).document;
+  if (!document || typeof document !== "object") return null;
+
+  const filename = (document as Record<string, unknown>).filename;
+  if (typeof filename !== "string") return null;
+
+  // Strip path separators and control characters so this can only ever be a
+  // display name, never something that could be read as a path.
+  const sanitized = filename
+    .replace(/[/\\]/g, "_")
+    .replace(/[\x00-\x1f\x7f]/g, "")
+    .trim()
+    .slice(0, 255);
+
+  return sanitized.length > 0 ? sanitized : null;
+}
+
 // conversationId and messageId are always server-generated UUIDs, never
 // user-controlled strings, so this path can't be used for traversal.
 export function buildMediaStoragePath(
@@ -242,8 +266,14 @@ export async function resolveMediaStoragePath(
   return { path, reused: false };
 }
 
-export async function createMediaSignedUrl(admin: SupabaseClient<Database>, path: string): Promise<string> {
-  const { data, error } = await admin.storage.from(MEDIA_BUCKET).createSignedUrl(path, SIGNED_URL_TTL_SECONDS);
+export async function createMediaSignedUrl(
+  admin: SupabaseClient<Database>,
+  path: string,
+  downloadFilename?: string | null
+): Promise<string> {
+  const { data, error } = await admin.storage
+    .from(MEDIA_BUCKET)
+    .createSignedUrl(path, SIGNED_URL_TTL_SECONDS, downloadFilename ? { download: downloadFilename } : undefined);
   if (error || !data) {
     throw new MediaError("storage_error", `Failed to create signed URL: ${error?.message ?? "unknown error"}`);
   }
