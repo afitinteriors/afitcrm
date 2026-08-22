@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { sanitizeRedirectPath } from "@/lib/safe-redirect";
+import { getCurrentProfile as getCurrentProfileCached } from "@/lib/session";
 import type { ProfileRole } from "@/lib/supabase/types";
 
 export type LoginState = { error: string } | null;
@@ -46,22 +47,11 @@ export type CurrentProfile = {
   displayName: string | null;
 };
 
-// Resolves the logged-in user's ownership/role identity from public.profiles.
-// Fails closed to null (no session, or no profile row yet) -- callers must
-// treat null as "no access," never as an implicit role.
+// The actual implementation lives in lib/session.ts, memoized per-request
+// with React's cache() -- this file is "use server" (Server Actions), which
+// isn't the right place for a cache()-wrapped data reader. Re-exported here
+// so every existing `import { getCurrentProfile } from "@/lib/auth"` keeps
+// working unchanged.
 export async function getCurrentProfile(): Promise<CurrentProfile | null> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return null;
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("id, role, display_name")
-    .eq("id", user.id)
-    .single();
-  if (!profile) return null;
-
-  return { id: profile.id, role: profile.role, displayName: profile.display_name };
+  return getCurrentProfileCached();
 }

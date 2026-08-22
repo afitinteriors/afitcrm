@@ -1,8 +1,6 @@
-import Link from "next/link";
 import { getCampaignOptions, getLeads } from "@/lib/leads";
 import { LeadsFilterBar } from "@/components/LeadsFilterBar";
-import { StatusBadge } from "@/components/StatusBadge";
-import { formatDate } from "@/lib/format";
+import { LeadRow } from "@/components/LeadRow";
 import { getCurrentProfile } from "@/lib/auth";
 
 export default async function LeadsPage({
@@ -49,21 +47,7 @@ export default async function LeadsPage({
           </thead>
           <tbody className="divide-y divide-slate-100">
             {leads.map((lead) => (
-              <tr key={lead.id} className="hover:bg-slate-50">
-                <td className="px-4 py-3">
-                  <Link href={`/leads/${lead.id}`} className="font-medium text-slate-900 hover:underline">
-                    {lead.customer_name || "Unnamed lead"}
-                  </Link>
-                </td>
-                <td className="px-4 py-3 whitespace-nowrap text-slate-600">{lead.phone}</td>
-                <td className="px-4 py-3">
-                  <StatusBadge status={lead.status} />
-                </td>
-                <td className="px-4 py-3 text-slate-600">{lead.campaign_name || "—"}</td>
-                <td className="px-4 py-3 whitespace-nowrap text-slate-500">
-                  {formatDate(lead.created_at)}
-                </td>
-              </tr>
+              <LeadRow key={lead.id} lead={lead} />
             ))}
             {leads.length === 0 && (
               <tr>
