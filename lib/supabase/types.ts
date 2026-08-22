@@ -130,6 +130,32 @@ export type FollowUpInsert = Partial<Omit<FollowUpRow, "id" | "created_at" | "up
 
 export type FollowUpUpdate = Partial<Omit<FollowUpRow, "id" | "created_at" | "updated_at">>;
 
+export type AuditAction =
+  | "login"
+  | "logout"
+  | "lead_viewed"
+  | "lead_created"
+  | "lead_updated"
+  | "conversation_viewed"
+  | "message_sent";
+
+export type AuditTargetType = "lead" | "conversation" | "message";
+
+export type AuditLogRow = {
+  id: string;
+  actor_id: string;
+  action: AuditAction;
+  target_type: AuditTargetType | null;
+  target_id: string | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+};
+
+export type AuditLogInsert = Partial<Omit<AuditLogRow, "id" | "created_at">> & {
+  actor_id: string;
+  action: AuditAction;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -161,6 +187,12 @@ export type Database = {
         Row: FollowUpRow;
         Insert: FollowUpInsert;
         Update: FollowUpUpdate;
+        Relationships: [];
+      };
+      audit_logs: {
+        Row: AuditLogRow;
+        Insert: AuditLogInsert;
+        Update: never;
         Relationships: [];
       };
     };

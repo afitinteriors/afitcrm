@@ -2,6 +2,7 @@ import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import type { ConversationRow, LeadRow, MessageRow } from "@/lib/supabase/types";
 import { getCurrentProfile } from "@/lib/auth";
+import { recordAuditEvent } from "@/lib/audit";
 
 // Ownership is enforced by RLS (conversations_select_admin_or_owner /
 // messages_select_admin_or_owner): admin sees everything, staff only
@@ -43,7 +44,7 @@ export type ConversationDetail = ConversationRow & {
   } | null;
 };
 
-export async function getConversationById(id: string): Promise<ConversationDetail | null> {
+export const getConversationById = cache(async (id: string): Promise<ConversationDetail | null> => {
   const profile = await getCurrentProfile();
   if (!profile) return null;
 
@@ -55,8 +56,18 @@ export async function getConversationById(id: string): Promise<ConversationDetai
     .maybeSingle();
 
   if (error || !data) return null;
-  return data as unknown as ConversationDetail;
-}
+
+  const conversation = data as unknown as ConversationDetail;
+
+  await recordAuditEvent({
+    actorId: profile.id,
+    action: "conversation_viewed",
+    targetType: "conversation",
+    targetId: conversation.id,
+  });
+
+  return conversation;
+});
 
 // Excludes raw_payload -- the full raw Meta webhook JSON per message, which
 // nothing in the viewer reads. Fetching it for every message in a thread was

@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { sanitizeRedirectPath } from "@/lib/safe-redirect";
 import { getCurrentProfile as getCurrentProfileCached } from "@/lib/session";
+import { recordAuditEvent } from "@/lib/audit";
 import type { ProfileRole } from "@/lib/supabase/types";
 
 export type LoginState = { error: string } | null;
@@ -18,17 +19,27 @@ export async function login(_prevState: LoginState, formData: FormData): Promise
   }
 
   const supabase = await createClient();
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
-  if (error) {
+  if (error || !data.user) {
     return { error: "Incorrect email or password." };
   }
+
+  await recordAuditEvent({ actorId: data.user.id, action: "login" });
 
   redirect(next);
 }
 
 export async function logout() {
   const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (user) {
+    await recordAuditEvent({ actorId: user.id, action: "logout" });
+  }
+
   await supabase.auth.signOut();
   redirect("/login");
 }

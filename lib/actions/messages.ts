@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentProfile } from "@/lib/auth";
+import { recordAuditEvent } from "@/lib/audit";
 import { sendTextMessage, SendMessageError } from "@/lib/whatsapp/send-message";
 
 export type SendMessageState = { error: string } | null;
@@ -50,18 +51,32 @@ export async function sendMessage(_prevState: SendMessageState, formData: FormDa
 
   // Meta has already accepted and sent the message by this point -- from
   // here on we're only recording it, not deciding whether to send it.
-  const { error: insertError } = await supabase.from("messages").insert({
-    conversation_id: conversation.id,
-    wa_message_id: result.waMessageId,
-    direction: "outbound",
-    message_type: "text",
-    body,
-    status: "sent",
-  });
+  const { data: inserted, error: insertError } = await supabase
+    .from("messages")
+    .insert({
+      conversation_id: conversation.id,
+      wa_message_id: result.waMessageId,
+      direction: "outbound",
+      message_type: "text",
+      body,
+      status: "sent",
+    })
+    .select("id")
+    .single();
 
   if (insertError) {
     return { error: "Message was sent, but saving it to the conversation failed. Refresh to check." };
   }
+
+  // Audit metadata never includes the message body (AGENTS.md: don't log
+  // message contents).
+  await recordAuditEvent({
+    actorId: profile.id,
+    action: "message_sent",
+    targetType: "message",
+    targetId: inserted.id,
+    metadata: { message_type: "text" },
+  });
 
   // Note: conversations.updated_at is not touched here -- there's no DB
   // trigger for it (confirmed: no triggers exist on conversations or

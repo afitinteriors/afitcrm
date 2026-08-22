@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentProfile } from "@/lib/auth";
+import { recordAuditEvent } from "@/lib/audit";
 import type { Database, LeadStatus, LeadUpdate } from "@/lib/supabase/types";
 import { LEAD_STATUSES } from "@/lib/constants";
 
@@ -94,6 +95,14 @@ export async function createLead(_prevState: ActionState, formData: FormData): P
 
   if (error) return { error: error.message };
 
+  await recordAuditEvent({
+    actorId: profile.id,
+    action: "lead_created",
+    targetType: "lead",
+    targetId: data.id,
+    metadata: { source: str(formData, "source") || "manual", status: "new" },
+  });
+
   revalidatePath("/leads");
   revalidatePath("/dashboard");
   redirect(`/leads/${data.id}`);
@@ -108,24 +117,35 @@ export async function updateLead(_prevState: ActionState, formData: FormData): P
   const accessError = await checkLeadAccess(supabase, leadId);
   if (accessError) return accessError;
 
-  const { error } = await supabase
-    .from("leads")
-    .update({
-      customer_name: optionalStr(formData, "customer_name"),
-      phone,
-      whatsapp_message: optionalStr(formData, "whatsapp_message"),
-      source: str(formData, "source") || "manual",
-      campaign_name: optionalStr(formData, "campaign_name"),
-      location: optionalStr(formData, "location"),
-      project_type: optionalStr(formData, "project_type"),
-      service_required: optionalStr(formData, "service_required"),
-      estimated_sqft: optionalNumber(formData, "estimated_sqft"),
-      expected_start_date: optionalStr(formData, "expected_start_date"),
-      assigned_to: optionalStr(formData, "assigned_to"),
-    })
-    .eq("id", leadId);
+  const update = {
+    customer_name: optionalStr(formData, "customer_name"),
+    phone,
+    whatsapp_message: optionalStr(formData, "whatsapp_message"),
+    source: str(formData, "source") || "manual",
+    campaign_name: optionalStr(formData, "campaign_name"),
+    location: optionalStr(formData, "location"),
+    project_type: optionalStr(formData, "project_type"),
+    service_required: optionalStr(formData, "service_required"),
+    estimated_sqft: optionalNumber(formData, "estimated_sqft"),
+    expected_start_date: optionalStr(formData, "expected_start_date"),
+    assigned_to: optionalStr(formData, "assigned_to"),
+  };
+
+  const { error } = await supabase.from("leads").update(update).eq("id", leadId);
 
   if (error) return { error: error.message };
+
+  const profile = await getCurrentProfile();
+  if (profile) {
+    await recordAuditEvent({
+      actorId: profile.id,
+      action: "lead_updated",
+      targetType: "lead",
+      targetId: leadId,
+      metadata: { fields_changed: Object.keys(update) },
+    });
+  }
+
   revalidateLead(leadId);
   redirect(`/leads/${leadId}`);
 }
@@ -142,6 +162,18 @@ export async function setLeadStatus(leadId: string, status: LeadStatus): Promise
   const { error } = await supabase.from("leads").update(update).eq("id", leadId);
   revalidateLead(leadId);
   if (error) return { error: error.message };
+
+  const profile = await getCurrentProfile();
+  if (profile) {
+    await recordAuditEvent({
+      actorId: profile.id,
+      action: "lead_updated",
+      targetType: "lead",
+      targetId: leadId,
+      metadata: { fields_changed: Object.keys(update) },
+    });
+  }
+
   return null;
 }
 
@@ -153,13 +185,23 @@ export async function markLeadWon(_prevState: ActionState, formData: FormData): 
   const accessError = await checkLeadAccess(supabase, leadId);
   if (accessError) return accessError;
 
-  const { error } = await supabase
-    .from("leads")
-    .update({ status: "won", job_value: jobValue, lost_reason: null })
-    .eq("id", leadId);
+  const wonUpdate: LeadUpdate = { status: "won", job_value: jobValue, lost_reason: null };
+  const { error } = await supabase.from("leads").update(wonUpdate).eq("id", leadId);
 
   revalidateLead(leadId);
   if (error) return { error: error.message };
+
+  const profile = await getCurrentProfile();
+  if (profile) {
+    await recordAuditEvent({
+      actorId: profile.id,
+      action: "lead_updated",
+      targetType: "lead",
+      targetId: leadId,
+      metadata: { fields_changed: Object.keys(wonUpdate) },
+    });
+  }
+
   return null;
 }
 
@@ -172,13 +214,23 @@ export async function markLeadLost(_prevState: ActionState, formData: FormData):
   const accessError = await checkLeadAccess(supabase, leadId);
   if (accessError) return accessError;
 
-  const { error } = await supabase
-    .from("leads")
-    .update({ status: "lost", lost_reason: reason })
-    .eq("id", leadId);
+  const lostUpdate: LeadUpdate = { status: "lost", lost_reason: reason };
+  const { error } = await supabase.from("leads").update(lostUpdate).eq("id", leadId);
 
   revalidateLead(leadId);
   if (error) return { error: error.message };
+
+  const profile = await getCurrentProfile();
+  if (profile) {
+    await recordAuditEvent({
+      actorId: profile.id,
+      action: "lead_updated",
+      targetType: "lead",
+      targetId: leadId,
+      metadata: { fields_changed: Object.keys(lostUpdate) },
+    });
+  }
+
   return null;
 }
 
@@ -196,16 +248,26 @@ export async function setLeadQualification(
   const accessError = await checkLeadAccess(supabase, leadId);
   if (accessError) return accessError;
 
-  const { error } = await supabase
-    .from("leads")
-    .update({
-      qualification_score: score,
-      qualification_notes: optionalStr(formData, "qualification_notes"),
-    })
-    .eq("id", leadId);
+  const qualificationUpdate = {
+    qualification_score: score,
+    qualification_notes: optionalStr(formData, "qualification_notes"),
+  };
+  const { error } = await supabase.from("leads").update(qualificationUpdate).eq("id", leadId);
 
   revalidateLead(leadId);
   if (error) return { error: error.message };
+
+  const profile = await getCurrentProfile();
+  if (profile) {
+    await recordAuditEvent({
+      actorId: profile.id,
+      action: "lead_updated",
+      targetType: "lead",
+      targetId: leadId,
+      metadata: { fields_changed: Object.keys(qualificationUpdate) },
+    });
+  }
+
   return null;
 }
 
@@ -218,16 +280,26 @@ export async function setSiteVisitDate(_prevState: ActionState, formData: FormDa
   const accessError = await checkLeadAccess(supabase, leadId);
   if (accessError) return accessError;
 
-  const { error } = await supabase
-    .from("leads")
-    .update({
-      site_visit_date: new Date(siteVisitDate).toISOString(),
-      status: "site_visit",
-    })
-    .eq("id", leadId);
+  const siteVisitUpdate: LeadUpdate = {
+    site_visit_date: new Date(siteVisitDate).toISOString(),
+    status: "site_visit",
+  };
+  const { error } = await supabase.from("leads").update(siteVisitUpdate).eq("id", leadId);
 
   revalidateLead(leadId);
   if (error) return { error: error.message };
+
+  const profile = await getCurrentProfile();
+  if (profile) {
+    await recordAuditEvent({
+      actorId: profile.id,
+      action: "lead_updated",
+      targetType: "lead",
+      targetId: leadId,
+      metadata: { fields_changed: Object.keys(siteVisitUpdate) },
+    });
+  }
+
   return null;
 }
 
@@ -243,13 +315,23 @@ export async function setQuotationAmount(
   const accessError = await checkLeadAccess(supabase, leadId);
   if (accessError) return accessError;
 
-  const { error } = await supabase
-    .from("leads")
-    .update({ quotation_amount: amount, status: "quotation" })
-    .eq("id", leadId);
+  const quotationUpdate: LeadUpdate = { quotation_amount: amount, status: "quotation" };
+  const { error } = await supabase.from("leads").update(quotationUpdate).eq("id", leadId);
 
   revalidateLead(leadId);
   if (error) return { error: error.message };
+
+  const profile = await getCurrentProfile();
+  if (profile) {
+    await recordAuditEvent({
+      actorId: profile.id,
+      action: "lead_updated",
+      targetType: "lead",
+      targetId: leadId,
+      metadata: { fields_changed: Object.keys(quotationUpdate) },
+    });
+  }
+
   return null;
 }
 
@@ -261,9 +343,22 @@ export async function setJobValue(_prevState: ActionState, formData: FormData): 
   const accessError = await checkLeadAccess(supabase, leadId);
   if (accessError) return accessError;
 
-  const { error } = await supabase.from("leads").update({ job_value: jobValue }).eq("id", leadId);
+  const jobValueUpdate = { job_value: jobValue };
+  const { error } = await supabase.from("leads").update(jobValueUpdate).eq("id", leadId);
 
   revalidateLead(leadId);
   if (error) return { error: error.message };
+
+  const profile = await getCurrentProfile();
+  if (profile) {
+    await recordAuditEvent({
+      actorId: profile.id,
+      action: "lead_updated",
+      targetType: "lead",
+      targetId: leadId,
+      metadata: { fields_changed: Object.keys(jobValueUpdate) },
+    });
+  }
+
   return null;
 }

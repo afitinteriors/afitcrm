@@ -1,7 +1,9 @@
+import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import type { LeadRow, LeadStatus } from "@/lib/supabase/types";
 import { LEAD_STATUSES } from "@/lib/constants";
 import { getCurrentProfile } from "@/lib/auth";
+import { recordAuditEvent } from "@/lib/audit";
 
 function isLeadStatus(value: string): value is LeadStatus {
   return (LEAD_STATUSES as string[]).includes(value);
@@ -125,7 +127,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   };
 }
 
-export async function getLeadById(id: string): Promise<LeadRow | null> {
+export const getLeadById = cache(async (id: string): Promise<LeadRow | null> => {
   const profile = await getCurrentProfile();
   if (!profile) return null;
 
@@ -137,5 +139,12 @@ export async function getLeadById(id: string): Promise<LeadRow | null> {
     return null;
   }
 
+  await recordAuditEvent({
+    actorId: profile.id,
+    action: "lead_viewed",
+    targetType: "lead",
+    targetId: data.id,
+  });
+
   return data;
-}
+});
