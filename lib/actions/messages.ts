@@ -78,12 +78,20 @@ export async function sendMessage(_prevState: SendMessageState, formData: FormDa
     metadata: { message_type: "text" },
   });
 
-  // Note: conversations.updated_at is not touched here -- there's no DB
-  // trigger for it (confirmed: no triggers exist on conversations or
-  // messages), and the app's own ConversationUpdate type deliberately
-  // excludes it, matching every other entity in this codebase. Sending a
-  // message won't currently reorder the conversation list; the message
-  // itself is still saved and shown correctly.
+  // Bumps the conversation to the top of the list / refreshes its "time
+  // ago" label. Only reached after the message insert above succeeded --
+  // there's still no DB trigger for this (none exist anywhere in this
+  // schema), so it's done explicitly here, matching how every other update
+  // in this codebase is written directly rather than relying on one.
+  const { error: touchError } = await supabase
+    .from("conversations")
+    .update({ updated_at: new Date().toISOString() })
+    .eq("id", conversation.id);
+
+  if (touchError) {
+    console.error("Failed to update conversation updated_at after send:", touchError.message);
+  }
+
   revalidatePath(`/conversations/${conversationId}`);
   revalidatePath("/conversations");
   return null;

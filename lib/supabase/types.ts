@@ -79,7 +79,7 @@ export type ConversationInsert = Partial<Omit<ConversationRow, "id" | "created_a
   phone_number_id: string;
 };
 
-export type ConversationUpdate = Partial<Omit<ConversationRow, "id" | "created_at" | "updated_at">>;
+export type ConversationUpdate = Partial<Omit<ConversationRow, "id" | "created_at">>;
 
 export type MessageDirection = "inbound" | "outbound";
 

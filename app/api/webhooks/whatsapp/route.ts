@@ -111,9 +111,27 @@ async function ingestMessage(supabase: SupabaseClient<Database>, message: Parsed
     raw_payload: message.raw,
   });
 
-  if (error && error.code !== "23505") {
-    // 23505 = unique_violation on wa_message_id -> already recorded (retry), not an error.
-    console.error("Failed to persist WhatsApp message:", error.message);
+  if (error) {
+    if (error.code !== "23505") {
+      // 23505 = unique_violation on wa_message_id -> already recorded (retry), not an error.
+      console.error("Failed to persist WhatsApp message:", error.message);
+    }
+    // Either way, no new row was inserted this call -- don't touch the
+    // conversation's updated_at for a retry/duplicate delivery.
+    return;
+  }
+
+  // Bumps the conversation to the top of the list / refreshes its "time
+  // ago" label. Only reached after a genuine new insert above -- there's
+  // still no DB trigger for this (none exist anywhere in this schema), so
+  // it's done explicitly here, matching every other update in this codebase.
+  const { error: touchError } = await supabase
+    .from("conversations")
+    .update({ updated_at: new Date().toISOString() })
+    .eq("id", conversationId);
+
+  if (touchError) {
+    console.error("Failed to update conversation updated_at after inbound message:", touchError.message);
   }
 }
 
