@@ -2,8 +2,6 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { SignOutButton } from "@/components/SignOutButton";
-import type { CurrentProfile } from "@/lib/auth";
 
 const NAV_ITEMS = [
   {
@@ -44,12 +42,7 @@ const NAV_ITEMS = [
   },
 ];
 
-const ROLE_LABELS: Record<string, string> = {
-  admin: "Administrator",
-  staff: "Staff",
-};
-
-export function Sidebar({ profile }: { profile: CurrentProfile | null }) {
+export function Sidebar({ footer }: { footer: React.ReactNode }) {
   const pathname = usePathname();
 
   return (
@@ -89,24 +82,7 @@ export function Sidebar({ profile }: { profile: CurrentProfile | null }) {
         })}
       </nav>
 
-      <div className="border-t border-slate-800 p-3">
-        <div className="flex items-center gap-3 rounded-lg px-2 py-2">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-700 text-sm font-semibold text-white">
-            {(profile?.displayName ?? "?").charAt(0).toUpperCase()}
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium text-white">
-              {profile?.displayName ?? "Unknown user"}
-            </p>
-            <p className="truncate text-xs text-slate-400">
-              {profile ? (ROLE_LABELS[profile.role] ?? profile.role) : ""}
-            </p>
-          </div>
-        </div>
-        <div className="mt-1 px-2">
-          <SignOutButton className="text-xs font-medium text-slate-400 transition-colors hover:text-white disabled:opacity-60" />
-        </div>
-      </div>
+      <div className="border-t border-slate-800 p-3">{footer}</div>
     </aside>
   );
 }

@@ -1,15 +1,37 @@
 import Link from "next/link";
-import { getCurrentProfile } from "@/lib/auth";
+import { Suspense } from "react";
 import { Sidebar } from "@/components/Sidebar";
+import { SidebarProfileFooter } from "@/components/SidebarProfileFooter";
 import { SignOutButton } from "@/components/SignOutButton";
 import { MobileBottomNav } from "@/components/MobileBottomNav";
 
-export default async function AppLayout({ children }: LayoutProps<"/">) {
-  const profile = await getCurrentProfile();
+function SidebarFooterSkeleton() {
+  return (
+    <div className="flex animate-pulse items-center gap-3 rounded-lg px-2 py-2">
+      <div className="h-9 w-9 shrink-0 rounded-full bg-slate-700" />
+      <div className="min-w-0 flex-1 space-y-1.5">
+        <div className="h-3.5 w-24 rounded bg-slate-700" />
+        <div className="h-3 w-16 rounded bg-slate-800" />
+      </div>
+    </div>
+  );
+}
 
+// Not async, and doesn't call getCurrentProfile() -- middleware already
+// enforces authentication before any request reaches here. The only thing
+// that ever needed profile data was the sidebar's name/role footer, which
+// now streams in via Suspense instead of blocking the entire shell (nav
+// links, header, main slot) behind that fetch on every navigation.
+export default function AppLayout({ children }: LayoutProps<"/">) {
   return (
     <div className="flex min-h-screen bg-slate-50">
-      <Sidebar profile={profile} />
+      <Sidebar
+        footer={
+          <Suspense fallback={<SidebarFooterSkeleton />}>
+            <SidebarProfileFooter />
+          </Suspense>
+        }
+      />
 
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Mobile: slim brand/account bar. Primary navigation lives in the
