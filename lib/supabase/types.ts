@@ -137,7 +137,8 @@ export type AuditAction =
   | "lead_created"
   | "lead_updated"
   | "conversation_viewed"
-  | "message_sent";
+  | "message_sent"
+  | "audit_log_viewed";
 
 export type AuditTargetType = "lead" | "conversation" | "message";
 

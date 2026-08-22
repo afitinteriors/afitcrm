@@ -42,7 +42,7 @@ const NAV_ITEMS = [
   },
 ];
 
-export function Sidebar({ footer }: { footer: React.ReactNode }) {
+export function Sidebar({ footer, adminNav }: { footer: React.ReactNode; adminNav?: React.ReactNode }) {
   const pathname = usePathname();
 
   return (
@@ -80,6 +80,7 @@ export function Sidebar({ footer }: { footer: React.ReactNode }) {
             </Link>
           );
         })}
+        {adminNav}
       </nav>
 
       <div className="border-t border-slate-800 p-3">{footer}</div>

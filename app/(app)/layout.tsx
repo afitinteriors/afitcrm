@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { Sidebar } from "@/components/Sidebar";
 import { SidebarProfileFooter } from "@/components/SidebarProfileFooter";
+import { SidebarAdminNav } from "@/components/SidebarAdminNav";
 import { SignOutButton } from "@/components/SignOutButton";
 import { MobileBottomNav } from "@/components/MobileBottomNav";
 
@@ -26,6 +27,11 @@ export default function AppLayout({ children }: LayoutProps<"/">) {
   return (
     <div className="flex min-h-screen bg-slate-50">
       <Sidebar
+        adminNav={
+          <Suspense fallback={null}>
+            <SidebarAdminNav />
+          </Suspense>
+        }
         footer={
           <Suspense fallback={<SidebarFooterSkeleton />}>
             <SidebarProfileFooter />
