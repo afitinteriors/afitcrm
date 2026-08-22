@@ -1,5 +1,5 @@
 import { Card } from "@/components/Card";
-import { isFollowUpOverdue } from "@/lib/follow-ups";
+import { isFollowUpOverdue } from "@/lib/follow-up-status";
 import { formatDate } from "@/lib/format";
 import { FOLLOW_UP_TYPE_LABELS } from "@/lib/constants";
 import type { FollowUpRow } from "@/lib/supabase/types";

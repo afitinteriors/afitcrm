@@ -91,5 +91,9 @@ export async function completeFollowUp(_prevState: ActionState, formData: FormDa
   if (error || !data) return { error: "Could not update this follow-up. You may not have access to it." };
 
   revalidatePath(`/leads/${leadId}`);
+  // Also revalidated so completing from the dashboard's cross-lead list
+  // (B10) removes the item there too -- that page is a different route,
+  // so the revalidatePath above alone doesn't cover it.
+  revalidatePath("/dashboard");
   return null;
 }

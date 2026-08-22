@@ -13,7 +13,7 @@ export function CompleteFollowUpButton({ followUpId, leadId }: { followUpId: str
       <input type="hidden" name="lead_id" value={leadId} />
       {state?.error && <p className="mb-1 text-xs text-red-600">{state.error}</p>}
       <SubmitButton
-        className="rounded-md bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
+        className="flex h-11 items-center justify-center rounded-md bg-emerald-600 px-3 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
         pendingLabel="Saving…"
       >
         Complete

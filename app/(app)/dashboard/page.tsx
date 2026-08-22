@@ -1,10 +1,16 @@
 import { getDashboardStats } from "@/lib/leads";
+import { getUpcomingFollowUps } from "@/lib/follow-ups";
 import { StatCard } from "@/components/StatCard";
+import { DashboardFollowUps } from "@/components/DashboardFollowUps";
 import { formatCurrency } from "@/lib/format";
 import { getCurrentProfile } from "@/lib/auth";
 
 export default async function DashboardPage() {
-  const [stats, profile] = await Promise.all([getDashboardStats(), getCurrentProfile()]);
+  const [stats, followUps, profile] = await Promise.all([
+    getDashboardStats(),
+    getUpcomingFollowUps(),
+    getCurrentProfile(),
+  ]);
   const subtitle =
     profile?.role === "staff"
       ? "Overview of the leads assigned to you."
@@ -14,6 +20,10 @@ export default async function DashboardPage() {
     <div>
       <h1 className="text-xl font-semibold text-slate-900">Dashboard</h1>
       <p className="mt-1 text-sm text-slate-500">{subtitle}</p>
+
+      <div className="mt-6">
+        <DashboardFollowUps followUps={followUps} />
+      </div>
 
       <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
         <StatCard label="Total Leads" value={stats.totalLeads} />
