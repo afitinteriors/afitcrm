@@ -140,7 +140,8 @@ export type AuditAction =
   | "message_sent"
   | "audit_log_viewed"
   | "follow_up_created"
-  | "follow_up_completed";
+  | "follow_up_completed"
+  | "lead_assigned";
 
 export type AuditTargetType = "lead" | "conversation" | "message" | "follow_up";
 

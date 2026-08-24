@@ -150,6 +150,59 @@ export async function updateLead(_prevState: ActionState, formData: FormData): P
   redirect(`/leads/${leadId}`);
 }
 
+// Admin-only by design -- staff must never reassign a lead. This check is
+// deliberately stricter than checkLeadAccess (which lets staff act on a
+// lead already assigned to them): assignment is not a "my lead" action.
+// leads_update_admin_or_owner RLS backs this up independently -- its
+// WITH CHECK requires assigned_to_id = auth.uid() on the *new* row for a
+// non-admin, so even a crafted request that reached this far would still
+// be rejected by the database if this check were somehow bypassed.
+export async function assignLead(leadId: string, staffId: string): Promise<ActionState> {
+  const profile = await getCurrentProfile();
+  if (!profile) return { error: "Not signed in." };
+  if (profile.role !== "admin") return { error: "Only an admin can assign leads." };
+
+  const supabase = await createClient();
+
+  const { data: targetStaff } = await supabase
+    .from("profiles")
+    .select("id")
+    .eq("id", staffId)
+    .eq("role", "staff")
+    .single();
+  if (!targetStaff) return { error: "Select a valid staff member." };
+
+  const { data: current, error: fetchError } = await supabase
+    .from("leads")
+    .select("assigned_to_id")
+    .eq("id", leadId)
+    .single();
+  if (fetchError || !current) return { error: "Lead not found." };
+
+  // Re-selecting the current owner is a success no-op: no update, no audit
+  // event, per the assignment semantics requirement.
+  if (current.assigned_to_id === staffId) return null;
+
+  const { data, error } = await supabase
+    .from("leads")
+    .update({ assigned_to_id: staffId })
+    .eq("id", leadId)
+    .select("id")
+    .single();
+
+  if (error || !data) return { error: "Could not assign this lead." };
+
+  await recordAuditEvent({
+    actorId: profile.id,
+    action: "lead_assigned",
+    targetType: "lead",
+    targetId: data.id,
+  });
+
+  revalidateLead(leadId);
+  return null;
+}
+
 export async function setLeadStatus(leadId: string, status: LeadStatus): Promise<ActionState> {
   if (!LEAD_STATUSES.includes(status)) return { error: "Invalid status." };
 

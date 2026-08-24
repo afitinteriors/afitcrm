@@ -5,6 +5,7 @@ import { getFollowUpsForLead } from "@/lib/follow-ups";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Card } from "@/components/Card";
 import { StatusSelect } from "@/components/lead-actions/StatusSelect";
+import { AssignmentCard } from "@/components/lead-actions/AssignmentCard";
 import { QualificationForm } from "@/components/lead-actions/QualificationForm";
 import { SiteVisitForm } from "@/components/lead-actions/SiteVisitForm";
 import { QuotationForm } from "@/components/lead-actions/QuotationForm";
@@ -85,7 +86,6 @@ export default async function LeadDetailPage({ params }: PageProps<"/leads/[id]"
               />
               <Info label="Expected start date" value={formatDate(lead.expected_start_date)} />
               <Info label="Source" value={LEAD_SOURCE_LABELS[lead.source ?? ""] ?? lead.source} />
-              <Info label="Assigned to" value={lead.assigned_to} />
               <Info label="Meta campaign" value={lead.campaign_name} />
               <Info label="Ad set" value={lead.adset_name} />
               <Info label="Ad" value={lead.ad_name} />
@@ -123,6 +123,8 @@ export default async function LeadDetailPage({ params }: PageProps<"/leads/[id]"
           <Card title="Status">
             <StatusSelect leadId={lead.id} status={lead.status} />
           </Card>
+
+          <AssignmentCard leadId={lead.id} assignedToId={lead.assigned_to_id} />
 
           <FollowUpsCard leadId={lead.id} followUps={followUps} />
 
