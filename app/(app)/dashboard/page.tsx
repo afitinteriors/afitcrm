@@ -1,15 +1,19 @@
-import { getDashboardStats } from "@/lib/leads";
+import { getDashboardStats, getUncontactedLeads } from "@/lib/leads";
 import { getUpcomingFollowUps } from "@/lib/follow-ups";
+import { getUnansweredConversations } from "@/lib/conversations";
 import { StatCard } from "@/components/StatCard";
 import { DashboardFollowUps } from "@/components/DashboardFollowUps";
+import { NeedsAttention } from "@/components/NeedsAttention";
 import { formatCurrency } from "@/lib/format";
 import { getCurrentProfile } from "@/lib/auth";
 
 export default async function DashboardPage() {
-  const [stats, followUps, profile] = await Promise.all([
+  const [stats, followUps, profile, unanswered, uncontacted] = await Promise.all([
     getDashboardStats(),
     getUpcomingFollowUps(),
     getCurrentProfile(),
+    getUnansweredConversations(),
+    getUncontactedLeads(),
   ]);
   const subtitle =
     profile?.role === "staff"
@@ -20,6 +24,10 @@ export default async function DashboardPage() {
     <div>
       <h1 className="text-xl font-semibold text-slate-900">Dashboard</h1>
       <p className="mt-1 text-sm text-slate-500">{subtitle}</p>
+
+      <div className="mt-6">
+        <NeedsAttention unanswered={unanswered} uncontacted={uncontacted} overdueFollowUps={followUps} />
+      </div>
 
       <div className="mt-6">
         <DashboardFollowUps followUps={followUps} />

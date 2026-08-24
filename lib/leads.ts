@@ -127,6 +127,32 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   };
 }
 
+export type UncontactedLead = LeadRow & { assigned: { display_name: string | null } | null };
+
+// "Not contacted" = status is still "new", the pipeline's own first stage
+// (LEAD_STATUSES / setLeadStatus already model contact as the new->contacted
+// transition) -- not a separately invented signal. Same staff filter as the
+// rest of this file, defense-in-depth alongside leads_select_admin_or_owner.
+export async function getUncontactedLeads(): Promise<UncontactedLead[]> {
+  const profile = await getCurrentProfile();
+  if (!profile) return [];
+
+  const supabase = await createClient();
+  let query = supabase
+    .from("leads")
+    .select("*, assigned:profiles(display_name)")
+    .eq("status", "new")
+    .order("created_at", { ascending: true });
+
+  if (profile.role === "staff") {
+    query = query.eq("assigned_to_id", profile.id);
+  }
+
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+  return (data ?? []) as unknown as UncontactedLead[];
+}
+
 export const getLeadById = cache(async (id: string): Promise<LeadRow | null> => {
   const profile = await getCurrentProfile();
   if (!profile) return null;

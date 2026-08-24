@@ -77,6 +77,62 @@ export type MessageListItem = Omit<MessageRow, "raw_payload">;
 const MESSAGE_LIST_COLUMNS =
   "id, conversation_id, wa_message_id, direction, message_type, body, media_id, media_storage_path, status, created_at, updated_at";
 
+export type UnansweredConversation = {
+  id: string;
+  wa_id: string;
+  lastInboundAt: string;
+  lead: {
+    id: string;
+    customer_name: string | null;
+    assigned: { display_name: string | null } | null;
+  } | null;
+};
+
+// "Unanswered" = the most recent message in the conversation is inbound,
+// i.e. nothing outbound has gone out since the customer's last message.
+// There's no denormalized "last message direction" column on conversations,
+// so this reduces the full messages table (3 narrow columns only) in one
+// query rather than one query per conversation -- at this CRM's current
+// scale that's the simplest correct option; a materialized "last inbound
+// at" column would be the next step if message volume grows much larger.
+// RLS (messages_select_admin_or_owner) already scopes the messages query to
+// what the caller may see, same as getMessagesForConversation.
+export async function getUnansweredConversations(): Promise<UnansweredConversation[]> {
+  const profile = await getCurrentProfile();
+  if (!profile) return [];
+
+  const supabase = await createClient();
+
+  const { data: messages, error: messagesError } = await supabase
+    .from("messages")
+    .select("conversation_id, direction, created_at")
+    .order("created_at", { ascending: false });
+  if (messagesError) throw new Error(messagesError.message);
+
+  const latestByConversation = new Map<string, { direction: string; created_at: string }>();
+  for (const m of messages ?? []) {
+    if (!latestByConversation.has(m.conversation_id)) {
+      latestByConversation.set(m.conversation_id, { direction: m.direction, created_at: m.created_at });
+    }
+  }
+
+  const unansweredIds = Array.from(latestByConversation.entries())
+    .filter(([, latest]) => latest.direction === "inbound")
+    .map(([conversationId]) => conversationId);
+  if (unansweredIds.length === 0) return [];
+
+  const { data: conversations, error: conversationsError } = await supabase
+    .from("conversations")
+    .select("id, wa_id, lead:leads(id, customer_name, assigned:profiles(display_name))")
+    .eq("status", "open")
+    .in("id", unansweredIds);
+  if (conversationsError) throw new Error(conversationsError.message);
+
+  return ((conversations ?? []) as unknown as UnansweredConversation[])
+    .map((c) => ({ ...c, lastInboundAt: latestByConversation.get(c.id)!.created_at }))
+    .sort((a, b) => new Date(a.lastInboundAt).getTime() - new Date(b.lastInboundAt).getTime());
+}
+
 export async function getMessagesForConversation(conversationId: string): Promise<MessageListItem[]> {
   const profile = await getCurrentProfile();
   if (!profile) return [];
