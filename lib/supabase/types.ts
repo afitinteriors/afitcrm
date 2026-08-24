@@ -138,9 +138,11 @@ export type AuditAction =
   | "lead_updated"
   | "conversation_viewed"
   | "message_sent"
-  | "audit_log_viewed";
+  | "audit_log_viewed"
+  | "follow_up_created"
+  | "follow_up_completed";
 
-export type AuditTargetType = "lead" | "conversation" | "message";
+export type AuditTargetType = "lead" | "conversation" | "message" | "follow_up";
 
 export type AuditLogRow = {
   id: string;

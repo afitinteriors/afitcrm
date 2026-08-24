@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentProfile } from "@/lib/auth";
+import { recordAuditEvent } from "@/lib/audit";
 import type { FollowUpType } from "@/lib/supabase/types";
 
 export type ActionState = { error: string } | null;
@@ -56,16 +57,27 @@ export async function createFollowUp(_prevState: ActionState, formData: FormData
   if (!profile) return { error: "Not signed in." };
 
   const supabase = await createClient();
-  const { error } = await supabase.from("follow_ups").insert({
-    lead_id: leadId,
-    type,
-    due_date: dueDate,
-    due_time: dueTime || null,
-    notes: notes || null,
-    assigned_to_id: profile.id,
-  });
+  const { data, error } = await supabase
+    .from("follow_ups")
+    .insert({
+      lead_id: leadId,
+      type,
+      due_date: dueDate,
+      due_time: dueTime || null,
+      notes: notes || null,
+      assigned_to_id: profile.id,
+    })
+    .select("id")
+    .single();
 
-  if (error) return { error: "Could not create follow-up. You may not have access to this lead." };
+  if (error || !data) return { error: "Could not create follow-up. You may not have access to this lead." };
+
+  await recordAuditEvent({
+    actorId: profile.id,
+    action: "follow_up_created",
+    targetType: "follow_up",
+    targetId: data.id,
+  });
 
   revalidatePath(`/leads/${leadId}`);
   return null;
@@ -80,6 +92,9 @@ export async function completeFollowUp(_prevState: ActionState, formData: FormDa
   const leadId = str(formData, "lead_id");
   if (!followUpId || !leadId) return { error: "Missing follow-up." };
 
+  const profile = await getCurrentProfile();
+  if (!profile) return { error: "Not signed in." };
+
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("follow_ups")
@@ -89,6 +104,13 @@ export async function completeFollowUp(_prevState: ActionState, formData: FormDa
     .maybeSingle();
 
   if (error || !data) return { error: "Could not update this follow-up. You may not have access to it." };
+
+  await recordAuditEvent({
+    actorId: profile.id,
+    action: "follow_up_completed",
+    targetType: "follow_up",
+    targetId: data.id,
+  });
 
   revalidatePath(`/leads/${leadId}`);
   // Also revalidated so completing from the dashboard's cross-lead list
