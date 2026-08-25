@@ -12,8 +12,11 @@ export function StatusSelect({ leadId, status }: { leadId: string; status: LeadS
 
   return (
     <div>
-      <label htmlFor="status-select" className="block text-xs font-medium text-slate-500">
-        Status
+      <label
+        htmlFor="status-select"
+        className="block text-xs font-semibold uppercase tracking-wide text-slate-500"
+      >
+        Live Stage
       </label>
       <select
         id="status-select"
@@ -32,7 +35,7 @@ export function StatusSelect({ leadId, status }: { leadId: string; status: LeadS
             }
           });
         }}
-        className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500 disabled:opacity-60"
+        className="mt-1 block w-full rounded-md border-2 border-slate-300 bg-white px-3 py-2.5 text-base font-semibold text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60 sm:w-72"
       >
         {LEAD_STATUSES.map((s) => (
           <option key={s} value={s}>

@@ -72,6 +72,10 @@ export default async function LeadDetailPage({ params }: PageProps<"/leads/[id]"
         </div>
       </div>
 
+      <div className="mt-4 rounded-xl border-2 border-slate-200 bg-white p-4 shadow-sm">
+        <StatusSelect leadId={lead.id} status={lead.status} />
+      </div>
+
       <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
           <Card title="Lead information">
@@ -120,10 +124,6 @@ export default async function LeadDetailPage({ params }: PageProps<"/leads/[id]"
         </div>
 
         <div className="space-y-6">
-          <Card title="Status">
-            <StatusSelect leadId={lead.id} status={lead.status} />
-          </Card>
-
           <AssignmentCard leadId={lead.id} assignedToId={lead.assigned_to_id} />
 
           <FollowUpsCard leadId={lead.id} followUps={followUps} />
@@ -133,6 +133,7 @@ export default async function LeadDetailPage({ params }: PageProps<"/leads/[id]"
               Current: <span className="font-medium text-slate-900">{formatDateTime(lead.site_visit_date)}</span>
             </p>
             <SiteVisitForm leadId={lead.id} siteVisitDate={lead.site_visit_date} />
+            <p className="mt-2 text-xs text-slate-400">Recording a date here does not change the live stage.</p>
           </Card>
 
           <Card title="Quotation">
@@ -140,6 +141,7 @@ export default async function LeadDetailPage({ params }: PageProps<"/leads/[id]"
               Current: <span className="font-medium text-slate-900">{formatCurrency(lead.quotation_amount)}</span>
             </p>
             <QuotationForm leadId={lead.id} quotationAmount={lead.quotation_amount} />
+            <p className="mt-2 text-xs text-slate-400">Recording an amount here does not change the live stage.</p>
           </Card>
 
           <Card title="Job value">

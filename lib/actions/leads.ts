@@ -333,9 +333,11 @@ export async function setSiteVisitDate(_prevState: ActionState, formData: FormDa
   const accessError = await checkLeadAccess(supabase, leadId);
   if (accessError) return accessError;
 
+  // Recording a visit date is an activity record, not a stage transition --
+  // the live stage (leads.status) only changes via an explicit StatusSelect
+  // choice or Mark Won/Lost. See setQuotationAmount for the same rule.
   const siteVisitUpdate: LeadUpdate = {
     site_visit_date: new Date(siteVisitDate).toISOString(),
-    status: "site_visit",
   };
   const { error } = await supabase.from("leads").update(siteVisitUpdate).eq("id", leadId);
 
@@ -368,7 +370,9 @@ export async function setQuotationAmount(
   const accessError = await checkLeadAccess(supabase, leadId);
   if (accessError) return accessError;
 
-  const quotationUpdate: LeadUpdate = { quotation_amount: amount, status: "quotation" };
+  // Same rule as setSiteVisitDate: recording an amount is an activity
+  // record, not a stage transition.
+  const quotationUpdate: LeadUpdate = { quotation_amount: amount };
   const { error } = await supabase.from("leads").update(quotationUpdate).eq("id", leadId);
 
   revalidateLead(leadId);
