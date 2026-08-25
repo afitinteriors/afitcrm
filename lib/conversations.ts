@@ -72,6 +72,51 @@ export const getConversationById = cache(async (id: string): Promise<Conversatio
 // Excludes raw_payload -- the full raw Meta webhook JSON per message, which
 // nothing in the viewer reads. Fetching it for every message in a thread was
 // pure wasted payload weight.
+export type ConversationPreview = {
+  id: string;
+  status: ConversationRow["status"];
+  updated_at: string;
+  lastMessage: {
+    direction: MessageRow["direction"];
+    body: string | null;
+    message_type: string;
+    created_at: string;
+  } | null;
+};
+
+// Preview for the lead detail page's "WhatsApp Conversation" card. Unlike
+// getConversationById, this deliberately does NOT record a conversation_viewed
+// audit event -- that action means "opened the full thread", not "saw a
+// snippet on another page". RLS (conversations_select_admin_or_owner) already
+// scopes this to what the caller may see, mirroring leads_select_admin_or_owner
+// exactly, so a staff caller can never preview a conversation for a lead that
+// isn't theirs. A lead can have more than one conversations row (no unique
+// constraint on lead_id), so this picks the most recently updated one rather
+// than assuming exactly one exists.
+export async function getConversationForLead(leadId: string): Promise<ConversationPreview | null> {
+  const profile = await getCurrentProfile();
+  if (!profile) return null;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("conversations")
+    .select("id, status, updated_at, messages(direction, body, message_type, created_at)")
+    .eq("lead_id", leadId)
+    .order("updated_at", { ascending: false })
+    .order("created_at", { ascending: false, referencedTable: "messages" })
+    .limit(1)
+    .limit(1, { referencedTable: "messages" })
+    .maybeSingle();
+
+  if (error || !data) return null;
+
+  const { messages, ...conversation } = data as unknown as ConversationPreview & {
+    messages: ConversationPreview["lastMessage"][];
+  };
+
+  return { ...conversation, lastMessage: messages?.[0] ?? null };
+}
+
 export type MessageListItem = Omit<MessageRow, "raw_payload">;
 
 const MESSAGE_LIST_COLUMNS =

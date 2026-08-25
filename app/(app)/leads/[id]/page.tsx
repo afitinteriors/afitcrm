@@ -5,6 +5,7 @@ import { getFollowUpsForLead } from "@/lib/follow-ups";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Card } from "@/components/Card";
 import { StatusSelect } from "@/components/lead-actions/StatusSelect";
+import { ConversationCard } from "@/components/lead-actions/ConversationCard";
 import { AssignmentCard } from "@/components/lead-actions/AssignmentCard";
 import { QualificationForm } from "@/components/lead-actions/QualificationForm";
 import { SiteVisitForm } from "@/components/lead-actions/SiteVisitForm";
@@ -124,6 +125,8 @@ export default async function LeadDetailPage({ params }: PageProps<"/leads/[id]"
         </div>
 
         <div className="space-y-6">
+          <ConversationCard leadId={lead.id} />
+
           <AssignmentCard leadId={lead.id} assignedToId={lead.assigned_to_id} />
 
           <FollowUpsCard leadId={lead.id} followUps={followUps} />
