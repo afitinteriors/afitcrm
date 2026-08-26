@@ -92,7 +92,13 @@ export async function sendMessage(_prevState: SendMessageState, formData: FormDa
     console.error("Failed to update conversation updated_at after send:", touchError.message);
   }
 
+  // Two surfaces render this same conversation data (the CRM's embedded
+  // /conversations view and the standalone /chat surface) -- both need
+  // revalidating, or whichever one wasn't just navigated from keeps
+  // serving a stale cache until something else invalidates it.
   revalidatePath(`/conversations/${conversationId}`);
   revalidatePath("/conversations");
+  revalidatePath(`/chat/${conversationId}`);
+  revalidatePath("/chat");
   return null;
 }
