@@ -14,6 +14,73 @@ session has real state instead of re-reading intentions.
 ## 0. Session Log
 <!-- Append one entry per session. Newest at top. -->
 
+### 2026-08-30 — Phase 5 (§7/§9/§10): Site Visits & Quotations as UI-level views
+- Phase: Site Visits & Quotations only, per the approved next-phase plan.
+  UI-level only -- no schema, migration, RLS, or Supabase config change; no
+  new query/data-access function beyond what's below. Nothing touched in
+  `lib/realtime/`, `lib/whatsapp/`, `/conversations`, `/chat`, Follow-ups,
+  Deals, Reports, or Settings. Not committed, not pushed.
+- Inspected first: no `/site-visits` or `/quotations` route existed
+  anywhere; the only related files were the existing per-lead
+  `SiteVisitForm`/`QuotationForm` (Lead Detail edit forms, both untouched
+  this phase) and `getLeads()` in `lib/leads.ts`, which already applies
+  admin-sees-all / staff-sees-own-assigned scoping (RLS plus an explicit
+  app-level `assigned_to_id` filter for staff) -- confirmed unmodified and
+  reused as-is, not extended, for both new pages.
+- Built two read-only UI-level views, both calling the existing
+  `getLeads({})` directly and narrowing the result in-memory -- no new
+  `lib/site-visits.ts` or `lib/quotations.ts` module, since a one-line
+  filter over an already-fetched, already-scoped list didn't justify one:
+  - `/site-visits` (`app/(app)/site-visits/page.tsx`): leads with a
+    non-null `site_visit_date`, grouped Today/Upcoming/Past (a page-local
+    grouping helper, not exported -- only this one page needs it, unlike
+    Follow-ups' `groupFollowUpsByDueDate`, which is shared across that
+    page's own desktop+mobile JSX in the same file). "Past" rather than
+    "Overdue" -- a completed visit isn't a failure the way a missed
+    follow-up is.
+  - `/quotations` (`app/(app)/quotations/page.tsx`): leads with a non-null
+    `quotation_amount`, sorted by most-recently-updated first, no
+    grouping (the field has no date axis the way `site_visit_date` does).
+  - New presentational components mirroring `LeadRow`/`LeadCard`'s exact
+    established shape (`components/site-visits/{SiteVisitRow,
+    SiteVisitCard}.tsx`, `components/quotations/{QuotationRow,
+    QuotationCard}.tsx`) rather than reusing `LeadRow`/`LeadCard` directly
+    -- those show `job_value ?? quotation_amount`, which would blur
+    exactly the field each new view exists to surface (a Won lead's
+    `quotation_amount` differs from its closed `job_value`). Both surfaces
+    still link back to Lead Detail for actual editing; no new write
+    action was added.
+- Nav: added "Site Visits" and "Quotations" to the desktop sidebar (both
+  confirmed real nav items per §8's nav list, neither admin-gated, same as
+  Leads/Follow-ups). Added a "Visits" tab to the mobile bottom nav (now 5
+  real tabs + admin "More") -- §1 explicitly lists "site visits" as a
+  mobile priority. Quotations deliberately has **no** mobile nav entry --
+  §1 lists "quotations" only under Desktop's full CRM operations, not
+  among Mobile's daily-work priorities; the page still renders responsively
+  if reached by direct URL, it's just not a bottom-nav destination.
+- Verified live, not from source inspection: at 1440x900, confirmed both
+  real desktop nav links, and that the one real lead's actual
+  `quotation_amount` (₹2,35,000) and `site_visit_date` render correctly.
+  Used the existing `SiteVisitForm` to move that lead's site visit date
+  through Past -> Today -> Upcoming and confirmed all three groupings
+  render correctly with real data at each step, then restored the field to
+  its exact original value (`2026-08-23 01:19:00+00`) -- confirmed via
+  SQL. At 390x844 and 375x812: confirmed the 5-tab (+More) bottom nav,
+  each tab a 62-65px touch target well above the 44x44 minimum; confirmed
+  Site Visits' mobile card view; confirmed Quotations still renders
+  correctly and responsively despite having no nav entry; confirmed no
+  horizontal overflow (`scrollWidth === clientWidth`) on any of the four
+  page/viewport combinations checked. No console errors at any point.
+- Not verified live: Staff-role behavior -- no Staff login credentials
+  were available (same gap as the two prior phases). Verified structurally
+  instead, and more directly than in prior phases: both new pages call
+  `getLeads({})` completely unmodified -- the exact same function already
+  verified for the Leads page across earlier sessions -- so staff scoping
+  here is provably identical to already-verified behavior, not new
+  authorization code that itself needs separate verification.
+- `npm run lint` / `npx tsc --noEmit` / `npm run build`: all clean.
+- Not committed, not pushed. Not proceeding to Deals or any other phase.
+
 ### 2026-08-30 — Phase 4 (§7/§11): Follow-ups workspace
 - Phase: Follow-ups only, per the approved next-phase plan. No schema/RLS
   change, no new table, nothing touched in `lib/realtime/`, `lib/whatsapp/`,

@@ -52,12 +52,27 @@ const NAV_ITEMS = [
       />
     ),
   },
+  {
+    href: "/site-visits",
+    label: "Visits",
+    icon: (
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={1.75}
+        d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z"
+      />
+    ),
+  },
 ];
 
-// Primary mobile navigation -- the four real, built destinations, plus an
-// optional admin-only "More" slot (Automation/Audit Log) passed in from the
-// layout. Follow-ups/Tasks is a real tab -- §1 lists follow-ups/tasks as a
-// mobile priority for every role.
+// Primary mobile navigation -- the five real, built destinations, plus an
+// optional admin-only "More" slot (Automation/Audit Log/Settings) passed in
+// from the layout. Follow-ups/Tasks and Site Visits are real tabs -- §1
+// lists both as mobile priorities for every role. Quotations is
+// deliberately NOT here -- §1 lists "quotations" under Desktop's full CRM
+// operations, not among Mobile's daily-work priorities, so it stays
+// sidebar-only.
 export function MobileBottomNav({ moreSlot }: { moreSlot?: React.ReactNode }) {
   const pathname = usePathname();
 
