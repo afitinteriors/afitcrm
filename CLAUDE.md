@@ -14,6 +14,222 @@ session has real state instead of re-reading intentions.
 ## 0. Session Log
 <!-- Append one entry per session. Newest at top. -->
 
+### 2026-08-30 — Settings (Claude Code infrastructure, section 7 of 7) — approved conclusion: no change
+- Phase: none — Claude Code infrastructure only. No product code, schema,
+  package files, Skills, Agents, Commands, Hooks, or MCP config touched;
+  nothing committed.
+- Freshly re-inspected (not assumed from prior sessions): `.claude/
+  settings.json` contains only the `hooks` key registering `git-and-
+  schema-safety` under two PreToolUse matchers (from the Hooks section);
+  no `permissions`, `env`, or other keys exist. No `.claude/settings.local
+  .json`. No project sets a permission mode of its own — actual
+  prompting behavior this whole conversation has come from the user's
+  own global/session-level configuration, outside this project's scope.
+- Considered and explicitly rejected three candidate additions: (1)
+  `permissions.deny` mirroring the hook's git/schema patterns — would
+  contradict the hook's deliberate "ask, not hard-block" design from the
+  Hooks section, since deny is unconditional and would make an
+  explicitly-approved commit permanently impossible; (2) `permissions.ask`
+  duplicating the hook's match list as a "backup" — rejected as a second
+  mechanism that could drift out of sync with the hook over time for no
+  demonstrated benefit, since the hook already fires reliably (re-
+  confirmed live this session); (3) `permissions.deny` for the MCP
+  connectors flagged as irrelevant/risky in the MCP audit (Meta_Ads,
+  Notion, Google Drive/Calendar/Gmail, Cloudflare) — genuinely would
+  operationalize an already-approved conclusion, but explicitly out of
+  scope for this session ("do not modify MCP"); noted as a real FUTURE
+  candidate if that boundary is ever deliberately reopened, not smuggled
+  in here.
+- **Conclusion: the existing `.claude/settings.json` (hooks registration
+  only) is already the complete, correct, minimal settings configuration
+  this project needs.** Nothing added, changed, or removed.
+- Verified: re-ran the hook's pipe-test (`git commit` → ask,
+  `npm run lint` → silent allow) to confirm the registration still works
+  after this session's inspection; validated `settings.json`'s JSON with
+  Node. Confirmed `.claude/commands/`, `.claude/skills/`, `.claude/hooks/`
+  file listings unchanged; no `.claude/agents/`; no `.mcp.json`. `git
+  status` shows only this Session Log entry changed. Did not run the
+  application test suite — configuration/documentation only.
+- **This completes the planned Claude Code infrastructure sequence**
+  (CLAUDE.md → Skills → Agents → MCP → Hooks → Commands → Settings, §27).
+  Next up, per the user's own stated remaining workflow: Phase Plan → UI
+  Design → Implementation → Full Test → Report — i.e., resume real
+  product work, starting with the reconciled Phase 4b scope in §32.
+
+### 2026-08-30 — Commands (Claude Code infrastructure, section 6 of 7) — one command added
+- Phase: none — Claude Code infrastructure only. No product code, schema,
+  package.json, Skills, Agents, Hooks, or MCP config touched; nothing
+  committed.
+- Added exactly one custom command, `/phase` (`.claude/commands/
+  phase.md`). It is pure orchestration — a pointer to the four things
+  that already own the substance (CLAUDE.md for the rules, `ui-ux-pro-max`
+  for design exploration, `afit-verify` for testing, `git-and-schema-
+  safety` for destructive-action safety) — not a restatement of any of
+  them. Its job is replacing the phase-discipline ceremony text that's
+  been manually retyped, with variation, in nearly every message across
+  this multi-session infrastructure work, with one deterministic
+  `/phase <scope>` invocation.
+- Considered and explicitly rejected separate commands for UI design,
+  implementation, verification, and reporting — each already belongs to
+  an existing skill, or varies too much by phase to templatize, or (for
+  "stop"/`/clear`) is already a built-in.
+- Verified: `.claude/commands/phase.md` exists with valid YAML
+  frontmatter (`description`, `argument-hint`) and a concise body; no
+  other command file was created; `.claude/skills/`, `.claude/hooks/`
+  contents confirmed byte-identical to before this session (compared
+  file listings); no `.claude/agents/` exists (unchanged, none created).
+  `git status` confirms only `.claude/` (new) and this Session Log entry
+  changed. Did not run the application test suite — configuration/
+  documentation only.
+- One honest caveat, same category as the Skills-section finding: I
+  can't directly introspect Claude Code's live slash-command registry
+  from inside a session the way I could pipe-test the Hooks script —
+  confirming `/phase` is actually recognized needs the user to try typing
+  it (or check `/help`).
+- Not done: Settings — next, not started, per the one-section-at-a-time
+  rule.
+
+### 2026-08-30 — Hooks (Claude Code infrastructure, section 5 of 7) — one hook added
+- Phase: none — Claude Code infrastructure only. No product code, schema,
+  Skills, Agents, or MCP config touched; nothing committed.
+- Added exactly one PreToolUse hook, `git-and-schema-safety`
+  (`.claude/hooks/git-and-schema-safety.sh`, wired via `.claude/
+  settings.json`). It protects: `git commit`/`git push` (incl. `--force`/
+  `--force-with-lease`)/`git reset --hard`/`git clean -f` via the `Bash`
+  matcher, and `mcp__claude_ai_Supabase__{apply_migration,pause_project,
+  delete_branch,reset_branch}` unconditionally plus `execute_sql` only
+  when its `query` input contains CREATE/ALTER/DROP/TRUNCATE, via a second
+  matcher on those five exact MCP tool names (confirmed from the actual
+  tool list available in this project — none invented).
+- On a match it returns `permissionDecision: "ask"` — never a silent
+  allow, never a hard deny — so a genuinely user-approved commit/push/
+  migration can still proceed through Claude Code's normal permission
+  flow. `jq` isn't installed on this machine (discovered by pipe-testing
+  the raw command before wiring it in, per the update-config skill's own
+  verification workflow) — rewrote the script to use `node` (already a
+  project dependency) for JSON parsing instead.
+- This hook is a purely mechanical safeguard for irreversible actions —
+  it does not and cannot enforce phase boundaries, UI-before-backend
+  ordering, or scope discipline; those remain behavioral, per §21/§27/
+  §28/§29 and the Agents section's conclusion.
+- Verified: pipe-tested the script directly against synthetic stdin for
+  every required case (ordinary Bash, `git status`, `git commit`,
+  chained `git add && git commit`, `git push --force`, `git reset
+  --hard`, `git clean -f`, `execute_sql` SELECT vs. ALTER/DROP,
+  `apply_migration`, `pause_project`, an unlisted Supabase tool, and an
+  unrelated `Read` call) — all matched the expected allow/ask outcome.
+  Then proved the hook actually fires through Claude Code's own harness
+  (not just the manual test) by temporarily prefixing the Bash matcher's
+  command with a sentinel write, triggering a real Bash call, confirming
+  the sentinel file was written, then reverting the prefix and deleting
+  the sentinel file. Validated `.claude/settings.json`'s JSON structure
+  with Node (no `jq`). `git status` confirms only `.claude/` (new,
+  untracked) plus this Session Log entry changed.
+- Not done: Commands, Settings — next, not started, per the
+  one-section-at-a-time rule.
+
+### 2026-08-30 — MCP (Claude Code infrastructure, section 4 of 7) — approved conclusion: none
+- Phase: none — Claude Code infrastructure only. No product code, schema,
+  Skills, Agents, or config touched; nothing committed.
+- Confirmed no project-local `.mcp.json` or MCP references anywhere in
+  the repo other than this infrastructure work's own session-log entries.
+  Audited the globally-available connectors against this project's actual
+  history: `playwright` is the one genuinely load-bearing tool (every
+  phase's live verification has run through it); `Supabase` was loaded
+  once (Phase 4a verification) but not trusted/used, and exposes real
+  destructive capability (`execute_sql`, `apply_migration`,
+  `pause_project`, branch resets) against a project with an explicit
+  no-schema-changes-without-approval rule; `Meta_Ads` is a different Meta
+  product surface (Marketing API) than the WhatsApp Cloud API this
+  project actually integrates with, and carries real external-side-effect
+  risk if ever misused; `claude-in-chrome`, `Notion`, `Google_Drive`,
+  `Google_Calendar`, `Gmail`, and `Cloudflare_Developer_Platform` have
+  zero relevance to this project.
+- **Approved conclusion:**
+  - No project-level MCP configuration (`.mcp.json`) is required.
+  - `playwright` (global, already sufficient) remains the sole
+    browser-automation tool — no second Playwright framework, no
+    duplicate browser tooling.
+  - `Supabase` MCP may be used opportunistically, read-only, case-by-case
+    once its link to the actual project is verified — never a default,
+    never its write/lifecycle operations without explicit per-instance
+    approval.
+  - `Meta_Ads`, `claude-in-chrome`, `Notion`, `Google_Drive`,
+    `Google_Calendar`, `Gmail`, `Cloudflare_Developer_Platform` should not
+    be reached for on this project.
+- Not done: Hooks, Commands, Settings — next, not started, per the
+  one-section-at-a-time rule.
+
+### 2026-08-30 — Agents (Claude Code infrastructure, section 3 of 7) — approved conclusion: none
+- Phase: none — Claude Code infrastructure only. No product code, schema,
+  Skills, or config touched; nothing committed.
+- Audited agent infrastructure: confirmed no project-local `.claude/agents/`
+  exists. Reviewed the built-in agent types available regardless
+  (`claude`, `claude-code-guide`, `Explore`, `general-purpose`, `Plan`,
+  `statusline-setup`) against this project's actual history and found no
+  task that was (a) repeated, (b) mechanical/bounded, (c) genuinely
+  benefited from context isolation, and (d) didn't need the user in the
+  loop mid-task — the combination needed to justify a dedicated agent.
+- **Approved conclusion:**
+  - No project-local `.claude/agents/` are required.
+  - No custom agents should be added at this stage.
+  - Built-in agents (including ad hoc `fork`) remain available for
+    occasional use at the main session's own discretion — no project
+    configuration needed for that.
+  - Agents are not the mechanism for enforcing phase boundaries (they
+    have no authority over the main session's own turn-taking); that
+    belongs to Hooks, if it's ever needed, not Agents.
+- Not done: MCP, Hooks, Commands, Settings — next, not started, per the
+  one-section-at-a-time rule.
+
+### 2026-08-30 — Skills (Claude Code infrastructure, section 2 of 7)
+- Phase: none — Claude Code infrastructure only (Skills section of the
+  CLAUDE.md→Skills→Agents→MCP→Hooks→Commands→Settings sequence). No
+  product code, schema, package.json, or dependencies touched; nothing
+  committed.
+- Audited the one existing project-local skill,
+  `.claude/skills/ui-ux-pro-max/` (a vendored generic design-recommendation
+  tool — 377-line SKILL.md, Python CLI, CSV style/palette/typography
+  databases). Confirmed it can create a competing design-system source of
+  truth via its own documented `--persist` flag (writes `design-system/
+  MASTER.md`, self-labeled "Global Source of Truth"), and its original
+  frontmatter description was broad enough to plausibly auto-trigger on
+  routine implementation/backend/testing phrasing, not just genuine design
+  exploration. Per explicit instruction, kept — not removed, not rewritten
+  — its actual design methodology, Python scripts, and CSV data are fully
+  intact.
+- Changed only two things in `ui-ux-pro-max/SKILL.md`: (1) narrowed the
+  frontmatter `description` to explicit design-exploration use only,
+  excluding implementation/backend/testing tasks; (2) added a short
+  project-note callout (not touching the methodology below it) stating
+  CLAUDE.md §2 is this project's authoritative design system, `--persist`
+  must not be used here, and any output is a proposal to reconcile by hand
+  — never a standalone spec.
+- Added `.claude/skills/afit-verify/SKILL.md` (53 lines) — explicit-
+  invocation-only verification procedure. Points to CLAUDE.md §17/§18 as
+  the governing requirements rather than restating them; covers only
+  scope discipline (test what changed, not the whole app), when to skip
+  static checks, the three required viewports, role/permission and
+  overflow checks, and three project-specific Playwright gotchas hit
+  repeatedly this conversation (dev-overlay click interception, `<select>`
+  label-vs-value matching, RSC-revalidation wait). Ends with: never modify
+  product code while verifying, never commit, never push, report and stop.
+- Verified: both skills' directories/files intact (`ui-ux-pro-max`'s 3
+  Python scripts + 14 top-level CSV/data files confirmed present and
+  unchanged; both `SKILL.md` frontmatters are well-formed YAML — checked
+  by hand for unescaped quotes). `git status` confirms only `.claude/`
+  (untracked as a whole) changed this session, nothing else. One notable
+  finding: the newly-created `afit-verify` skill appeared correctly in
+  the live skill listing within this same session, but the edited
+  `ui-ux-pro-max` description did not refresh in-session (the listing
+  still showed its old, cached description) — the file on disk is
+  correct; whether the narrower description actually reduces auto-trigger
+  matching should be confirmed after a fresh session.
+- No lint/tsc/build run — Skills/configuration documentation only, no
+  code changed (per explicit instruction).
+- Not done: Agents, MCP, Hooks, Commands, Settings — next, not started,
+  per the one-section-at-a-time rule.
+
 ### 2026-08-30 — AGENTS.md reconciliation
 - Phase: none — Claude Code infrastructure work (Part 1 audit → Part 2,
   section 1 of the ordered CLAUDE.md→Skills→Agents→MCP→Hooks→Commands→
@@ -875,3 +1091,56 @@ message. Outside that window, only pre-approved message templates can be
 sent. Any "re-engage a cold lead" feature needs templates submitted for
 Meta's approval in advance — plan this as its own small piece of work, not
 an afterthought bolted onto Phase 4b.
+
+---
+
+## 27. Development workflow — strict, permanent (added 2026-08-30)
+
+This supersedes the looser phrasing in §7/§21 ("work one phase at a time") with
+an explicit, non-optional loop:
+
+```
+ONE PHASE → IMPLEMENT → FULL TEST → REPORT → /clear → NEXT PHASE
+```
+
+- Never start the next phase in the same session after finishing one.
+- After implementation: run the required quality gates (§18), run the
+  full relevant Playwright verification for that phase (§17), report the
+  exact results, then **stop** and wait for `/clear`.
+- Do not continue automatically into further work, and do not ask whether
+  to continue — stop and wait.
+- This applies even when the next phase seems obvious or small.
+
+## 28. UI-first rule (added 2026-08-30)
+
+For every product phase, in this order:
+
+```
+UI / UX DESIGN FIRST → approve/verify UI direction → implementation →
+backend/data work only when required
+```
+
+- Do not start a phase with backend/database work when the requirement is
+  fundamentally a UI/product workflow question.
+- Do not create backend structures speculatively "for later" — see §3.
+- If backend persistence genuinely is required to finish a phase, stop and
+  report the dependency explicitly rather than building it silently (this
+  is what happened with the WhatsApp Numbers UI, §15/§32 — it stayed a
+  local-state prototype and the missing table was reported, not created).
+
+## 29. Token / session efficiency (added 2026-08-30)
+
+Claude Code sessions on this project have been hitting daily/session usage
+limits. Every session should:
+
+- Inspect existing work before rewriting it; reuse correct existing
+  implementation instead of re-deriving it.
+- Avoid repeated full-file reads and unnecessary test re-runs — targeted
+  verification is fine once something is already conclusively verified.
+- Not refactor unrelated code, not touch unrelated backlog, not implement
+  future phases early, not build speculative functionality.
+- Make the smallest safe change the current phase actually requires.
+- Still satisfy the full-test rule (§17/§18) for whatever *is* completed
+  this session — efficiency is about scope, not about skipping
+  verification of what was built.
+
