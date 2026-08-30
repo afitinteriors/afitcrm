@@ -14,6 +14,152 @@ session has real state instead of re-reading intentions.
 ## 0. Session Log
 <!-- Append one entry per session. Newest at top. -->
 
+### 2026-08-30 — Phase 4b.3: Live UI integration
+- Phase: 4b.3 only (§34). Wired the shared Realtime mechanism from 4b.2 into
+  both `/conversations` and `/chat` per the §34 UX contract. No schema
+  change, no RLS change, no replacement of the shared mechanism, no
+  Coexistence, no outbound Meta API activity. Not committed, not pushed.
+- Built: `ConnectionIndicator` (silent when connected, visible
+  reconnecting/disconnected states, sr-only accessible label, semantic
+  `warning`/`danger` tokens, never color alone); `useLiveConversationList`/
+  `useLiveMessages` (in `lib/realtime/conversations.ts`) driving list
+  re-sort + transient in-memory-only cue dot and thread live-append with
+  id-based dedupe; conditional auto-scroll (`MessageThread`,
+  `LiveMessageList`) — near-bottom-only for incoming, always for the
+  render right after this client's own data refresh, respecting
+  `prefers-reduced-motion`; `aria-live="polite" aria-relevant="additions"`
+  on both thread containers, no focus-steal. `ConversationThreadClient`/
+  `ChatThreadClient` each call the shared hooks once and feed both
+  render slots, so neither page double-subscribes. Existing 3-column
+  desktop / full-screen mobile layouts and the two surfaces' distinct
+  visual designs (flat list vs. day-separated thread) were left exactly
+  as they were — no consolidation, no styling/token migration.
+- **Real bug found and fixed, not just wired**: live events were not
+  reaching the browser at all. Root-caused via a WebSocket-level trace
+  (not guessed): the `phx_join` payload for our `postgres_changes`
+  channels carried no `access_token` field, only the anon/publishable
+  `apikey` in the socket URL — confirmed against `realtime-js` source
+  (`RealtimeChannel.subscribe()` only adds `access_token` to the join
+  payload if `socket.accessTokenValue` is already populated synchronously
+  when `.subscribe()` runs; it never awaits pending auth). Because every
+  relevant RLS policy is scoped `TO authenticated`, every event was
+  evaluated as `anon` and silently dropped — connection showed
+  "connected", nothing ever arrived. Fix: both realtime hooks now
+  `await supabase.auth.getSession()` and
+  `await supabase.realtime.setAuth(session.access_token)` before calling
+  `.channel().subscribe()`. This is a fix to the existing shared
+  mechanism's wiring, not an RLS change, a new table, or an architecture
+  replacement — the same `TO authenticated` policies from 4b.2 are
+  untouched and now correctly recognized.
+- Verified live (not from source inspection): re-traced the WebSocket
+  join after the fix and confirmed `access_token` now carries a valid
+  `role: authenticated` JWT. Sent six synthetic, HMAC-signed inbound
+  webhook events (safe test mechanism per Phase 4a, zero real Meta
+  contact) into the existing unlinked test conversation
+  (`e1062a10-617b-4c2d-931e-67440e7281a7`) and confirmed, without any
+  manual refresh: list reorder + cue dot on `/conversations` and `/chat`
+  (Admin, 1440×900, 390×844, 375×812); cue clears immediately on opening
+  the conversation; thread live-append with no duplicates on both
+  surfaces (`/conversations` flat list, `/chat` day-separated); forced a
+  raw WebSocket close mid-session and confirmed the indicator visibly
+  transitions connected → "Reconnecting…" (with correct sr-only label) →
+  connected once realtime-js auto-reconnects; `aria-live="polite"` present
+  on both thread containers; no horizontal overflow at any viewport; no
+  console errors at any point. All synthetic test messages deleted and
+  `conversations.updated_at` restored to its exact original value
+  (`2026-08-22 12:10:14.706643+00`) after each round — confirmed via SQL.
+- Not verified live: Staff-role behavior for this phase's live-update
+  checks — no Staff login credentials were available, and resetting a
+  real user's password to obtain them was judged out of scope (user/role
+  management is admin/Supabase-side per §15, not something to route
+  around for a test). Verified the authorization boundary structurally
+  instead: RLS policies are completely unchanged by this fix, and the one
+  live-tested conversation has `lead_id: null`, so `assigned_to_id` never
+  matches a staff `auth.uid()` regardless of Realtime — a staff session
+  gets nothing from this conversation whether or not Realtime is
+  involved. True own-send double-delivery dedupe was verified by code
+  reading only (id-based dedupe in `useLiveMessages`), not a live outbound
+  send, per this phase's explicit constraint against outbound Meta API
+  activity.
+- `npm run lint` / `npx tsc --noEmit` / `npm run build`: all clean.
+- Not committed, not pushed. Phase 4b.4 not started — awaiting explicit
+  approval.
+
+### 2026-08-30 — Phase 4b.2: Supabase Realtime backend/subscription foundation
+- Phase: 4b.2 only (§32/§34). No UI wiring, no visual live-update behavior,
+  no outbound-send verification, no `/chat`/`/conversations` consolidation,
+  no styling migration, no Coexistence. Not committed, not pushed.
+- Before writing any code, verified (not assumed) how Supabase Realtime's
+  Postgres Changes interacts with this project's RLS: confirmed via
+  current Supabase docs ("database records are sent only to clients who
+  are allowed to read them based on your RLS policies" — a different,
+  older mechanism than the newer Broadcast/Presence "Realtime
+  Authorization" feature, which is not needed here) and by reading the
+  actual live policy definitions for `conversations`/`messages`
+  (`conversations_select_admin_or_owner`, `messages_select_admin_or_owner`
+  — both `private.is_admin() OR EXISTS (... assigned_to_id = auth.uid())`,
+  correctly admin-only for unlinked/`lead_id IS NULL` conversations).
+  Conclusion: no new RLS policy or schema is required — the existing
+  policies already give Postgres Changes exactly the right per-client
+  scoping. Also confirmed the correct project (`hivuaquqlwfwlbgtooko`,
+  "afitcrm") against `NEXT_PUBLIC_SUPABASE_URL` before touching anything —
+  a second, similarly-named but unrelated project also exists on the same
+  account.
+- Database change (via `apply_migration`, the git-and-schema-safety hook
+  stayed active throughout): `alter publication supabase_realtime add
+  table public.conversations, public.messages;` — the only schema-adjacent
+  change made. Verified live afterward via `pg_publication_tables`.
+  `get_advisors` (security) shows only one pre-existing, unrelated finding
+  (leaked-password-protection disabled) — nothing introduced by this
+  change.
+- Code: one new file, `lib/realtime/conversations.ts` —
+  `useConversationListRealtime()` (list-level, no client-side filter,
+  relies entirely on RLS for scoping) and `useMessageRealtime(
+  conversationId, onMessage)` (thread-level, filtered by
+  `conversation_id` for traffic only, not for authorization). Both return
+  a `connecting | connected | reconnecting | disconnected` state. This is
+  the one shared mechanism §34 requires for both `/conversations` and
+  `/chat` — neither page consumes it yet (that's 4b.3).
+- A real lint bug was caught and fixed during this phase: mutating a ref's
+  `.current` during render (the "keep latest callback" pattern) is now
+  flagged by this project's ESLint config — fixed by moving the ref
+  update into its own `useEffect`.
+- Verified: lint/tsc/build all clean. `git status` confirms only
+  `lib/realtime/` (new) plus this Session Log entry changed — no
+  component, no `/conversations` or `/chat` file touched. `afit-verify`
+  was not invoked — there is no browser-observable behavior yet to check
+  (nothing renders from this file), consistent with its own scope.
+- Known limitation, not a blocker: Realtime's per-client access-policy
+  cache is refreshed on (re)connect or a new JWT, not instantly on every
+  RLS-relevant change elsewhere (e.g., a lead reassigned away from a
+  staff member mid-session) — self-heals on reconnect/token refresh, not
+  a security hole, but worth remembering if it's ever reported as a bug.
+  Also per Supabase's own docs, a complex joined RLS policy adds latency
+  to Realtime at scale — a non-issue at this project's current size (1
+  admin, 1 staff).
+- Not done: Phase 4b.3 (wiring this into `/conversations` and `/chat`,
+  visual live-update behavior) — explicitly not started.
+
+### 2026-08-30 — Phase 4b.1 UI/UX decisions persisted
+- Phase: 4b.1 (design only) — documentation persistence step. No product
+  code, schema, Supabase config, Skills, Agents, MCP, Hooks, Commands, or
+  Settings touched; nothing committed.
+- Finalized the Phase 4b.1 live-conversation-update UX decisions in
+  conversation across several turns, then persisted the DECIDED
+  implementation contracts (not the full design report) as new §34 —
+  visual language reuse, conversation-list re-sort + transient non-
+  persisted cue, thread auto-scroll rules, connection-state treatment,
+  accessibility requirements, multi-number/channel-agnostic UI
+  constraints, and the shared-mechanism/RLS-safe/dedupe-by-id contract
+  4b.2/4b.3 must follow — plus what's explicitly deferred (persisted
+  unread, number/channel UI, `/chat` consolidation, styling migration,
+  Coexistence).
+- Verified: re-read only §34 after writing it; no contradiction with
+  §17/§30/§31/§32 (§34 explicitly defers to them rather than restating).
+  `git status` confirms only CLAUDE.md changed.
+- Not done: Phase 4b.2 (Realtime) — explicitly not started, waiting for
+  separate explicit approval.
+
 ### 2026-08-30 — Settings (Claude Code infrastructure, section 7 of 7) — approved conclusion: no change
 - Phase: none — Claude Code infrastructure only. No product code, schema,
   package files, Skills, Agents, Commands, Hooks, or MCP config touched;
@@ -1144,3 +1290,266 @@ limits. Every session should:
   this session — efficiency is about scope, not about skipping
   verification of what was built.
 
+## 30. Current WhatsApp production architecture (added 2026-08-30)
+
+This is the current, intended production direction — not a proposal:
+
+```
+Meta Ads
+  ↓
+Central WhatsApp API number
+  ↓
+AFIT CRM inbox
+  ↓
+Auto assignment / manual assignment
+  ↓
+Staff
+  ↓
+CRM live chat
+  ↓
+Same central API number
+  ↓
+Customer
+```
+
+One shared WhatsApp Business number, owned by the business, is the only
+channel customers message and the only channel staff reply through — staff
+never message from their own personal WhatsApp number in this flow. This
+matches what's already built (§26): inbound webhook → `conversations`/
+`messages` → staff reply in the CRM → outbound send via the same number's
+Cloud API credentials.
+
+One relevant fact not previously written down anywhere in this file:
+`conversations` already has a `phone_number_id` column, and both the
+webhook (matching) and outbound sender (`lib/whatsapp/send-message.ts`,
+which takes `phoneNumberId` as a parameter rather than reading a single
+hardcoded value) are already keyed per-conversation rather than assuming
+one global number. That wasn't a deliberate multi-number feature — it's
+just how the ingestion match key was built — but it means the foundation
+for §31 already exists at the code level, even though nothing in the UI
+surfaces number identity yet and only one number's credentials
+(`WHATSAPP_ACCESS_TOKEN`) currently exist as env vars.
+
+## 31. Future WhatsApp Coexistence — not implemented now (added 2026-08-30)
+
+Meta supports "Coexistence": a staff member's existing personal WhatsApp
+Business App number can be linked so it works alongside a central API
+number, both reachable through Meta's infrastructure. This project **may**
+support that later:
+
+```
+Staff's existing WhatsApp Business App number
+  ↕
+Meta-supported Coexistence
+  ↕
+CRM
+```
+
+**Do not implement this now.** No Coexistence API calls, no speculative
+per-staff-number schema, no unsupported Meta functionality. The only
+requirement right now is that the current architecture (§30) doesn't
+*foreclose* this later — don't design anything that hard-codes "there is
+exactly one WhatsApp number, ever" as a structural assumption throughout
+the conversation code.
+
+Concretely, this means keeping these concepts distinguishable rather than
+collapsed into one, both in code and in how new work is discussed:
+
+- **WhatsApp Business account** — the Meta-level account.
+- **WhatsApp number / `phone_number_id`** — a specific connected number;
+  already a real per-conversation column (§30).
+- **Conversation** — a `conversations` row; already tied to a
+  `phone_number_id`, not just a lead.
+- **Customer / contact** — the person on the other end of a conversation.
+  There is currently **no separate `customers` table** — the contact's
+  identity today lives implicitly on `conversations.wa_id` plus whatever
+  name Meta's webhook payload supplied, cross-referenced to `leads` by
+  exact phone match (see `app/api/webhooks/whatsapp/route.ts`). This
+  section is a conceptual/target model for how to *think about* the
+  architecture, not an instruction to create a `customers` table — that
+  still needs the same explicit approval as any new table (§3). Note this
+  is a different question from the "Customers" *nav module* in §24, which
+  is about a sidebar destination and remains unconfirmed/deprioritized.
+- **Lead** — the sales-pipeline entity, real and central (§3–§6).
+- **Assigned staff** — who owns the lead (`leads.assigned_to_id`).
+- **Channel/source** — currently implicitly always "WhatsApp"; there is no
+  `channel` column anywhere observed in `conversations`. Not a problem to
+  fix now — just something to keep in mind before ever assuming
+  WhatsApp is the only channel this schema could describe.
+
+The important distinction for Coexistence specifically: **which staff
+member is assigned to a lead is not the same fact as which WhatsApp number
+a conversation runs through.** Today those two things happen to be
+implicitly entangled only through the central-number architecture (§30) —
+every conversation uses the same number regardless of who's assigned.
+Don't write new conversation code that makes "assigned staff" and
+"the number in use" the same variable, even though today there's only ever
+one number, so a future per-staff number doesn't require re-deriving the
+whole conversation model.
+
+## 32. Phase 4a/4b — reconciled current status (added 2026-08-30)
+
+§25/§26 describe Phase 4a (manual Meta setup) and Phase 4b (the full
+webhook+send+Realtime+UI build) as originally planned. That plan is now
+out of date relative to what actually exists in the codebase — this
+section is the current source of truth; §25/§26 are kept for history.
+
+**Phase 4a — satisfied.** The required env vars
+(`WHATSAPP_VERIFY_TOKEN`/`WHATSAPP_APP_SECRET`/`WHATSAPP_ACCESS_TOKEN`)
+already exist and were confirmed live-verifiable (2026-08-30 session, §0).
+
+**Already built and already committed** (from sessions before this
+document was reconciled, under an unrelated "Phase B3/B5" naming scheme
+that was never written into this file):
+- Inbound webhook (`app/api/webhooks/whatsapp/route.ts`): Meta handshake,
+  HMAC signature verification, message parsing, conversation find-or-
+  create, message persistence with dedup, status updates, CTWA
+  `referral`→`lead.ad_id` capture.
+- Outbound sender (`lib/whatsapp/send-message.ts`): Cloud API text send,
+  24-hour-window error handling.
+- Conversations UI at `/conversations`: three-column desktop workspace
+  (list + thread + lead-details panel — the "gap to close" §23 flagged is
+  already closed), mobile full-screen list↔thread↔bottom-sheet. RLS-scoped
+  correctly (admin sees all, staff only their assigned leads' threads,
+  unlinked conversations admin-only, enforced server-side not just hidden).
+- An orphaned-looking `/chat` route exists in parallel to `/conversations`
+  — not dead code, `lib/actions/messages.ts` revalidates both on every
+  send. Needs a scoping decision (keep both intentionally, or retire one)
+  at some point — not blocking anything.
+
+**Still genuinely open (the real remaining Phase 4b scope):**
+1. **Supabase Realtime** on `messages`/`conversations` — confirmed zero
+   `realtime`/`channel` usage anywhere in the codebase. New messages
+   require a manual refresh. This is the single largest remaining piece.
+2. **Multi-number/channel-ready conversation architecture** per §30/§31 —
+   not urgent, not blocking, but the next time conversation code is
+   touched, keep the distinctions in §31 in mind rather than deepening any
+   single-number assumption.
+3. **Outbound send, verified against the real Meta API** — never actually
+   exercised (only structurally verified by code review) in any session on
+   record. When explicitly authorized, test with the controlled number
+   `8075287437` rather than a real customer's number.
+4. Style/consistency cleanup: `/conversations` components still use raw
+   Tailwind `slate-*` colors rather than the §2 design tokens (cosmetic,
+   not urgent).
+
+**Do not** fold Realtime, Coexistence, or the WhatsApp Numbers UI's
+backend persistence into a Phase 4a re-verification, and do not treat any
+of items 1–4 above as already done just because most of the surrounding
+system is. Each is its own scoped piece of work under §27's one-phase
+discipline.
+
+### WABIS (reconciled from AGENTS.md, 2026-08-30)
+
+`WEBHOOK_DISCOVERY_MODE` in `app/api/webhooks/whatsapp/route.ts` (payload-
+shape logging, engaged only when that env var is explicitly set, never
+logs values/headers, always returns 200) exists for a temporary,
+separate WhatsApp integration called **WABIS**. AGENTS.md is the only
+place this was previously documented at all. Treat as still true here:
+WABIS is temporary — do not design the core CRM conversation model around
+it, do not assume its webhook functionality exists, do not invent or
+guess its payload format. If WABIS integration work happens, it must stay
+isolated behind a clear boundary, and the CRM must keep working after
+WABIS is eventually removed. This is unrelated to the central-number
+architecture in §30 — don't conflate the two.
+
+### Phase B3 — WhatsApp media download (already complete, reconciled from
+AGENTS.md, 2026-08-30)
+
+Also already built and committed, under the same pre-existing "Phase B"
+naming scheme as the webhook/sender work above: **on-demand Meta media
+download to private Supabase Storage** — commits `54a8c11`, `3c0f004`.
+Verified end-to-end against a real Meta-delivered inbound image (not a
+simulated payload) via Meta's TEST WhatsApp Business Account (test WABA
+`1093817206430417`, test phone number ID `1259504780587760` — test-scoped
+identifiers, not production). Confirmed working: media metadata lookup,
+download via the test-scoped access token, MIME type + file size
+validation, SHA-256 integrity verification, upload to the private
+`whatsapp-media` Supabase Storage bucket, `media_storage_path` written to
+the message record, signed URL retrieval, and reuse of already-downloaded
+media without a repeat Meta download. The production WABA was never
+accessed during this work. Treat this as done — verify it still works
+before rebuilding any part of it, don't re-implement it from scratch.
+
+## 33. AGENTS.md — status and relationship to this document (added 2026-08-30)
+
+A second instruction file, `AGENTS.md`, exists at the repo root — it
+predates this reconciliation and is **not** part of Claude Code's
+automatic context in this project (confirmed: it doesn't load
+automatically the way this file does). It overlapped, and in one place
+outright conflicted with, the rules here.
+
+**This file (CLAUDE.md) is the single authoritative source for current
+rules and status.** Where the two ever disagree, this file wins — in
+particular: **no automatic commits, ever**, regardless of what AGENTS.md
+said before this reconciliation (§18, §27).
+
+AGENTS.md is kept, not deleted, because: (a) "AGENTS.md" is the native
+convention some other AI coding tools default to reading, and this repo
+may still be touched by one; (b) Next.js 16's own dev-server tooling
+auto-appends a generated instructions block to it (left completely
+untouched — don't fight or rewrite tooling-generated content); (c) it
+held real historical/technical detail worth keeping as a record rather
+than deleting.
+
+That genuinely useful detail has been folded into this file already:
+security/permission specifics → §16; audit event taxonomy → §13; calling
+scope → §19; architecture priority tiebreaker → §21; WABIS and the Phase
+B3 media-download record → §32 above. AGENTS.md itself was corrected in
+two places during this reconciliation: its git-checkpoint section no
+longer says to auto-commit after a phase, and its "current immediate
+priority" (a since-resolved security checklist) is now marked resolved
+and points here instead of reading like an open emergency.
+
+## 34. Phase 4b.1 — live conversation update UX (decided, added 2026-08-30)
+
+Design-only phase, completed before any Realtime code. Extends §32's Phase
+4b scope with the UI/UX contract that §32's Realtime work (4b.2/4b.3) must
+follow. These are implementation contracts, not new architecture — they
+don't restate §17 (viewports/a11y basics), §30 (central-number
+architecture), or §31 (multi-number concepts); read those alongside this.
+
+**Visual language:** reuse the existing WhatsApp-style bubbles/list/tokens
+exactly — no new colors, components, or layout. `/conversations` and
+`/chat` get identical live-update behavior through one shared mechanism.
+
+**Conversation list:** re-sorts to most-recent on any new message,
+whether or not that conversation is open. A non-open conversation that
+receives a message gets a transient accent-dot cue, cleared the instant
+it's opened. That cue is client-memory only — no persisted unread state,
+no numeric count, no `localStorage`/`sessionStorage`.
+
+**Open thread:** new messages append live. Auto-scroll only when the
+viewer is already at/near the bottom — never yank their scroll position
+while they're reading older messages. Sending your own message may always
+scroll to bottom. A "New message ↓" affordance for the scrolled-up case is
+optional for v1, may be cut without violating this spec.
+
+**Connection state:** connected / reconnecting / disconnected — indicator
+near the list header (never the thread header), same behavior on desktop
+and mobile. Silent (no visible chrome) when connected; reconnecting/
+disconnected use the existing `success`/`warning`/`danger` tokens. No
+large persistent status panel.
+
+**Accessibility:** incoming thread messages in an `aria-live="polite"`
+region; never steal focus on arrival; connection state has a real
+accessible label, never color alone; respect `prefers-reduced-motion`.
+
+**Multi-number/channel readiness:** no UI may assume or display one
+WhatsApp number — never show or hardcode `phone_number_id`; all copy
+stays channel-agnostic; no number/channel selector or badge in this
+phase.
+
+**Shared architecture contract for 4b.2/4b.3:** one Realtime subscription
+mechanism serves both `/conversations` and `/chat` — never two parallel
+implementations. Subscriptions must be conversation-scoped and RLS-safe:
+a staff client must never receive an event for a conversation it can't
+access. De-duplicate by stable identifier (`messages.id` /
+`wa_message_id`) only, never by content/timestamp heuristics.
+
+**Explicitly deferred, not part of 4b.2/4b.3:** a persisted per-staff
+unread system, numeric unread counts, a last-message-preview snippet in
+list rows, any number/channel indicator UI, `/chat` vs `/conversations`
+consolidation, the `/conversations` styling/token migration, live
+assignment-change propagation, Coexistence, and any staff-personal-
+WhatsApp-Business-App integration.

@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { formatRelative } from "@/lib/format";
 import type { ConversationListItem } from "@/lib/conversations";
+import { useLiveConversationList } from "@/lib/realtime/conversations";
+import { ConnectionIndicator } from "@/components/conversations/ConnectionIndicator";
 
 const STATUS_DOT: Record<string, string> = {
   open: "bg-emerald-500",
@@ -16,7 +18,7 @@ const STATUS_DOT: Record<string, string> = {
 // different destination route. Defaults to the existing CRM route so the
 // current caller needs no change.
 export function ConversationListPanel({
-  conversations,
+  conversations: initialConversations,
   basePath = "/conversations",
 }: {
   conversations: ConversationListItem[];
@@ -25,6 +27,9 @@ export function ConversationListPanel({
   const router = useRouter();
   const pathname = usePathname();
   const [search, setSearch] = useState("");
+
+  const activeId = pathname.startsWith(`${basePath}/`) ? pathname.slice(basePath.length + 1) : null;
+  const { conversations, cuedIds, connectionState } = useLiveConversationList(initialConversations, activeId);
 
   useEffect(() => {
     for (const conversation of conversations) {
@@ -44,6 +49,7 @@ export function ConversationListPanel({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      <ConnectionIndicator state={connectionState} />
       <div className="shrink-0 border-b border-slate-100 p-2.5">
         <input
           value={search}
@@ -87,13 +93,21 @@ export function ConversationListPanel({
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">
-                      <Link
-                        href={href}
-                        onClick={(e) => e.stopPropagation()}
-                        className="truncate text-sm font-medium text-slate-900"
-                      >
-                        {name}
-                      </Link>
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        {!active && cuedIds.has(conversation.id) && (
+                          <span
+                            aria-label="New activity"
+                            className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500"
+                          />
+                        )}
+                        <Link
+                          href={href}
+                          onClick={(e) => e.stopPropagation()}
+                          className="truncate text-sm font-medium text-slate-900"
+                        >
+                          {name}
+                        </Link>
+                      </span>
                       <span className="shrink-0 text-[11px] text-slate-500">{formatRelative(conversation.updated_at)}</span>
                     </div>
                     <div className="mt-0.5 flex items-center gap-1.5">

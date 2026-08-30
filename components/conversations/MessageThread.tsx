@@ -3,8 +3,31 @@
 import { useEffect, useRef } from "react";
 import { MessageBubble } from "@/components/conversations/MessageBubble";
 import type { MessageListItem } from "@/lib/conversations";
+import type { MessageUpdateSource } from "@/lib/realtime/conversations";
 
 const GROUP_WINDOW_MS = 5 * 60 * 1000;
+const NEAR_BOTTOM_PX = 120;
+
+// §34: an own-send/fresh-open ("initial") always jumps to the latest
+// message; a Realtime-delivered message ("realtime") only follows if the
+// viewer is already near the bottom -- never yanks them away from history
+// they're reading. The scrollable ancestor is marked with
+// data-scroll-container by the page (this component isn't the scroll
+// container itself), so it's located via `closest` rather than assumed to
+// be a fixed number of DOM levels up.
+function scrollToLatest(bottom: HTMLDivElement, source: MessageUpdateSource) {
+  const container = bottom.closest<HTMLElement>("[data-scroll-container]");
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const behavior: ScrollBehavior = reduceMotion ? "auto" : "smooth";
+
+  if (source === "initial" || !container) {
+    bottom.scrollIntoView({ block: "end", behavior: source === "initial" ? "auto" : behavior });
+    return;
+  }
+
+  const nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < NEAR_BOTTOM_PX;
+  if (nearBottom) bottom.scrollIntoView({ block: "end", behavior });
+}
 
 function isSameDay(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
@@ -24,15 +47,18 @@ function dayLabel(date: Date): string {
 // here rather than in MessageBubble -- a single bubble has no way to know
 // about the message before it. MessageBubble itself is unchanged in
 // contract; this only decides spacing and whether to insert a separator.
-export function MessageThread({ messages }: { messages: MessageListItem[] }) {
+export function MessageThread({
+  messages,
+  lastUpdateSource = "initial",
+}: {
+  messages: MessageListItem[];
+  lastUpdateSource?: MessageUpdateSource;
+}) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  // Jumps straight to the latest message -- on initial load and again
-  // whenever the message count changes (e.g. after a send re-renders this
-  // list with the new outbound message appended).
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ block: "end" });
-  }, [messages.length]);
+    if (bottomRef.current) scrollToLatest(bottomRef.current, lastUpdateSource);
+  }, [messages.length, lastUpdateSource]);
 
   if (messages.length === 0) {
     return <p className="py-8 text-center text-sm text-slate-500">No messages in this conversation yet.</p>;
@@ -71,7 +97,7 @@ export function MessageThread({ messages }: { messages: MessageListItem[] }) {
   }
 
   return (
-    <div className="space-y-0">
+    <div className="space-y-0" aria-live="polite" aria-relevant="additions">
       {items}
       <div ref={bottomRef} />
     </div>
