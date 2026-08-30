@@ -14,6 +14,53 @@ session has real state instead of re-reading intentions.
 ## 0. Session Log
 <!-- Append one entry per session. Newest at top. -->
 
+### 2026-08-30 — Phase 7 (§8): Deals workspace
+- Phase: Deals only, per the approved next-phase plan. UI-level only -- no
+  schema, migration, RLS, or Supabase config change; no new query
+  function; no mobile nav entry (§1 lists "quotations"/deal-adjacent work
+  only under Desktop's full CRM operations, not Mobile's daily-work
+  priorities, same reasoning already applied to Quotations last phase).
+  Nothing touched in `lib/realtime/`, `lib/whatsapp/`, `/conversations`,
+  `/chat`, Follow-ups, Site Visits, Quotations, Reports, or Settings. Not
+  committed, not pushed.
+- Built `/deals` (`app/(app)/deals/page.tsx`), calling the existing
+  `getLeads({})` unmodified and filtering in-memory to
+  `status === "quotation" || status === "negotiation"` -- a live pipeline
+  snapshot, deliberately different from `/quotations` (a ledger filtered
+  by `quotation_amount` presence, which keeps showing Won/Lost leads that
+  still carry an old quote). New `DealRow`/`DealCard`
+  (`components/deals/`) mirror the established Lead/Site-Visit/Quotation
+  row-card pattern but show `quotation_amount` and `job_value` as two
+  distinct fields rather than one merged value, since a lead mid-deal is
+  exactly the case where those numbers differ and both matter. Added
+  "Deals" to the desktop sidebar only, positioned right after Leads
+  (matching §8's confirmed Leads-then-Deals nav ordering) without
+  reordering any of the other existing nav items.
+- Verified live, not from source inspection: at 1440x900, confirmed the
+  one real lead (status Quotation, quotation_amount ₹2,35,000, job_value
+  ₹2,50,000) renders correctly in Deals with both commercial fields shown
+  separately. Used the real Lead Detail pipeline-stage selector to move
+  that lead to Site Visit and confirmed it correctly disappeared from
+  Deals (exclude-path); moved it to Negotiation and confirmed it correctly
+  reappeared (second include-path, Quotation being the first); confirmed
+  quotation_amount was untouched by the stage changes throughout. Restored
+  the lead to its exact original stage (Quotation) afterward -- confirmed
+  via SQL that status/quotation_amount/job_value are all back to their
+  original values. At 390x844 and 375x812: confirmed no Deals tab was
+  added to the bottom nav (still the same 5 tabs + admin More from the
+  prior phase), confirmed `/deals` still renders its mobile card view
+  correctly and responsively when reached by direct URL, confirmed no
+  horizontal overflow at either mobile size. No console errors at any
+  point.
+- Not verified live: Staff-role behavior -- no Staff login credentials
+  were available (same gap as the three prior phases). Verified
+  structurally instead: `/deals` calls `getLeads({})` completely
+  unmodified, the same already-verified admin-sees-all /
+  staff-sees-own-assigned function every other lead-derived view in this
+  app now uses -- no new authorization code was written.
+- `npm run lint` / `npx tsc --noEmit` / `npm run build`: all clean.
+- Not committed, not pushed. Not proceeding to the next phase.
+
 ### 2026-08-30 — Phase 5 (§7/§9/§10): Site Visits & Quotations as UI-level views
 - Phase: Site Visits & Quotations only, per the approved next-phase plan.
   UI-level only -- no schema, migration, RLS, or Supabase config change; no
