@@ -206,12 +206,22 @@ export async function assignLead(leadId: string, staffId: string): Promise<Actio
 export async function setLeadStatus(leadId: string, status: LeadStatus): Promise<ActionState> {
   if (!LEAD_STATUSES.includes(status)) return { error: "Invalid status." };
 
+  // "won"/"lost" must only be reachable through markLeadWon/markLeadLost,
+  // which capture the job_value/lost_reason that go with those transitions.
+  // Rejected here server-side -- the UI already redirects instead of
+  // calling this, but that's a client-side courtesy, not enforcement; a
+  // direct call (or a request that skips the UI) must be blocked too.
+  if (status === "won" || status === "lost") {
+    return { error: "Use Mark as Won or Mark as Lost to set this status." };
+  }
+
   const supabase = await createClient();
   const accessError = await checkLeadAccess(supabase, leadId);
   if (accessError) return accessError;
 
-  const update: LeadUpdate = { status };
-  if (status !== "lost") update.lost_reason = null;
+  // status is never "lost" here (rejected above), so lost_reason is always
+  // cleared -- this path can only move a lead between open/invalid stages.
+  const update: LeadUpdate = { status, lost_reason: null };
   const { error } = await supabase.from("leads").update(update).eq("id", leadId);
   revalidateLead(leadId);
   if (error) return { error: error.message };

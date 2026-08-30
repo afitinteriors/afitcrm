@@ -11,6 +11,10 @@ function formatDueTime(dueTime: string | null): string {
   return dueTime.slice(0, 5);
 }
 
+function isDueToday(dueDate: string): boolean {
+  return dueDate === new Date().toISOString().slice(0, 10);
+}
+
 export function FollowUpsCard({ leadId, followUps }: { leadId: string; followUps: FollowUpRow[] }) {
   const pending = followUps.filter((f) => f.status === "pending");
   const completed = followUps.filter((f) => f.status === "completed");
@@ -19,30 +23,38 @@ export function FollowUpsCard({ leadId, followUps }: { leadId: string; followUps
     <Card title="Follow-ups">
       <div className="space-y-2">
         {pending.length === 0 && completed.length === 0 && (
-          <p className="text-sm text-slate-500">No follow-ups yet.</p>
+          <p className="text-sm text-muted-foreground">No follow-ups yet.</p>
         )}
 
         {pending.map((followUp) => {
           const overdue = isFollowUpOverdue(followUp);
+          const dueToday = !overdue && isDueToday(followUp.due_date);
           return (
             <div
               key={followUp.id}
-              className="flex items-center justify-between gap-3 rounded-md border border-slate-200 px-3 py-2"
+              className={`flex items-center justify-between gap-3 rounded-md border px-3 py-2 ${
+                overdue ? "border-danger/30 bg-danger-soft/40" : "border-border"
+              }`}
             >
               <div className="min-w-0">
-                <p className="text-sm font-medium text-slate-900">
+                <p className="text-sm font-medium text-foreground">
                   {FOLLOW_UP_TYPE_LABELS[followUp.type]}
                   {overdue && (
-                    <span className="ml-2 rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-medium text-red-700">
+                    <span className="ml-2 rounded-full bg-danger-soft px-2 py-0.5 text-[11px] font-medium text-danger">
                       Overdue
                     </span>
                   )}
+                  {dueToday && (
+                    <span className="ml-2 rounded-full bg-warning-soft px-2 py-0.5 text-[11px] font-medium text-warning">
+                      Due today
+                    </span>
+                  )}
                 </p>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-muted-foreground">
                   {formatDate(followUp.due_date)}
                   {formatDueTime(followUp.due_time) ? ` · ${formatDueTime(followUp.due_time)}` : ""}
                 </p>
-                {followUp.notes && <p className="mt-1 text-xs text-slate-600">{followUp.notes}</p>}
+                {followUp.notes && <p className="mt-1 text-xs text-muted-foreground">{followUp.notes}</p>}
               </div>
               <CompleteFollowUpButton followUpId={followUp.id} leadId={leadId} />
             </div>
@@ -50,16 +62,16 @@ export function FollowUpsCard({ leadId, followUps }: { leadId: string; followUps
         })}
 
         {completed.length > 0 && (
-          <details className="pt-1">
-            <summary className="cursor-pointer text-xs font-medium text-slate-500">
+          <details>
+            <summary className="flex min-h-11 cursor-pointer items-center text-xs font-medium text-muted-foreground">
               Completed ({completed.length})
             </summary>
             <div className="mt-2 space-y-2">
               {completed.map((followUp) => (
-                <div key={followUp.id} className="rounded-md border border-slate-100 bg-slate-50 px-3 py-2">
-                  <p className="text-sm text-slate-500 line-through">{FOLLOW_UP_TYPE_LABELS[followUp.type]}</p>
-                  <p className="text-xs text-slate-400">{formatDate(followUp.due_date)}</p>
-                  {followUp.notes && <p className="mt-1 text-xs text-slate-500">{followUp.notes}</p>}
+                <div key={followUp.id} className="rounded-md border border-border bg-muted px-3 py-2">
+                  <p className="text-sm text-muted-foreground line-through">{FOLLOW_UP_TYPE_LABELS[followUp.type]}</p>
+                  <p className="text-xs text-muted-foreground">{formatDate(followUp.due_date)}</p>
+                  {followUp.notes && <p className="mt-1 text-xs text-muted-foreground">{followUp.notes}</p>}
                 </div>
               ))}
             </div>
@@ -67,7 +79,7 @@ export function FollowUpsCard({ leadId, followUps }: { leadId: string; followUps
         )}
       </div>
 
-      <div className="mt-4 border-t border-slate-100 pt-4">
+      <div className="mt-4 border-t border-border pt-4">
         <CreateFollowUpForm leadId={leadId} />
       </div>
     </Card>

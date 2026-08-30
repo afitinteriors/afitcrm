@@ -1,4 +1,5 @@
 import { LoginForm } from "@/components/LoginForm";
+import { BuildingEmblem } from "@/components/BuildingEmblem";
 import { sanitizeRedirectPath } from "@/lib/safe-redirect";
 
 export default async function LoginPage({
@@ -47,16 +48,5 @@ export default async function LoginPage({
         </div>
       </div>
     </div>
-  );
-}
-
-function BuildingEmblem({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 64 64" className={className} fill="none" xmlns="http://www.w3.org/2000/svg">
-      <rect x="6" y="30" width="10" height="28" rx="2" fill="#16A34A" fillOpacity="0.55" />
-      <rect x="19" y="18" width="12" height="40" rx="2" fill="#22C55E" />
-      <rect x="34" y="24" width="11" height="34" rx="2" fill="#16A34A" fillOpacity="0.75" />
-      <rect x="48" y="10" width="10" height="48" rx="2" fill="#4ADE80" />
-    </svg>
   );
 }

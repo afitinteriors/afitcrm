@@ -10,8 +10,8 @@ export default async function EditLeadPage({ params }: PageProps<"/leads/[id]/ed
 
   return (
     <div className="max-w-2xl">
-      <h1 className="text-xl font-semibold text-slate-900">Edit Lead</h1>
-      <p className="mt-1 text-sm text-slate-500">{lead.customer_name || lead.phone}</p>
+      <h1 className="text-xl font-semibold text-foreground">Edit Lead</h1>
+      <p className="mt-1 text-sm text-muted-foreground">{lead.customer_name || lead.phone}</p>
       <div className="mt-6">
         <LeadForm action={updateLead} lead={lead} submitLabel="Save changes" />
       </div>

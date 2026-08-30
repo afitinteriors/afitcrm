@@ -26,7 +26,12 @@ function sanitizeForFilter(value: string) {
 // than relying on the database. Staff sees only assigned_to_id = their own
 // id; admin is unrestricted. A missing profile fails closed to no access.
 
-export async function getLeads(filters: LeadFilters): Promise<LeadRow[]> {
+export type LeadListRow = LeadRow & { assigned: { display_name: string | null } | null };
+
+// Same assigned:profiles(display_name) embed as getUncontactedLeads() below --
+// existing, already-proven pattern, not a new query shape. Needed so the
+// leads list can show ownership without an N+1 lookup per row.
+export async function getLeads(filters: LeadFilters): Promise<LeadListRow[]> {
   const profile = await getCurrentProfile();
   if (!profile) return [];
 
@@ -34,7 +39,7 @@ export async function getLeads(filters: LeadFilters): Promise<LeadRow[]> {
 
   let query = supabase
     .from("leads")
-    .select("*")
+    .select("*, assigned:profiles(display_name)")
     .order("created_at", { ascending: false });
 
   if (profile.role === "staff") {
@@ -54,7 +59,7 @@ export async function getLeads(filters: LeadFilters): Promise<LeadRow[]> {
 
   const { data, error } = await query;
   if (error) throw new Error(error.message);
-  return data ?? [];
+  return (data ?? []) as unknown as LeadListRow[];
 }
 
 export async function getCampaignOptions(): Promise<string[]> {
@@ -83,7 +88,17 @@ export type DashboardStats = {
   wonJobs: number;
   lostLeads: number;
   revenue: number;
+  // Full per-status tally for the pipeline visualization -- computed from
+  // the same rows already fetched below (no extra Supabase query). Covers
+  // every LeadStatus, including the ones the named fields above don't
+  // (contacted, negotiation, invalid), so the dashboard's status breakdown
+  // never silently drops leads that are in one of those stages.
+  statusBreakdown: Record<LeadStatus, number>;
 };
+
+const EMPTY_STATUS_BREAKDOWN: Record<LeadStatus, number> = Object.fromEntries(
+  LEAD_STATUSES.map((status) => [status, 0]),
+) as Record<LeadStatus, number>;
 
 const EMPTY_DASHBOARD_STATS: DashboardStats = {
   totalLeads: 0,
@@ -94,6 +109,7 @@ const EMPTY_DASHBOARD_STATS: DashboardStats = {
   wonJobs: 0,
   lostLeads: 0,
   revenue: 0,
+  statusBreakdown: EMPTY_STATUS_BREAKDOWN,
 };
 
 export async function getDashboardStats(): Promise<DashboardStats> {
@@ -112,6 +128,9 @@ export async function getDashboardStats(): Promise<DashboardStats> {
 
   const rows = data ?? [];
   const count = (status: LeadStatus) => rows.filter((row) => row.status === status).length;
+  const statusBreakdown = Object.fromEntries(
+    LEAD_STATUSES.map((status) => [status, count(status)]),
+  ) as Record<LeadStatus, number>;
 
   return {
     totalLeads: rows.length,
@@ -124,6 +143,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     revenue: rows
       .filter((row) => row.status === "won")
       .reduce((sum, row) => sum + (row.job_value ?? 0), 0),
+    statusBreakdown,
   };
 }
 

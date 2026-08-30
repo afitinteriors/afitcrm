@@ -117,6 +117,45 @@ export async function getConversationForLead(leadId: string): Promise<Conversati
   return { ...conversation, lastMessage: messages?.[0] ?? null };
 }
 
+export type LeadEngagement = {
+  hasConversation: boolean;
+  messageCount: number;
+  hasInbound: boolean;
+  hasOutbound: boolean;
+};
+
+// Aggregate for the auto qualification score (lib/qualification-score.ts) --
+// same RLS (conversations_select_admin_or_owner / messages_select_admin_or_owner)
+// as every other query in this file, so a staff caller only ever aggregates
+// messages on a lead they can already see. Same "more than one conversations
+// row is possible" caveat as getConversationForLead, so this sums across all
+// of them rather than assuming exactly one.
+export async function getLeadEngagement(leadId: string): Promise<LeadEngagement> {
+  const profile = await getCurrentProfile();
+  if (!profile) return { hasConversation: false, messageCount: 0, hasInbound: false, hasOutbound: false };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("conversations")
+    .select("id, messages(direction)")
+    .eq("lead_id", leadId);
+
+  if (error || !data || data.length === 0) {
+    return { hasConversation: false, messageCount: 0, hasInbound: false, hasOutbound: false };
+  }
+
+  const messages = (data as unknown as { messages: { direction: string }[] }[]).flatMap(
+    (c) => c.messages ?? [],
+  );
+
+  return {
+    hasConversation: true,
+    messageCount: messages.length,
+    hasInbound: messages.some((m) => m.direction === "inbound"),
+    hasOutbound: messages.some((m) => m.direction === "outbound"),
+  };
+}
+
 export type MessageListItem = Omit<MessageRow, "raw_payload">;
 
 const MESSAGE_LIST_COLUMNS =

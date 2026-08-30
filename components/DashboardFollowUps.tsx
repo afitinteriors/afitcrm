@@ -16,15 +16,15 @@ export function DashboardFollowUps({ followUps }: { followUps: UpcomingFollowUp[
   const router = useRouter();
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
-      <div className="border-b border-slate-200 px-4 py-3">
-        <h2 className="text-sm font-semibold text-slate-900">Follow-ups due</h2>
+    <div className="rounded-xl border border-border bg-card shadow-sm">
+      <div className="border-b border-border px-4 py-3">
+        <h2 className="text-sm font-semibold text-foreground">Follow-ups due</h2>
       </div>
 
       {followUps.length === 0 ? (
-        <p className="px-4 py-6 text-center text-sm text-slate-500">No follow-ups due</p>
+        <p className="px-4 py-6 text-center text-sm text-muted-foreground">No follow-ups due</p>
       ) : (
-        <ul className="divide-y divide-slate-100">
+        <ul className="divide-y divide-border">
           {followUps.map((followUp) => {
             const overdue = isFollowUpOverdue(followUp);
             const name = followUp.lead?.customer_name || "Unnamed lead";
@@ -43,18 +43,18 @@ export function DashboardFollowUps({ followUps }: { followUps: UpcomingFollowUp[
                   onKeyDown={(e) => {
                     if (e.key === "Enter") router.push(href);
                   }}
-                  className="flex min-h-11 cursor-pointer items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-slate-50 active:bg-slate-100"
+                  className="flex min-h-11 cursor-pointer items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-secondary active:bg-secondary"
                 >
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-slate-900">
+                    <p className="truncate text-sm font-medium text-foreground">
                       {FOLLOW_UP_TYPE_LABELS[followUp.type]} · {name}
                       {overdue && (
-                        <span className="ml-2 rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-medium text-red-700">
+                        <span className="ml-2 rounded-full bg-danger-soft px-2 py-0.5 text-[11px] font-medium text-danger">
                           Overdue
                         </span>
                       )}
                     </p>
-                    <p className="text-xs text-slate-500">
+                    <p className="text-xs text-muted-foreground">
                       {formatDate(followUp.due_date)}
                       {formatDueTime(followUp.due_time) ? ` · ${formatDueTime(followUp.due_time)}` : ""}
                     </p>

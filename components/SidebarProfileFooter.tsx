@@ -15,20 +15,20 @@ export async function SidebarProfileFooter() {
   return (
     <>
       <div className="flex items-center gap-3 rounded-lg px-2 py-2">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-700 text-sm font-semibold text-white">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sidebar-primary text-sm font-semibold text-sidebar-primary-foreground">
           {(profile?.displayName ?? "?").charAt(0).toUpperCase()}
         </div>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-white">
+          <p className="truncate text-sm font-medium text-sidebar-foreground">
             {profile?.displayName ?? "Unknown user"}
           </p>
-          <p className="truncate text-xs text-slate-400">
+          <p className="truncate text-xs text-sidebar-muted">
             {profile ? (ROLE_LABELS[profile.role] ?? profile.role) : ""}
           </p>
         </div>
       </div>
       <div className="mt-1 px-2">
-        <SignOutButton className="text-xs font-medium text-slate-400 transition-colors hover:text-white disabled:opacity-60" />
+        <SignOutButton className="text-xs font-medium text-sidebar-muted transition-colors hover:text-sidebar-foreground disabled:opacity-60" />
       </div>
     </>
   );

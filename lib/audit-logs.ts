@@ -76,6 +76,40 @@ export const getAuditLogs = cache(async (filters: AuditLogFilters): Promise<Audi
   return logs;
 });
 
+const LEAD_ACTIVITY_LIMIT = 20;
+
+// Same audit_logs table and same audit_logs_select_admin_only RLS as
+// getAuditLogs -- just scoped to one lead's target_id instead of the whole
+// log, so a staff caller gets an empty array here too (RLS is the real
+// boundary; the Lead Detail page additionally only renders this section for
+// profile.role === "admin", matching the SidebarAdminNav "hide, don't gate"
+// pattern used elsewhere). No new table, no new query shape, no audit_log_viewed
+// side effect -- this isn't "viewing the audit log", it's per-lead context.
+//
+// Excludes lead_viewed: getLeadById() records one on every single page load,
+// so an active lead accumulates dozens of them and they'd drown out every
+// event that actually describes something happening to the lead. That raw
+// view trail is still fully available on the admin /audit-log page (which
+// this function and its RLS don't touch) -- this is a curated "what
+// happened" timeline, not a duplicate access log.
+export const getLeadActivity = cache(async (leadId: string): Promise<AuditLogListItem[]> => {
+  const profile = await getCurrentProfile();
+  if (!profile) return [];
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("audit_logs")
+    .select("id, created_at, action, target_type, target_id, metadata, actor:profiles(display_name, role)")
+    .eq("target_type", "lead")
+    .eq("target_id", leadId)
+    .neq("action", "lead_viewed")
+    .order("created_at", { ascending: false })
+    .limit(LEAD_ACTIVITY_LIMIT);
+
+  if (error) return [];
+  return (data ?? []) as unknown as AuditLogListItem[];
+});
+
 export type ActorOption = { id: string; display_name: string | null; role: ProfileRole };
 
 export const getActorOptions = cache(async (): Promise<ActorOption[]> => {

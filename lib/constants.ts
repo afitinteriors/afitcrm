@@ -1,6 +1,10 @@
 import type { FollowUpType, LeadStatus } from "@/lib/supabase/types";
 
-// Order mirrors the pipeline. WON/LOST/INVALID are terminal states.
+// Every value the `leads.status` column can hold. Used for schema-level
+// validation (e.g. isLeadStatus()) and internal bookkeeping -- NOT for
+// rendering the sales pipeline. "invalid" is a disposition/data-quality
+// marker (a lead that was never a real inquiry), not a stage a lead moves
+// through, so user-facing pipeline UI must use PIPELINE_STATUSES instead.
 export const LEAD_STATUSES: LeadStatus[] = [
   "new",
   "contacted",
@@ -21,6 +25,14 @@ export const OPEN_LEAD_STATUSES: LeadStatus[] = [
   "quotation",
   "negotiation",
 ];
+
+// The business pipeline: exactly these 8 stages, in funnel order. This is
+// the list every user-facing pipeline surface must render from -- the Lead
+// Detail stage selector, the Leads status filter, and the dashboard
+// pipeline visualization -- instead of LEAD_STATUSES, so "invalid" (and any
+// future non-pipeline disposition added to the schema) never shows up as a
+// pipeline stage.
+export const PIPELINE_STATUSES: LeadStatus[] = [...OPEN_LEAD_STATUSES, "won", "lost"];
 
 export const LEAD_STATUS_LABELS: Record<LeadStatus, string> = {
   new: "New",
@@ -44,6 +56,22 @@ export const LEAD_STATUS_BADGE_CLASSES: Record<LeadStatus, string> = {
   won: "bg-emerald-100 text-emerald-700 ring-emerald-600/20",
   lost: "bg-red-100 text-red-700 ring-red-600/20",
   invalid: "bg-zinc-100 text-zinc-700 ring-zinc-600/20",
+};
+
+// Solid-fill counterpart of LEAD_STATUS_BADGE_CLASSES -- same hue per status,
+// used where a pastel+ring badge doesn't apply (dashboard pipeline bar/legend
+// dots). Kept alongside the badge classes so status color stays defined in
+// exactly one place.
+export const LEAD_STATUS_BAR_CLASSES: Record<LeadStatus, string> = {
+  new: "bg-slate-400",
+  contacted: "bg-sky-500",
+  qualified: "bg-indigo-500",
+  site_visit: "bg-amber-500",
+  quotation: "bg-purple-500",
+  negotiation: "bg-orange-500",
+  won: "bg-emerald-500",
+  lost: "bg-red-500",
+  invalid: "bg-zinc-400",
 };
 
 export const LEAD_SOURCES = [

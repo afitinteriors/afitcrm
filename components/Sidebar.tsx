@@ -1,7 +1,5 @@
-"use client";
-
-import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { BuildingEmblem } from "@/components/BuildingEmblem";
+import { SidebarNavItem } from "@/components/SidebarNavItem";
 
 const NAV_ITEMS = [
   {
@@ -43,47 +41,24 @@ const NAV_ITEMS = [
 ];
 
 export function Sidebar({ footer, adminNav }: { footer: React.ReactNode; adminNav?: React.ReactNode }) {
-  const pathname = usePathname();
-
   return (
-    <aside className="hidden w-60 shrink-0 flex-col bg-slate-900 lg:flex">
-      <div className="flex items-center gap-2 px-5 py-5">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-sm font-bold text-white">
-          A
+    <aside className="hidden w-60 shrink-0 flex-col bg-gradient-dark-bg lg:flex">
+      <div className="flex items-center gap-2.5 px-5 py-5">
+        <BuildingEmblem className="h-8 w-8 shrink-0" />
+        <div className="min-w-0 font-brand leading-tight">
+          <p className="text-sm font-bold tracking-tight text-sidebar-foreground">AFIT</p>
+          <p className="text-[11px] font-medium tracking-wide text-sidebar-muted">Business OS</p>
         </div>
-        <span className="text-sm font-semibold text-white">AFIT CRM</span>
       </div>
 
-      <nav className="flex-1 space-y-1 px-3">
-        {NAV_ITEMS.map((item) => {
-          const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                active
-                  ? "bg-blue-600 text-white"
-                  : "text-slate-300 hover:bg-slate-800 hover:text-white"
-              }`}
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                className="h-5 w-5 shrink-0"
-              >
-                {item.icon}
-              </svg>
-              {item.label}
-            </Link>
-          );
-        })}
+      <nav className="flex-1 space-y-1 px-3" aria-label="Primary">
+        {NAV_ITEMS.map((item) => (
+          <SidebarNavItem key={item.href} href={item.href} label={item.label} icon={item.icon} />
+        ))}
         {adminNav}
       </nav>
 
-      <div className="border-t border-slate-800 p-3">{footer}</div>
+      <div className="border-t border-sidebar-border p-3">{footer}</div>
     </aside>
   );
 }

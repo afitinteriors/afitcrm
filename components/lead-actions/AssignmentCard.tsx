@@ -22,7 +22,7 @@ export async function AssignmentCard({
   if (profile.role !== "admin") {
     return (
       <Card title="Assigned to">
-        <p className="text-sm text-slate-900">{assigneeName || "Unassigned"}</p>
+        <p className="text-sm text-foreground">{assigneeName || "Unassigned"}</p>
       </Card>
     );
   }
@@ -31,8 +31,8 @@ export async function AssignmentCard({
 
   return (
     <Card title="Assigned to">
-      <p className="mb-3 text-sm text-slate-600">
-        Current: <span className="font-medium text-slate-900">{assigneeName || "Unassigned"}</span>
+      <p className="mb-3 text-sm text-muted-foreground">
+        Current: <span className="font-medium text-foreground">{assigneeName || "Unassigned"}</span>
       </p>
       <AssignmentSelect leadId={leadId} assignedToId={assignedToId} staff={staff} />
     </Card>

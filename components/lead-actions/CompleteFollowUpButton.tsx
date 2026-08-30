@@ -11,9 +11,9 @@ export function CompleteFollowUpButton({ followUpId, leadId }: { followUpId: str
     <form action={formAction} className="shrink-0">
       <input type="hidden" name="follow_up_id" value={followUpId} />
       <input type="hidden" name="lead_id" value={leadId} />
-      {state?.error && <p className="mb-1 text-xs text-red-600">{state.error}</p>}
+      {state?.error && <p className="mb-1 text-xs text-danger">{state.error}</p>}
       <SubmitButton
-        className="flex h-11 items-center justify-center rounded-md bg-emerald-600 px-3 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
+        className="flex h-11 items-center justify-center rounded-md bg-success px-3 text-xs font-medium text-success-foreground hover:bg-success/90 disabled:opacity-60"
         pendingLabel="Saving…"
       >
         Complete

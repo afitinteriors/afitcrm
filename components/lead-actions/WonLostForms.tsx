@@ -11,7 +11,7 @@ export function MarkWonForm({ leadId, jobValue }: { leadId: string; jobValue: nu
     <form action={formAction} className="space-y-3">
       <input type="hidden" name="lead_id" value={leadId} />
       <div>
-        <label htmlFor="won_job_value" className="block text-xs font-medium text-slate-500">
+        <label htmlFor="won_job_value" className="block text-xs font-medium text-muted-foreground">
           Job value (₹, optional)
         </label>
         <input
@@ -21,12 +21,12 @@ export function MarkWonForm({ leadId, jobValue }: { leadId: string; jobValue: nu
           min="0"
           step="1"
           defaultValue={jobValue ?? ""}
-          className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+          className="mt-1 block h-11 w-full rounded-md border border-border px-3 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
         />
       </div>
-      {state?.error && <p className="text-xs text-red-600">{state.error}</p>}
+      {state?.error && <p className="text-xs text-danger">{state.error}</p>}
       <SubmitButton
-        className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
+        className="h-11 rounded-md bg-success px-3 text-xs font-medium text-success-foreground hover:bg-success/90 disabled:opacity-60"
         pendingLabel="Saving…"
       >
         Mark as Won
@@ -42,7 +42,7 @@ export function MarkLostForm({ leadId, lostReason }: { leadId: string; lostReaso
     <form action={formAction} className="space-y-3">
       <input type="hidden" name="lead_id" value={leadId} />
       <div>
-        <label htmlFor="lost_reason" className="block text-xs font-medium text-slate-500">
+        <label htmlFor="lost_reason" className="block text-xs font-medium text-muted-foreground">
           Lost reason
         </label>
         <textarea
@@ -50,12 +50,12 @@ export function MarkLostForm({ leadId, lostReason }: { leadId: string; lostReaso
           name="lost_reason"
           defaultValue={lostReason ?? ""}
           rows={2}
-          className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+          className="mt-1 block w-full rounded-md border border-border px-3 py-2 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
         />
       </div>
-      {state?.error && <p className="text-xs text-red-600">{state.error}</p>}
+      {state?.error && <p className="text-xs text-danger">{state.error}</p>}
       <SubmitButton
-        className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-60"
+        className="h-11 rounded-md border border-danger px-3 text-xs font-medium text-danger hover:bg-danger-soft disabled:opacity-60"
         pendingLabel="Saving…"
       >
         Mark as Lost

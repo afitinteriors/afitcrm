@@ -21,14 +21,14 @@ export function CreateFollowUpForm({ leadId }: { leadId: string }) {
     <form ref={formRef} action={formAction} className="space-y-3">
       <input type="hidden" name="lead_id" value={leadId} />
       <div>
-        <label htmlFor="follow_up_type" className="block text-xs font-medium text-slate-500">
+        <label htmlFor="follow_up_type" className="block text-xs font-medium text-muted-foreground">
           Type
         </label>
         <select
           id="follow_up_type"
           name="type"
           defaultValue="follow_up"
-          className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+          className="mt-1 block h-11 w-full rounded-md border border-border bg-card px-3 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
         >
           {FOLLOW_UP_TYPES.map((type) => (
             <option key={type} value={type}>
@@ -39,7 +39,7 @@ export function CreateFollowUpForm({ leadId }: { leadId: string }) {
       </div>
       <div className="flex gap-3">
         <div className="flex-1">
-          <label htmlFor="due_date" className="block text-xs font-medium text-slate-500">
+          <label htmlFor="due_date" className="block text-xs font-medium text-muted-foreground">
             Due date
           </label>
           <input
@@ -47,35 +47,35 @@ export function CreateFollowUpForm({ leadId }: { leadId: string }) {
             name="due_date"
             type="date"
             required
-            className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+            className="mt-1 block h-11 w-full rounded-md border border-border px-3 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
           />
         </div>
         <div className="flex-1">
-          <label htmlFor="due_time" className="block text-xs font-medium text-slate-500">
+          <label htmlFor="due_time" className="block text-xs font-medium text-muted-foreground">
             Due time (optional)
           </label>
           <input
             id="due_time"
             name="due_time"
             type="time"
-            className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+            className="mt-1 block h-11 w-full rounded-md border border-border px-3 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
           />
         </div>
       </div>
       <div>
-        <label htmlFor="follow_up_notes" className="block text-xs font-medium text-slate-500">
+        <label htmlFor="follow_up_notes" className="block text-xs font-medium text-muted-foreground">
           Notes (optional)
         </label>
         <textarea
           id="follow_up_notes"
           name="notes"
           rows={2}
-          className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+          className="mt-1 block w-full rounded-md border border-border px-3 py-2 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
         />
       </div>
-      {state?.error && <p className="text-xs text-red-600">{state.error}</p>}
+      {state?.error && <p className="text-xs text-danger">{state.error}</p>}
       <SubmitButton
-        className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+        className="h-11 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
         pendingLabel="Adding…"
       >
         Add follow-up

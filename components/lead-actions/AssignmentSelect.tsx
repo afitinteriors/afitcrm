@@ -26,7 +26,7 @@ export function AssignmentSelect({
 
   return (
     <div>
-      <label htmlFor="assignment-select" className="block text-xs font-medium text-slate-500">
+      <label htmlFor="assignment-select" className="block text-xs font-medium text-muted-foreground">
         Assign to staff
       </label>
       <select
@@ -47,7 +47,7 @@ export function AssignmentSelect({
             }
           });
         }}
-        className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500 disabled:opacity-60"
+        className="mt-1 block h-11 w-full rounded-md border border-border bg-card px-3 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60"
       >
         {!currentIsSelectable && (
           <option value="" disabled>
@@ -60,7 +60,7 @@ export function AssignmentSelect({
           </option>
         ))}
       </select>
-      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+      {error && <p className="mt-1 text-xs text-danger">{error}</p>}
     </div>
   );
 }

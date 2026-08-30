@@ -1,1 +1,693 @@
-@AGENTS.md
+# AFIT Business OS — Project Architecture & Build Rules
+
+Read this file in full before touching code, every session. It is the single
+source of truth for this project's architecture. Don't re-derive these
+decisions from scratch or accept a prompt that contradicts them without
+flagging the conflict first.
+
+Work one phase at a time (see §7). At the end of a session, append a dated
+entry to §0 Session Log summarizing what was built and verified, so the next
+session has real state instead of re-reading intentions.
+
+---
+
+## 0. Session Log
+<!-- Append one entry per session. Newest at top. -->
+
+### 2026-08-30 — Phase 3 (verification only)
+- Phase: 3 (Stage-aware Lead Detail, §5/§7/§22)
+- Scope: this session did NOT write the Phase 3 implementation — it already
+  existed, uncommitted, in the working tree (`lib/lead-stage-sections.ts`,
+  `NextActionCard`, `QualificationScoreCard`, `LeadActivity`, and the gated
+  sections in `app/(app)/leads/[id]/page.tsx`), evidently from a prior
+  session that never logged or committed it. Per explicit instruction this
+  session verified that existing implementation only — did not touch
+  Dashboard, Leads-list, or the new `automation/` feature also sitting
+  uncommitted in the same working tree (see the pre-existing but unlogged
+  scope noted below).
+- Verified: `npm run lint`, `npx tsc --noEmit`, `npm run build` all clean.
+  Live Playwright verification against the single real lead in the DB
+  (`afsal test`, id `88b62dab-...`, normally at Quotation), cycling its
+  `status` through all 8 pipeline stages plus Won and Lost (via
+  MarkWonForm/MarkLostForm, not the generic selector) as Admin
+  (qetamarks@gmail.com) at 1440×900/390×844/375×812, and re-checked the
+  same lead as Staff (afitinteriors@gmail.com, the assigned owner) at the
+  same three viewports. For every stage the rendered section set matched
+  `STAGE_SECTIONS` in `lib/lead-stage-sections.ts` exactly: New/Contacted/
+  Qualified → Qualification only; Site Visit → +Site Visit; Quotation/
+  Negotiation → +Quotation +Commercial; Won/Lost → Commercial only, no
+  Qualification/Site Visit/Quotation. `canMarkWon` gating held too: the
+  Won form only appeared when the stage was Quotation/Negotiation; New/
+  Contacted/etc. offered only "Mark as Lost"; once Won, "Correct to Lost"
+  replaced the open form and Won's job_value read-out showed
+  correctly; once Lost, the page became a plain read-out with no
+  Won/Lost form at all, per §6. Staff view showed identical stage gating
+  and correctly omitted the admin-only Activity section entirely (already
+  enforced by `LeadActivity`'s own role check, untouched this session).
+  No horizontal overflow at any of the 6 role×narrow-viewport
+  combinations checked (`document.documentElement.scrollWidth ===
+  clientWidth` at 390 and 375 for both roles). Restored the lead to its
+  exact original state afterward (status Quotation, job_value ₹2,50,000,
+  quotation_amount ₹2,35,000, lost_reason cleared) — confirmed via a hard
+  reload before finishing.
+- One non-issue worth recording: right after changing stage via the
+  selector, the newly-revealed/hidden sections can lag the DOM by ~1-2s
+  before Next.js's Server Action revalidation repaints them (confirmed by
+  waiting vs. not waiting before re-snapshotting) — not a Phase 3 defect,
+  just note it if it ever gets reported as one.
+- Not done this session (explicitly out of scope): Dashboard changes,
+  Leads-list/`LeadCard` changes, and the new `automation/` feature that
+  are all also sitting uncommitted and unlogged in this working tree from
+  before this session — none of that was reviewed, tested, or touched.
+  Nothing was committed; `git status` still shows all of it uncommitted.
+
+### 2026-08-29 — Phase 0b
+- Phase: 0b (AppShell, §1/§7)
+- Note: no master planning brief attachment was actually received this
+  session; proceeded using this file's own §1/§2/§7/§24 as the governing
+  spec, since it already encodes the relevant excerpts.
+- Inspected first (per §21): `app/(app)/layout.tsx`, `components/Sidebar.tsx`,
+  `SidebarNavItem.tsx`, `SidebarAdminNav.tsx`, `SidebarProfileFooter.tsx`,
+  `MobileBottomNav.tsx`, `MobileMoreMenu.tsx`, `MobileAdminMore.tsx`,
+  `BuildingEmblem.tsx` — a working, role-aware, two-render-path AppShell
+  already existed (dark sidebar+admin section on desktop; 3-item bottom nav
+  + admin-only "More" overflow on mobile). Nav item lists were already
+  correct per §1/§24 (Dashboard/Leads/Conversations only — no placeholder
+  links for Deals/Quotations/Site Visits/Follow-ups/Reports, none of which
+  have routes yet). Did not add any nav items.
+- Built: wired Phase 0a tokens into the existing shell chrome only —
+  `bg-gradient-dark-bg` on the desktop sidebar and mobile top bar
+  (previously flat `bg-sidebar`), and converted `MobileBottomNav`/
+  `MobileMoreMenu` from the light theme (`bg-card`/`text-muted-foreground`)
+  to the same dark-chrome tokens already used by the sidebar
+  (`bg-gradient-dark-bg`, `border-sidebar-border`, `text-sidebar-muted`/
+  `text-sidebar-primary`/`text-sidebar-foreground`) — mobile chrome was
+  inconsistent (dark top bar, light bottom bar) before this. Applied
+  `font-brand` (falls back to system-ui until Inter is mounted) to the two
+  "AFIT" wordmark spots only. No nav structure, route, or role-gating logic
+  changed.
+- Verified: lint clean, tsc clean, build clean. Playwright — Admin
+  1440×900/390×844/375×812 and Staff 1440×900/390×844/375×812: exactly 3
+  nav items + admin "More" (Automation/Audit Log) for Admin, exactly 3 items
+  and no "More" for Staff on mobile; no Admin sidebar section for Staff;
+  `/automation` still 404s for Staff; active-route highlighting correct on
+  both nav surfaces; no horizontal overflow at any size; bottom-nav touch
+  targets 120×62 well above 44×44.
+- Not done yet / deliberately untouched: Lead Detail, pipeline/stage logic,
+  Won/Lost logic, Automation/Audit Log functionality, RLS/auth, schema, the
+  light "+ New Lead" header bar and `<main>` content area (left as-is —
+  content chrome, not navigation). Inter is loaded (`lib/fonts.ts`) but
+  still not mounted anywhere (`--font-inter` unset); `font-brand` currently
+  renders as system-ui everywhere it's used.
+- Remaining pre-existing issue noticed, not fixed (out of scope per this
+  session's instruction not to expand scope): the global "Sign out" text
+  link and "+ New Lead" header button are both under the 44×44 touch-target
+  minimum on mobile — predates this phase, not part of the AppShell nav
+  surfaces touched here.
+
+### 2026-08-29 — Phase 0a
+- Phase: 0a (design tokens, §2/§7)
+- Built: extended `app/globals.css` (additive only) with Phase-0a tokens —
+  `--glass-fill` (rgba(255,255,255,0.06)), `--surface-foreground` (#FFFFFF)
+  / `--surface-foreground-muted` (#A3A3A3), `--error` (#EF4444) /
+  `--error-foreground`, `--gradient-primary` and `--gradient-dark-bg`
+  (linear-gradients), all mapped in `@theme inline` so Tailwind generates
+  `bg-glass`, `text-surface-foreground(-muted)`, `bg-error`/`text-error`/
+  `border-error` utilities; plus two plain `.bg-gradient-primary` /
+  `.bg-gradient-dark-bg` classes since gradients aren't Tailwind color
+  tokens. Reused the existing `--brand-600` (#16A34A) and `--chrome-900`/
+  `--chrome-800` (#0B1210/#0F1A14) rather than redefining them under new
+  names — they already matched §2 exactly and predate this phase (see the
+  file's own header comment). Added `lib/fonts.ts` loading Inter via
+  `next/font/google` (`--font-inter`) and a `--font-brand` theme token
+  falling back to a plain sans stack until a later phase mounts it.
+- Verified: `npm run lint` clean, `npx tsc --noEmit` clean, `npm run build`
+  clean. No page/component file touched; no existing token's value changed
+  (diff-reviewed) — `lib/fonts.ts` is not imported anywhere yet.
+- Not done yet: nothing from §2 is wired into any page. Phase 0b (AppShell)
+  is the first phase expected to actually consume these tokens.
+<!-- 2026-08-29 — example entry format:
+- Phase: 3 (stage-aware Lead Detail retrofit)
+- Built: STAGE_SECTIONS config, gated Overview/Work/Commercial/Close rendering
+- Verified: lint clean, tsc clean, build clean, Playwright admin+staff @ 1440x900/390x844/375x812
+- Not done yet: Won/Lost close-workflow copy update
+-->
+
+---
+
+## 1. Product shape — two deliberately different experiences
+
+**Desktop = management/workspace.** Full CRM operations: pipeline
+management, detailed lead/customer info, commercial info, quotations,
+site-visit management, follow-ups/tasks, conversations, reports,
+automation, audit log, admin/settings.
+
+**Mobile = daily field/work execution.** Today/home, leads, conversations,
+follow-ups/tasks, site visits, quick actions, status updates,
+calling/WhatsApp, notes.
+
+Rules:
+- Do NOT shrink the desktop UI onto mobile. Build two intentional surfaces.
+- Do NOT expose every desktop module on mobile.
+- Automation and Audit Log are desktop/admin-only — never in mobile nav.
+- Mobile prioritizes what a salesperson needs *during the day*, not parity
+  with desktop.
+
+---
+
+## 2. Design system — build this before any page
+
+Extracted from the brand spec. These are tokens, not per-component choices.
+Put them in one place (Tailwind theme extension or CSS variables) and every
+screen consumes them. Nobody redefines a hex code inline.
+
+| Token | Value |
+|---|---|
+| Primary green | `#16A34A` (gradient variants for buttons) |
+| Dark background | gradient `#0B1210` → `#0F1A14` |
+| Glass card fill | `rgba(255,255,255,0.06)` |
+| Text primary | `#FFFFFF` |
+| Text secondary | `#A3A3A3` |
+| Error | `#EF4444` |
+| Font | Inter or Poppins |
+
+Effects: subtle glassmorphism on cards, green gradient on primary buttons,
+soft glow/particle accents on dark backgrounds (used sparingly — this is a
+CRM, not a landing page). Rounded corners throughout, consistent radius.
+
+Avoid: generic AI-slop patterns — accent stripes/color bars under titles,
+default-blue palettes, cream/beige backgrounds, low-contrast icon-on-dark
+combos. This brand already has a real identity (dark green chrome); don't
+dilute it with default component-library styling.
+
+---
+
+## 3. Current database reality — do not invent entities
+
+Live Supabase inspection confirmed these tables exist:
+
+- `leads`
+- `profiles`
+- `conversations`
+- `messages`
+- `follow_ups`
+- `audit_logs`
+
+There is currently **no**:
+- `deals` table
+- `quotations` table
+- `site_visits` table
+- `reports` table
+- admin/settings table
+
+Lead fields include `status`, `job_value`, `quotation_amount`,
+`site_visit_date`, `lost_reason`, plus attribution fields
+(`campaign_name`, `adset_name`, `ad_name` — already threaded through from
+Meta Ads, useful for the WhatsApp→CRM attribution work separately in
+progress).
+
+**Do not create new tables (deals, quotations, site_visits, reports,
+admin_settings) without explicit approval.** Build UI-level views over
+existing fields first; only promote to real schema once the UI-level
+version has been used and has hit a real limit (see §8/§9).
+
+---
+
+## 4. Pipeline — exactly 8 user-facing stages
+
+1. New
+2. Contacted
+3. Qualified
+4. Site Visit
+5. Quotation
+6. Negotiation
+7. Won
+8. Lost
+
+`Invalid` may exist internally for schema/data compatibility but is never a
+user-facing pipeline stage.
+
+The closed/default Lead Detail UI shows **only the current stage** —
+never the full New→...→Lost chain as a permanent section. The stage
+selector may expose all 8 when opened; the rest of the page stays
+compact.
+
+---
+
+## 5. Stage-aware Lead Detail — THE core UX rule (currently unmet)
+
+> **Status check before starting new work:** an earlier pass reorganized
+> Lead Detail into a fixed 7-section layout (Header, Next Action, Overview,
+> Work, Commercial, Activity, Close Lead) with one clear owner per section.
+> That fixed the duplicate-card problem. It has **not** yet implemented
+> per-stage visibility — every stage currently renders the same sections.
+> This section (§5) is not yet satisfied. Treat it as the next real task,
+> not a "nice to have."
+
+The lead page should read as:
+
+```
+CURRENT STAGE → WHAT MATTERS NOW → NEXT ACTION → RELEVANT INFO → HISTORY
+```
+
+Not: everything about the entire sales process at once.
+
+**Implementation approach:** a single config mapping stage → which
+sections/actions render, e.g.:
+
+```ts
+const STAGE_SECTIONS: Record<PipelineStage, SectionKey[]> = {
+  New:         ["overview", "qualification", "followUp", "nextAction", "moveToContacted"],
+  Contacted:   ["conversation", "followUp", "qualification", "nextAction", "moveToQualified"],
+  Qualified:   ["qualification", "siteVisitAction", "followUp", "nextAction", "moveToSiteVisit"],
+  "Site Visit":["siteVisitInfo", "followUp", "notes", "nextAction", "moveToQuotation"],
+  Quotation:   ["quotationInfo", "followUp", "nextAction", "moveToNegotiation"],
+  Negotiation: ["commercial", "followUp", "nextAction", "moveToWonLost"],
+  Won:         ["wonInfo", "commercial", "history"],       // no Mark Won action
+  Lost:        ["lostInfo", "history"],                     // no Mark Lost action
+};
+```
+
+Reuse every component already built (`NextActionCard`, `QualificationScoreSummary`,
+`ConversationCard`, etc.) — this is about changing *what renders*, not
+building new cards. Do not display irrelevant future-stage sections
+(e.g. don't show Commercial/negotiation UI on a brand-new lead).
+
+---
+
+## 6. Won/Lost safety — do not remove
+
+Won requires `job_value`. Lost requires `lost_reason`. These transitions
+must stay gated:
+
+- `setLeadStatus()` (generic) must reject direct writes of `Won`/`Lost`
+  server-side. This protection already exists — **do not remove it.**
+- Won/Lost can only be set through `markLeadWon()` / `markLeadLost()`,
+  which enforce their required fields.
+- The stage selector may list all 8 stages, but selecting Won/Lost routes
+  into the proper close workflow, never a bare status write.
+
+---
+
+## 7. Build phases — work in this order, one phase per session
+
+1. **0a — Design tokens.** Tailwind theme / CSS variables from §2. Every
+   later phase consumes these; nothing redefines colors inline.
+2. **0b — AppShell.** One shared layout component with two render paths
+   (desktop sidebar+topbar, mobile bottom nav), driven by viewport + role.
+   Every page after this sits inside it.
+3. **1 — Command Center dashboard.** Stat cards, today's schedule, lead
+   status donut, follow-ups due, recent activity. Pure UI — reads only
+   from `leads` and `follow_ups`, no new schema.
+4. **2 — Leads list.** Desktop table + mobile card list sharing one
+   filter/search hook. Gives Lead Detail real navigation to test against.
+5. **3 — Retrofit Lead Detail per §5.** The actual current priority.
+6. **4 — Follow-ups.** Desktop workspace (full filtering, assignment,
+   overdue/today/upcoming) + mobile Today's tasks — one data layer, two
+   thin UI layers.
+7. **5 — Site Visits & Quotations as UI-level views** over
+   `site_visit_date` / `quotation_amount` — not new tables (see §8/§9).
+8. **6 — Reports** (desktop only), computed from existing tables — no
+   invented data, no new table required initially.
+9. **7 — Deals workspace**, confirmed as its own desktop nav destination
+   by the latest master planning brief (§8) — a UI-level view over
+   Negotiation/Quotation-stage leads' commercial fields, not a new table.
+10. **8 — Admin/Settings, Automation, Audit Log** — desktop + admin-only,
+    already scoped as out of mobile nav.
+
+Don't ask Claude Code to build the whole system in one prompt — hand it one
+phase, let it finish + verify (§17/§18), then move to the next. Large
+single-shot asks are exactly what causes drift and skipped QA.
+
+---
+
+## 8. Deals
+
+No real `deals` entity exists. "Deal" info currently lives on `leads`
+(`job_value`, `quotation_amount`, `status`). Do not use "Deal Details" as a
+dumping ground for unrelated fields. If a dedicated Deal workspace is
+needed later, decide explicitly whether it's a UI-level view over leads or
+a real new entity — don't default to a new table.
+
+> **Confirmed by the Aug 2026 master planning brief:** Deals *is* meant to
+> be its own desktop nav destination (that brief's Navigation Philosophy
+> section lists Dashboard, Leads, Deals, Quotations, Site Visits,
+> Follow-ups, Conversations, Reports, Automation, Audit Log, Admin as the
+> full desktop nav). Build it as Phase 7 (§7/§25): a UI-level view/list of
+> leads at Negotiation/Quotation stage, surfacing their commercial fields —
+> still no new table without explicit approval.
+
+## 9. Quotation
+
+Only `leads.quotation_amount` exists today. A real quotation module would
+eventually need quotation number, customer, line items, qty/pricing,
+discount, tax, total, validity, terms, status, generated document — but
+none of that is approved yet. Build the UI-level view first.
+
+## 10. Site Visits
+
+Only `leads.site_visit_date` and generic `follow_ups` with
+`type = site_visit` exist. A real site-visit system would eventually need
+date/time, assigned staff, address, status, notes, photos,
+arrival/completion state — not approved yet.
+
+## 11. Follow-ups
+
+`follow_ups` is real and has `assigned_to_id`, `due_date`, `due_time`,
+`type`, `status`, `completed_at`. Operationally important on mobile.
+Desktop gets the full workspace; mobile gets today/overdue/quick-complete/
+quick-create with lead context.
+
+## 12. Automation
+
+Client-side workspace, admin-oriented. Desktop only, admin only. Do not
+redesign into a mobile workflow unless explicitly requested.
+
+## 13. Audit Log
+
+Admin only, desktop oriented, not in mobile nav. Per-lead Activity can
+exist (it already does) without exposing the full Audit Log workspace to
+staff/mobile.
+
+## 14. Reports
+
+No `/reports` route exists yet. Dashboard covers KPI/pipeline overview.
+Future Reports is desktop-focused, reads existing tables (sales
+performance, conversion, pipeline distribution, won/lost, staff
+performance, follow-up performance, quotation performance) — no invented
+data, no required new table.
+
+## 15. Admin/Settings
+
+No dedicated Admin/Settings page exists. User/profile/role management is
+currently handled directly through Supabase. Don't assume this module
+already exists.
+
+---
+
+## 16. Authorization / RLS — verified, do not weaken
+
+```
+leads SELECT: private.is_admin() OR assigned_to_id = auth.uid()
+leads INSERT: admin or self
+leads UPDATE: admin or owner
+```
+
+Staff see only their own assigned leads. Admin sees all. Other tables have
+appropriate admin/owner restrictions already verified. **Never replace
+database security with UI-only hiding**, and never weaken or bypass RLS to
+make a UI problem easier to solve.
+
+---
+
+## 17. Viewport & Playwright requirements
+
+Required viewports: 375×812, 390×844 (mobile), 1440×900 (desktop).
+
+Every UI change gets checked for: no horizontal overflow, readable
+typography, proper spacing, usable touch targets (≥44×44), no clipped
+content, no desktop-only modules leaking into mobile nav, stage UI staying
+understandable, forms staying usable.
+
+Use Playwright for actual live-browser verification whenever possible —
+don't claim a UI works from source inspection alone when live verification
+is available. Test both Admin and Staff roles at all three viewports.
+Staff checks specifically: no Admin section, no Automation, no Audit Log,
+correct assigned-lead-only access, no accidental admin functionality
+(including direct-URL access to admin routes — confirm server-side 404,
+not just hidden nav).
+
+---
+
+## 18. Quality gates — before considering a phase complete
+
+```
+npm run lint
+npx tsc --noEmit
+npm run build
+```
+
+Then Playwright verification per §17. Do not deploy automatically. Do not
+push automatically unless explicitly instructed.
+
+---
+
+## 19. Next Action
+
+Surface the next operational action prominently when one exists (call
+customer, schedule site visit, send quotation, follow up on quotation,
+negotiate, close lead). If there's no real next action, don't invent a
+fake task just to fill the slot.
+
+## 20. Qualification Score vs Pipeline Stage — do not conflate
+
+Pipeline stage = where the lead is in the sales process (§4).
+Qualification score = how strong/qualified the lead is, computed
+deterministically from real fields (no AI/external calls, no fabricated
+inputs). These are different concepts with different owners on the page —
+never merge them into one number or one card.
+
+---
+
+## 21. General rule before changing code
+
+1. Inspect the current implementation.
+2. Inspect the live database if the decision depends on schema.
+3. Understand existing RLS/auth.
+4. Preserve working business logic.
+5. Change only what's necessary.
+6. Avoid duplicate fields/actions (one section = one owner, see §5).
+7. Avoid creating new schema without explicit approval (§3, §8–10).
+8. Verify with Playwright (§17).
+9. Run lint/typecheck/build (§18).
+10. Report exactly what changed and what was verified — update §0.
+
+---
+
+## 22. Current priority
+
+Phase 3 (§5, §7): retrofit Lead Detail with real per-stage section
+visibility. This is the one rule in this document that governed the last
+restructuring pass but wasn't actually implemented yet. Fix this before
+starting Command Center / Leads list / any new module — the same
+STAGE_SECTIONS pattern will make every future module simpler to reason
+about too.
+
+---
+
+## 23. Reference assets already produced — adapt, don't re-derive
+
+`whatsapp-conversations-view.jsx` — a working, faithful WhatsApp-UI clone
+(conversation list + thread, real read-receipt ticks, search, mobile
+list↔thread collapse with back button). Currently uses seed/mock data, not
+wired to the real database.
+
+When building the Conversations phase: adapt this file into
+`components/conversations/ConversationsView.tsx`. Replace
+`seedConversations()` with a real query against `conversations` +
+`messages` keyed by `lead_id`, and wire the hardcoded unread count to real
+unread-message state. **The visual design in this file is already
+approved — don't redesign it from scratch, only swap the data layer** and
+add a small link back to that lead's Lead Detail page in the thread
+header.
+
+> **Gap to close, per the Aug 2026 master planning brief (§13 there):**
+> desktop Conversations needs a third panel — customer/lead context
+> alongside the list and the thread, not just a link back to Lead Detail.
+> The current file is a faithful 2-pane WhatsApp clone (list + thread)
+> intentionally, since matching WhatsApp exactly was the ask at the time.
+> Add the context panel as a desktop-only enhancement in Phase 4b (hidden
+> on mobile, where the existing back-button pattern already covers it) —
+> don't rebuild the 2-pane layout, extend it.
+
+---
+
+## 24. Open — sidebar modules with no spec yet
+
+The reference dashboard mockup's sidebar lists modules this document has
+no real spec for. Do not start a build phase for any of these until it has
+**both** a real screen mockup/written spec and an answer to its open
+question below — building against a sidebar label alone risks inventing
+schema or UX that gets thrown away later (see §3, §21).
+
+> **Partially resolved by the Aug 2026 master planning brief:** that
+> document's own Navigation Philosophy section lists the full intended
+> desktop nav as Dashboard, Leads, Deals, Quotations, Site Visits,
+> Follow-ups, Conversations, Reports, Automation, Audit Log, Admin — and
+> does **not** mention Customers, Services, Team, Mission Control, or
+> Documents anywhere. Treat those five as **unconfirmed/deprioritized**,
+> not merely "pending a spec" — they may not be part of the actual plan at
+> all. Don't build toward them without asking again first. Deals is now
+> resolved (§8) and out of this table.
+
+| Module | What's unclear | Needed before building |
+|---|---|---|
+| Customers | Not mentioned in the latest nav plan at all. | Confirm whether this is still wanted, or dropped in favor of "Won leads" living inside Leads/Deals. |
+| Services | Looks like a catalog of service types (plastering, false ceiling, kitchen). Not mentioned in the latest nav plan. | Confirm whether this is still wanted; if so, what fields it needs and which screens reference it. |
+| Team | `profiles` already exists. Not mentioned in the latest nav plan. | Confirm whether this is still wanted, or deprioritized. |
+| Mission Control | Not mentioned in the latest nav plan at all — unclear if this was ever distinct from Command Center/Dashboard. | Confirm whether this still exists as a concept. |
+| Documents | Not mentioned in the latest nav plan. | Confirm whether this is still wanted; if so, what's stored where. |
+| Reports | Scoped generally in §14, no mockup yet, but confirmed as a real nav item. | Paste the Reports screen mockup/spec if one exists. |
+| Settings | §15 confirms no page exists yet, but confirmed as a real nav item. | Paste the Settings screen mockup/spec, and what's actually configurable. |
+
+**What to bring back from ChatGPT (or wherever the spec lives):**
+1. Confirmation on whether Customers/Services/Team/Mission
+   Control/Documents are still wanted at all, given the latest brief
+   omits them entirely.
+2. Screen mockups/written specs for Reports and Settings — both are
+   confirmed nav items now, just not designed yet.
+3. Confirm whether Quotation and Site Visit are still meant to stay
+   UI-level views (§9, §10) now that they're getting dedicated sidebar
+   modules, or whether the scope has grown enough to warrant real schema —
+   if so, that needs explicit approval before Claude Code builds it (§3).
+
+Once any of these arrives, it gets folded into this document as a new
+numbered section (like §5 for Lead Detail) before a build phase is written
+for it.
+
+---
+
+## 25. Copy-paste prompts for Claude Code — one per phase
+
+Run these in order, one per Claude Code session, in this repo. Each one
+assumes Claude Code will read this file first — say so explicitly if your
+Claude Code setup doesn't auto-load CLAUDE.md.
+
+**Phase 0a — Design tokens**
+> Read CLAUDE.md in full. This session's task is Phase 0a only: build the
+> design token system from §2 as a Tailwind theme extension plus any CSS
+> variables needed for the glass effect and gradients. Don't touch any
+> existing page or component yet. When done, show me the token file, run
+> lint/typecheck/build, and append a Session Log entry to §0.
+
+**Phase 0b — AppShell**
+> Read CLAUDE.md. Task: Phase 0b only — build the shared AppShell
+> (desktop sidebar+topbar, mobile bottom nav) from §1 and §7, consuming
+> the tokens from Phase 0a rather than redefining colors. Make it read
+> the current user's role so Automation and Audit Log never render for
+> staff or on mobile (§1, §13). Wrap an empty content area — no page
+> content yet. Verify per §17/§18 and update the Session Log.
+
+**Phase 1 — Command Center dashboard**
+> Read CLAUDE.md. Task: Phase 1 only — build the Command Center
+> dashboard from §7 inside the Phase 0b AppShell: stat cards, today's
+> schedule, lead status donut, follow-ups due today, recent activity.
+> Pull real data from `leads` and `follow_ups` only — no new tables (§3).
+> Match the reference screenshot's layout and the §2 visual language.
+> Verify per §17/§18, update the Session Log.
+
+**Phase 2 — Leads list**
+> Read CLAUDE.md. Task: Phase 2 only — build the Leads list: desktop
+> table + mobile card list sharing one filter/search hook, inside the
+> AppShell. Respect RLS (§16) — staff must only ever see their assigned
+> leads through this list. Link each row to the existing Lead Detail
+> page. Verify per §17/§18, update the Session Log.
+
+**Phase 3 — Stage-aware Lead Detail retrofit (current priority, §22)**
+> Read CLAUDE.md, especially §5. Task: Phase 3 only — the one still-open
+> architecture gap. Build the STAGE_SECTIONS config and gate every
+> section/action in Lead Detail by the lead's current stage, so New,
+> Won, and Lost each render visibly different sections — not the same 7
+> sections every time. Do not touch the Won/Lost safety logic in §6, only
+> what renders around it. Verify per §17/§18 across both roles and all
+> three viewports, update the Session Log.
+
+**Phase 4a — Meta WhatsApp account setup (not a code task)**
+> No Claude Code work here. Before live chat can be built, complete the
+> account-level steps in §26: Meta Business verification, WhatsApp
+> Business Account + number setup, and a permanent access token. Bring
+> the access token and phone number ID back as environment variables —
+> never pasted into chat or committed to code.
+
+**Phase 4b — Live WhatsApp integration**
+> Read CLAUDE.md §23 and §26. Task: build the webhook endpoint that
+> receives inbound WhatsApp messages from Meta and writes them into
+> `conversations`/`messages`; capture the `referral`/`ctwa_clid` data on
+> new conversations per §26 (confirm first whether lead-level
+> campaign/ad attribution is already wired from the same referral data,
+> per §3, before duplicating that logic); wire outbound sending through
+> Meta's API when staff reply; and enable Supabase Realtime on
+> `messages` so ConversationsView updates live without a refresh. Then
+> adapt whatsapp-conversations-view.jsx into
+> components/conversations/ConversationsView.tsx on top of this real
+> data, replacing the seed data and hardcoded unread count. Keep the
+> visual design as-is. Verify per §17/§18, update the Session Log.
+
+**Phase 5 — Follow-ups**
+> Read CLAUDE.md §7, §11. Task: build Follow-ups — desktop full
+> workspace (filtering, assignment, overdue/today/upcoming) and mobile
+> Today's tasks, both reading the same `follow_ups` table. Verify per
+> §17/§18, update the Session Log.
+
+**Phase 6 — Site Visits & Quotations as views**
+> Read CLAUDE.md §9, §10. Task: build Site Visits and Quotations as
+> UI-level views over existing lead fields (site_visit_date,
+> quotation_amount) — do not create new tables without explicit
+> approval. Verify per §17/§18, update the Session Log.
+
+**Phase 7 — Deals workspace**
+> Read CLAUDE.md §8. Task: build a Deals nav destination as a UI-level
+> view/list over leads currently at Negotiation or Quotation stage,
+> surfacing job_value/quotation_amount/status — no new table without
+> explicit approval. Verify per §17/§18, update the Session Log.
+
+**Do not start a Phase 8+ prompt for Customers, Services, Team, Mission
+Control, or Documents yet** — see §24, they may not even be part of the
+actual plan. Reports and Settings are confirmed nav items but still need a
+mockup/spec before a phase prompt is written for them. Bring back specs
+first; each will get turned into a numbered section and a phase prompt the
+same way Phase 3 was.
+
+---
+
+## 26. Live WhatsApp integration (Meta Cloud API) — the real Phase 4
+
+"Live chat" means real inbound/outbound sync with Meta's WhatsApp Business
+Platform (Cloud API), not just wiring the UI to rows that already exist.
+Confirm with the project owner whether the `conversations`/`messages`
+tables currently receive any real WhatsApp data at all before assuming
+this is a small task — if nothing feeds them yet, this is the full build
+below, not a data-wiring exercise.
+
+This splits into account-level setup (must be done by an authorized person
+on the Meta Business account — Claude Code cannot do this) and code
+(Claude Code builds once credentials exist as env vars). See Phase 4a/4b
+in §25.
+
+### Message flow
+1. Customer messages the WhatsApp Business number (directly, or via a
+   Click-to-WhatsApp ad).
+2. Meta POSTs that message to a webhook URL this project exposes (a
+   Next.js API route or Supabase Edge Function), verified via the
+   webhook verify token set up in Meta's dashboard.
+3. That webhook writes the message into `messages`, matched to the right
+   `conversations` row by phone number (create the conversation row if
+   this phone number is new).
+4. Supabase Realtime pushes the new row to anyone with ConversationsView
+   open — this is what makes it live instead of requiring a refresh.
+5. When staff reply from the CRM, the same backend calls Meta's Cloud
+   API to actually send the WhatsApp message, then logs that outbound
+   message too.
+
+### Conversion attribution — the ctwa_clid mechanism
+When a customer messages via a Click-to-WhatsApp ad, the first webhook
+message includes a `referral` object: ad ID, headline, and a `ctwa_clid`
+— a click ID tying that conversation to the exact ad/ad set/campaign that
+produced it. Capture this when the conversation is created and store it
+against the conversation (and/or lead). This is the mechanism that
+connects ad spend to a specific WhatsApp thread at the message level.
+Leads already carry `campaign_name`/`adset_name`/`ad_name` (§3) — check
+whether those are already populated from this same referral data at
+lead-creation time before re-deriving it at the conversation level.
+
+Optionally, later: once a lead becomes a paying customer, send that event
+to Meta via the Conversions API (CAPI), so Meta's own Ads Manager can
+report real conversions too — not just this CRM. Keeps both systems
+telling the same story instead of only the CRM knowing the truth.
+
+### Policy constraint to design around
+Meta only allows free-form replies within 24 hours of the customer's last
+message. Outside that window, only pre-approved message templates can be
+sent. Any "re-engage a cold lead" feature needs templates submitted for
+Meta's approval in advance — plan this as its own small piece of work, not
+an afterthought bolted onto Phase 4b.

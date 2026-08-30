@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { SubmitButton } from "@/components/SubmitButton";
+import { Card } from "@/components/Card";
 import { LEAD_SOURCES, LEAD_SOURCE_LABELS } from "@/lib/constants";
 import type { ActionState } from "@/lib/actions/leads";
 import type { LeadRow } from "@/lib/supabase/types";
@@ -23,9 +24,8 @@ export function LeadForm({
     <form action={formAction} className="space-y-6">
       {lead && <input type="hidden" name="lead_id" value={lead.id} />}
 
-      <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-        <h2 className="text-sm font-semibold text-slate-900">Customer</h2>
-        <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <Card title="Customer">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Customer name" name="customer_name" defaultValue={lead?.customer_name ?? ""} />
           <Field
             label="Phone"
@@ -36,7 +36,7 @@ export function LeadForm({
           />
         </div>
         <div className="mt-4">
-          <label htmlFor="whatsapp_message" className="block text-xs font-medium text-slate-500">
+          <label htmlFor="whatsapp_message" className="block text-xs font-medium text-muted-foreground">
             WhatsApp message
           </label>
           <textarea
@@ -44,23 +44,22 @@ export function LeadForm({
             name="whatsapp_message"
             defaultValue={lead?.whatsapp_message ?? ""}
             rows={3}
-            className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+            className="mt-1 block w-full rounded-md border border-border px-3 py-2 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
           />
         </div>
-      </section>
+      </Card>
 
-      <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-        <h2 className="text-sm font-semibold text-slate-900">Project</h2>
-        <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <Card title="Project">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label htmlFor="source" className="block text-xs font-medium text-slate-500">
+            <label htmlFor="source" className="block text-xs font-medium text-muted-foreground">
               Source
             </label>
             <select
               id="source"
               name="source"
               defaultValue={lead?.source ?? "whatsapp"}
-              className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+              className="mt-1 block h-11 w-full rounded-md border border-border bg-card px-3 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
             >
               {LEAD_SOURCES.map((value) => (
                 <option key={value} value={value}>
@@ -93,10 +92,10 @@ export function LeadForm({
           />
           <Field label="Assigned to" name="assigned_to" defaultValue={lead?.assigned_to ?? ""} />
         </div>
-      </section>
+      </Card>
 
       {state?.error && (
-        <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{state.error}</p>
+        <p className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">{state.error}</p>
       )}
 
       <SubmitButton>{submitLabel}</SubmitButton>
@@ -125,9 +124,9 @@ function Field({
 }) {
   return (
     <div>
-      <label htmlFor={name} className="block text-xs font-medium text-slate-500">
+      <label htmlFor={name} className="block text-xs font-medium text-muted-foreground">
         {label}
-        {required && <span className="text-red-500"> *</span>}
+        {required && <span className="text-danger"> *</span>}
       </label>
       <input
         id={name}
@@ -138,7 +137,7 @@ function Field({
         min={min}
         step={step}
         defaultValue={defaultValue ?? ""}
-        className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+        className="mt-1 block h-11 w-full rounded-md border border-border px-3 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
       />
     </div>
   );

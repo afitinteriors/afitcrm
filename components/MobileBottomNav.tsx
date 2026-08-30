@@ -42,22 +42,27 @@ const NAV_ITEMS = [
   },
 ];
 
-// Primary mobile navigation -- the three real, built destinations only. No
-// placeholder tabs for features that don't exist yet (Follow-ups, Tasks,
-// Notifications); those get added here once they're actually built.
-export function MobileBottomNav() {
+// Primary mobile navigation -- the three real, built destinations, plus an
+// optional admin-only "More" slot (Automation/Audit Log) passed in from the
+// layout. No placeholder tabs for features that don't exist yet (Follow-ups,
+// Tasks, Notifications); those get added here once they're actually built.
+export function MobileBottomNav({ moreSlot }: { moreSlot?: React.ReactNode }) {
   const pathname = usePathname();
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-40 flex border-t border-slate-200 bg-white pb-[env(safe-area-inset-bottom)] lg:hidden">
+    <nav
+      aria-label="Primary"
+      className="fixed inset-x-0 bottom-0 z-40 flex border-t border-sidebar-border bg-gradient-dark-bg pb-[env(safe-area-inset-bottom)] lg:hidden"
+    >
       {NAV_ITEMS.map((item) => {
         const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
         return (
           <Link
             key={item.href}
             href={item.href}
+            aria-current={active ? "page" : undefined}
             className={`flex flex-1 flex-col items-center gap-0.5 py-2.5 text-xs font-medium transition-colors ${
-              active ? "text-blue-600" : "text-slate-500 active:text-slate-700"
+              active ? "text-sidebar-primary" : "text-sidebar-muted active:text-sidebar-foreground"
             }`}
           >
             <svg
@@ -66,6 +71,7 @@ export function MobileBottomNav() {
               viewBox="0 0 24 24"
               stroke="currentColor"
               className="h-6 w-6"
+              aria-hidden="true"
             >
               {item.icon}
             </svg>
@@ -73,6 +79,7 @@ export function MobileBottomNav() {
           </Link>
         );
       })}
+      {moreSlot}
     </nav>
   );
 }

@@ -1,17 +1,211 @@
 @import "tailwindcss";
 
+/*
+ * Design tokens for AFIT CRM.
+ *
+ * The brand and chrome values below are extracted verbatim from the two
+ * places the AFIT green identity already exists in production:
+ *   - app/login/page.tsx      (dark background, BuildingEmblem, gradient button)
+ *   - components/conversations/ReplyComposer.tsx (#14342a send button)
+ * The semantic status colors (success/warning/danger) are extracted from
+ * the existing lead-status badge classes in lib/constants.ts
+ * (LEAD_STATUS_BADGE_CLASSES: won=emerald, site_visit=amber, lost=red) so
+ * new UI stays consistent with badges already shipping today, not a new
+ * invented palette.
+ *
+ * --background/--foreground are left at their existing values -- this
+ * phase only adds tokens, it does not restyle any page yet.
+ */
 :root {
   --background: #f8fafc;
   --foreground: #0f172a;
+
+  /* Brand green scale -- from app/login/page.tsx's BuildingEmblem + Sign In gradient */
+  --brand-400: #4ade80;
+  --brand-500: #22c55e;
+  --brand-600: #16a34a;
+  --brand-700: #14342a;
+
+  /* Dark chrome surfaces -- from app/login/page.tsx's background gradient */
+  --chrome-950: #08100d;
+  --chrome-900: #0b1210;
+  --chrome-800: #0f1a14;
+
+  /* Core semantic tokens */
+  --card: #ffffff;
+  --card-foreground: var(--foreground);
+
+  --primary: var(--brand-600);
+  --primary-foreground: #ffffff;
+
+  --secondary: #eef1ec;
+  --secondary-foreground: var(--foreground);
+
+  --accent: var(--brand-500);
+  --accent-foreground: var(--foreground);
+
+  --muted: #eef1ec;
+  --muted-foreground: #57655c;
+
+  --border: #dce2da;
+  --ring: var(--brand-600);
+
+  /* Semantic status tokens -- matched to LEAD_STATUS_BADGE_CLASSES in lib/constants.ts */
+  --success: #047857;
+  --success-foreground: #ffffff;
+  --success-soft: #d1fae5;
+
+  --warning: #b45309;
+  --warning-foreground: #ffffff;
+  --warning-soft: #fef3c7;
+
+  --danger: #b91c1c;
+  --danger-foreground: #ffffff;
+  --danger-soft: #fee2e2;
+
+  /* AFIT's second brand accent -- was already live as a raw hex in
+     components/conversations/LeadDetailsContent.tsx's "View full lead" CTA
+     (missed during the Phase 1 audit, which searched for the word "gold"
+     and amber-family hexes but not this literal value). Tokenized here
+     instead of restated, values unchanged. */
+  --gold: #caa24a;
+  --gold-foreground: #14342a;
+
+  /* Dark-chrome tokens for the app shell (sidebar, mobile nav) -- kept
+     distinct from the light content tokens above, same pattern as the
+     reference design's dark nav next to a light workspace. */
+  --sidebar: var(--chrome-900);
+  --sidebar-foreground: #ffffff;
+  --sidebar-muted: #94a3b8;
+  --sidebar-border: rgba(255, 255, 255, 0.1);
+  --sidebar-primary: var(--brand-600);
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: rgba(255, 255, 255, 0.08);
+
+  /* --------------------------------------------------------------------
+   * Phase 0a (CLAUDE.md §2) -- design tokens for the dark-glass brand
+   * system used by later phases (0b AppShell onward). Additive only:
+   * nothing above this block changes, and nothing below is consumed by
+   * any page or component yet. brand-600/chrome-900/chrome-800 already
+   * existed (see the header comment) and match §2's green/dark-bg values
+   * exactly, so they're reused here rather than redefined under new names.
+   * -------------------------------------------------------------------- */
+
+  /* Glass card fill -- distinct from --sidebar-accent (0.08, sidebar-only);
+     this is the general-purpose glassmorphism fill for cards on the dark
+     background per §2. */
+  --glass-fill: rgba(255, 255, 255, 0.06);
+
+  /* Text on dark/glass surfaces -- distinct from --sidebar-foreground/
+     --sidebar-muted (already #ffffff / #94a3b8, a blue-grey): §2 specifies
+     a neutral #A3A3A3 secondary, used wherever the new glass surfaces
+     (not specifically the sidebar) need text tokens. */
+  --surface-foreground: #ffffff;
+  --surface-foreground-muted: #a3a3a3;
+
+  /* Error -- distinct from --danger (#b91c1c, tuned for light-background
+     status badges and already live across the app). #EF4444 per §2 is for
+     the new dark UI's own error states (form validation, etc.), not a
+     replacement for the existing danger badge color. */
+  --error: #ef4444;
+  --error-foreground: #ffffff;
+
+  /* Gradient stops per §2 ("gradient variants for buttons" / "dark
+     background gradient"). Plain CSS custom properties, not Tailwind
+     color tokens -- a linear-gradient isn't a single color, so these back
+     the two utility classes defined after the @theme block below instead
+     of a --color-* entry. */
+  --gradient-primary: linear-gradient(135deg, var(--brand-500) 0%, var(--brand-700) 100%);
+  --gradient-dark-bg: linear-gradient(180deg, var(--chrome-900) 0%, var(--chrome-800) 100%);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
+
+  --color-brand-400: var(--brand-400);
+  --color-brand-500: var(--brand-500);
+  --color-brand-600: var(--brand-600);
+  --color-brand-700: var(--brand-700);
+
+  --color-chrome-950: var(--chrome-950);
+  --color-chrome-900: var(--chrome-900);
+  --color-chrome-800: var(--chrome-800);
+
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+
+  --color-border: var(--border);
+  --color-ring: var(--ring);
+
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-success-soft: var(--success-soft);
+
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning-soft: var(--warning-soft);
+
+  --color-danger: var(--danger);
+  --color-danger-foreground: var(--danger-foreground);
+  --color-danger-soft: var(--danger-soft);
+
+  --color-gold: var(--gold);
+  --color-gold-foreground: var(--gold-foreground);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-muted: var(--sidebar-muted);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+
+  /* Phase 0a additions (CLAUDE.md §2) -- generate bg-glass, text-surface-*,
+     bg-error/text-error/border-error, font-brand utilities. Not used by
+     any page/component yet. */
+  --color-glass: var(--glass-fill);
+
+  --color-surface-foreground: var(--surface-foreground);
+  --color-surface-foreground-muted: var(--surface-foreground-muted);
+
+  --color-error: var(--error);
+  --color-error-foreground: var(--error-foreground);
+
+  /* Brand font per §2 ("Inter or Poppins"), same direct pattern as
+     --font-sans above. Loaded but not yet mounted -- see lib/fonts.ts.
+     --font-inter stays unset until a later phase attaches
+     interSans.variable to <html> (same way geistSans.variable is attached
+     today), so this falls back to a plain sans stack until then. */
+  --font-brand: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
+}
+
+/* Phase 0a gradient utilities (CLAUDE.md §2). Gradients aren't Tailwind
+   color tokens, so these are plain classes backed by the --gradient-*
+   variables above, ready for later phases (buttons: bg-gradient-primary;
+   dark surfaces: bg-gradient-dark-bg). Unused anywhere yet. */
+.bg-gradient-primary {
+  background-image: var(--gradient-primary);
+}
+
+.bg-gradient-dark-bg {
+  background-image: var(--gradient-dark-bg);
 }
