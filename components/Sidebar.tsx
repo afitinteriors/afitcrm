@@ -86,6 +86,13 @@ const NAV_ITEMS = [
       />
     ),
   },
+  {
+    href: "/reports",
+    label: "Reports",
+    icon: (
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M3 13.5l4.5-4.5 4.5 4.5 7.5-7.5M3 20.25h18" />
+    ),
+  },
 ];
 
 export function Sidebar({ footer, adminNav }: { footer: React.ReactNode; adminNav?: React.ReactNode }) {

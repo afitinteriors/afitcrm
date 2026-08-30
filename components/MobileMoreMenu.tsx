@@ -44,6 +44,13 @@ const WORK_ITEMS: MenuItem[] = [
       />
     ),
   },
+  {
+    href: "/reports",
+    label: "Reports",
+    icon: (
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M3 13.5l4.5-4.5 4.5 4.5 7.5-7.5M3 20.25h18" />
+    ),
+  },
 ];
 
 const MANAGEMENT_ITEMS: MenuItem[] = [

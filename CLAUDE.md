@@ -14,6 +14,87 @@ session has real state instead of re-reading intentions.
 ## 0. Session Log
 <!-- Append one entry per session. Newest at top. -->
 
+### 2026-08-30 — Phase 6 (§14): Reports workspace, v1 (snapshot-only)
+- Phase: Reports only, per the approved Reports Specification Proposal's
+  finalized decisions. No schema, migration, RLS, or Supabase config
+  change; no audit_logs-as-history substitute; no won_at/lost_at added.
+  Nothing touched in `lib/realtime/`, `lib/whatsapp/`, `/conversations`,
+  `/chat`, Phase 4b.4, Coexistence, or the mobile bottom-nav bar itself
+  (only its existing More menu gained one Work entry). Automation was not
+  added back to mobile More, and its existing table-overflow issue was
+  left untouched, per instruction. Not committed, not pushed.
+- Checked for blockers before writing any code, per instruction: all seven
+  approved metrics were confirmed implementable exactly from existing
+  columns (`leads.status/job_value/quotation_amount/assigned_to_id/
+  qualification_score/service_required/lost_reason`,
+  `follow_ups.status/due_date/completed_at/created_at/type` joined to
+  `leads.assigned_to_id` for per-staff grouping). No blocker found -- all
+  seven shipped, none deferred.
+- Built `lib/reports.ts`: one `getReportsData()` doing exactly two RLS-
+  scoped fetches (leads, follow_ups -- same admin-unrestricted/staff-
+  explicitly-filtered pattern as `getLeads()`, one fetch each rather than
+  seven repeated queries), then computing all seven reports from those two
+  arrays. `app/(app)/reports/page.tsx`: one workspace, anchor-linked
+  stacked sections (no tab widget invented -- none exists elsewhere in
+  this app). Pipeline Distribution reuses the existing
+  `DashboardStatusBreakdown` component directly, unmodified. KPI tiles
+  reuse the existing `StatCard` component. No charting dependency added.
+- Conversion's "overall won rate" was deliberately implemented as won ÷
+  all non-invalid leads (a top-of-funnel conversion measure), distinct
+  from Won/Lost's win rate = won ÷ (won+lost) (a measure of decided leads
+  only) -- both terms appear in the approved spec against what read as two
+  intentionally different metrics; documented inline in `lib/reports.ts`
+  in case this reading needs correcting.
+- Staff-performance aggregation safety (explicit requirement): for a
+  staff caller, `getReportLeads()`/`getReportFollowUps()` never fetch
+  another staff's rows in the first place (RLS plus `getReportLeads()`'s
+  own explicit `.eq("assigned_to_id", profile.id)`, mirroring
+  `getLeads()`) -- `computeStaffPerformance()` for staff doesn't even
+  call the admin-only `getAssignableStaff()` roster, it returns exactly
+  one row computed from data that structurally cannot contain anyone
+  else's. Admin's per-staff rows are computed by filtering the
+  already-admin-unrestricted arrays per real staff id from that roster --
+  never a raw `GROUP BY` that could return another staff's count before
+  any per-role filter runs.
+- Mobile: added exactly one entry, "Reports", to `MobileMoreMenu.tsx`'s
+  existing Work group (both roles, unconditional, same as Site Visits/
+  Deals/Quotations). Did not touch `MobileBottomNav.tsx`, Management, or
+  System. The `/reports` page itself renders a trimmed 3-KPI-card subset
+  (Won Deals, Total Won Value, Follow-ups Overdue) on mobile
+  (`lg:hidden`) instead of all seven sections, matching Follow-ups'
+  precedent of a reduced mobile view over the same fetched data. Also
+  added "Reports" to the desktop sidebar (`components/Sidebar.tsx`) --
+  not explicitly requested this turn, but necessary for the page to be
+  reachable on desktop at all, matching every prior phase's own practice
+  of adding its nav entry in the same phase.
+- Verified live, not from source inspection, as Admin: at 1440x900, all
+  seven sections render with the one real lead's actual data, hand-
+  checked against known ground truth (Quotation stage, quotation_amount
+  ₹2,35,000, job_value null, 3 follow-ups all completed in
+  seconds-to-minutes) -- Pipeline shows Quotation:1, Won/Lost all zero,
+  Quotation Performance ₹2,35,000 quoted/avg, Quote→Won 0%, Sales
+  Performance zero (lead not won), Conversion 0%, Staff Performance shows
+  Azhar Vahab with 1 lead/3 follow-ups done/0 overdue, Follow-up
+  Performance 100% completion / 0.0 hrs avg (verified against real
+  created_at/completed_at timestamps via SQL, confirmed correct given how
+  quickly those specific test follow-ups were completed, not a bug). At
+  390x844 and 375x812: confirmed the trimmed 3-card mobile view, confirmed
+  Reports appears in More's Work group and navigates correctly, confirmed
+  Automation still appears only in Management (unchanged, still absent
+  from Work), confirmed no horizontal overflow at either size. No console
+  errors at any point. Confirmed desktop sidebar otherwise unchanged in
+  order.
+- Not verified live: Staff-role visibility -- no Staff login credentials
+  were available, same gap as every phase since Follow-ups. Verified
+  structurally, more rigorously than usual given this phase's own explicit
+  aggregation-safety requirement: traced that a staff caller's fetched
+  `leads`/`followUps` arrays cannot contain another staff's rows at the
+  fetch layer itself (RLS + explicit filter), before any per-staff
+  grouping logic ever runs -- not "hidden in a bigger array," genuinely
+  absent from it.
+- `npm run lint` / `npx tsc --noEmit` / `npm run build`: all clean.
+- Not committed, not pushed. Not proceeding to another phase.
+
 ### 2026-08-30 — Mobile Navigation IA restructure (§1, Option B)
 - Phase: mobile navigation only, per the approved audit's Option B. No
   schema, Supabase, Realtime, WhatsApp, API, or data-layer change; no
