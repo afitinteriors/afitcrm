@@ -40,12 +40,24 @@ const NAV_ITEMS = [
       />
     ),
   },
+  {
+    href: "/follow-ups",
+    label: "Tasks",
+    icon: (
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={1.75}
+        d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+      />
+    ),
+  },
 ];
 
-// Primary mobile navigation -- the three real, built destinations, plus an
+// Primary mobile navigation -- the four real, built destinations, plus an
 // optional admin-only "More" slot (Automation/Audit Log) passed in from the
-// layout. No placeholder tabs for features that don't exist yet (Follow-ups,
-// Tasks, Notifications); those get added here once they're actually built.
+// layout. Follow-ups/Tasks is a real tab -- §1 lists follow-ups/tasks as a
+// mobile priority for every role.
 export function MobileBottomNav({ moreSlot }: { moreSlot?: React.ReactNode }) {
   const pathname = usePathname();
 

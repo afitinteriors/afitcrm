@@ -1,6 +1,7 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
-import type { FollowUpRow } from "@/lib/supabase/types";
+import type { FollowUpRow, FollowUpStatus, FollowUpType } from "@/lib/supabase/types";
+import { FOLLOW_UP_TYPES } from "@/lib/constants";
 
 export type UpcomingFollowUp = FollowUpRow & {
   lead: { customer_name: string | null } | null;
@@ -50,4 +51,58 @@ export async function getUpcomingFollowUps(): Promise<UpcomingFollowUp[]> {
 
   if (error) throw new Error(error.message);
   return (data ?? []) as unknown as UpcomingFollowUp[];
+}
+
+export type FollowUpListItem = FollowUpRow & {
+  lead: { customer_name: string | null } | null;
+  assigned: { display_name: string | null } | null;
+};
+
+export type FollowUpStatusFilter = FollowUpStatus | "all";
+
+export type FollowUpFilters = {
+  status?: string;
+  type?: string;
+  assignedTo?: string;
+};
+
+function isFollowUpType(value: string): value is FollowUpType {
+  return (FOLLOW_UP_TYPES as string[]).includes(value);
+}
+
+function isFollowUpStatusFilter(value: string): value is FollowUpStatusFilter {
+  return value === "pending" || value === "completed" || value === "all";
+}
+
+// The Follow-ups workspace's own query -- unlike getUpcomingFollowUps() (the
+// dashboard's narrow "next 7 days, pending only" widget), this returns every
+// row the caller's RLS allows, so the workspace can group overdue/today/
+// upcoming/completed itself and apply real filters. Same RLS
+// (follow_ups_select_admin_or_owner) as every other function here -- admin
+// sees everything, staff only follow-ups on leads assigned to them -- so an
+// assignedTo value naming another user only ever narrows a staff caller's
+// own already-RLS-scoped rows to nothing, it can never widen access.
+export async function getFollowUps(filters: FollowUpFilters): Promise<FollowUpListItem[]> {
+  const supabase = await createClient();
+
+  let query = supabase
+    .from("follow_ups")
+    .select("*, lead:leads(customer_name), assigned:profiles(display_name)")
+    .order("due_date", { ascending: true })
+    .order("due_time", { ascending: true, nullsFirst: false });
+
+  const status = filters.status ?? "";
+  if (status && isFollowUpStatusFilter(status) && status !== "all") {
+    query = query.eq("status", status);
+  }
+  if (filters.type && isFollowUpType(filters.type)) {
+    query = query.eq("type", filters.type);
+  }
+  if (filters.assignedTo) {
+    query = query.eq("assigned_to_id", filters.assignedTo);
+  }
+
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+  return (data ?? []) as unknown as FollowUpListItem[];
 }

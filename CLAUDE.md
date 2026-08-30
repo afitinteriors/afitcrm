@@ -14,6 +14,68 @@ session has real state instead of re-reading intentions.
 ## 0. Session Log
 <!-- Append one entry per session. Newest at top. -->
 
+### 2026-08-30 — Phase 4 (§7/§11): Follow-ups workspace
+- Phase: Follow-ups only, per the approved next-phase plan. No schema/RLS
+  change, no new table, nothing touched in `lib/realtime/`, `lib/whatsapp/`,
+  `lib/actions/messages.ts`, `/conversations`, or `/chat`. No Meta API
+  activity, no Coexistence, no multi-number work, no `/chat` consolidation,
+  no `/conversations` styling migration. Not committed, not pushed.
+- Inspected first: the only existing follow-up UI was a per-lead card
+  (`FollowUpsCard`/`CreateFollowUpForm`/`CompleteFollowUpButton`) and the
+  dashboard's narrow "next 7 days, pending only, limit 20" widget
+  (`DashboardFollowUps`/`getUpcomingFollowUps`) -- no `/follow-ups` route
+  existed. `follow_ups` already had every column needed
+  (`assigned_to_id`, `due_date`, `due_time`, `type`, `status`,
+  `completed_at`); confirmed live via `pg_policies` that
+  `follow_ups_select_admin_or_owner`/`_insert_.../_update_...` all scope by
+  **lead ownership** (`leads.assigned_to_id = auth.uid()`), not
+  `follow_ups.assigned_to_id` (which just records who created/actioned the
+  follow-up) -- unchanged by this phase, verified not assumed.
+- Built one shared data-layer addition, `getFollowUps()` in the existing
+  `lib/follow-ups.ts` (alongside, not replacing,
+  `getFollowUpsForLead`/`getUpcomingFollowUps`), plus
+  `groupFollowUpsByDueDate()` added to the existing client-safe
+  `lib/follow-up-status.ts`. One route, `app/(app)/follow-ups/page.tsx`,
+  renders both UI layers from that single fetch: desktop (`hidden lg:block`)
+  gets the full workspace -- status/type/assignee filter bar
+  (`FollowUpsFilterBar`, assignee select only rendered when
+  `getAssignableStaff()` returns staff, i.e. admin-only, already-existing
+  admin gate reused as-is) and Overdue/Today/Upcoming sections plus a
+  collapsed Completed `<details>`; mobile (`lg:hidden`) gets Today's tasks
+  only -- Overdue + Today, no filter chrome, "All caught up for today."
+  empty state, matching §1's mobile-priority scope. Both render through the
+  same `FollowUpsSection`/`FollowUpListItem` components and the existing
+  `CompleteFollowUpButton` -- no new complete/create logic was written.
+  Added "Follow-ups" to the desktop sidebar and a real "Tasks" tab to the
+  mobile bottom nav (now 4 tabs, not folded into the admin-only "More"
+  overflow, since §1 lists follow-ups/tasks as a mobile priority for every
+  role and `MobileMoreMenu` is admin-gated end to end).
+- Verified live, not from source inspection: at 1440×900, created three
+  real follow-ups through the actual `CreateFollowUpForm` UI (due
+  2026-08-25/08-30/09-05, relative to today 2026-08-30) and confirmed they
+  landed correctly in Overdue(1)/Today(1)/Upcoming(1); completed two via
+  the workspace's own Complete button and confirmed they moved out of the
+  pending default view without a manual refresh; switched the status filter
+  to All and confirmed a real "Completed (3)" `<details>` expanded to show
+  the correct lead links, dates, and assignee name; confirmed the dashboard
+  widget and per-lead card (both sharing the edited `lib/follow-ups.ts`)
+  still render with no console errors. At 390×844 and 375×812: confirmed
+  the 4-tab bottom nav, Today's-tasks-only view, and the "All caught up for
+  today." empty state after completing every test item; confirmed no
+  horizontal overflow at either mobile size. All 3 test follow-ups deleted
+  afterward -- confirmed via SQL the table is back to its original 3
+  pre-existing (unrelated, already-completed) rows.
+- Not verified live: Staff-role behavior -- no Staff login credentials were
+  available (same gap as the Phase 4b.4 session), and resetting a real
+  user's password was judged out of scope for the same reason as before.
+  Verified structurally instead: the RLS policies above are completely
+  unchanged, are lead-ownership-scoped exactly like every other table in
+  this app, and an `assignedTo` filter value a staff caller might pass can
+  only ever narrow their own already-RLS-scoped rows, never widen access --
+  the same fail-closed pattern already documented in `getLeads()`.
+- `npm run lint` / `npx tsc --noEmit` / `npm run build`: all clean.
+- Not committed, not pushed.
+
 ### 2026-08-30 — Phase 4b.3: Live UI integration
 - Phase: 4b.3 only (§34). Wired the shared Realtime mechanism from 4b.2 into
   both `/conversations` and `/chat` per the §34 UX contract. No schema
