@@ -14,6 +14,136 @@ session has real state instead of re-reading intentions.
 ## 0. Session Log
 <!-- Append one entry per session. Newest at top. -->
 
+### 2026-08-30 — AGENTS.md reconciliation
+- Phase: none — Claude Code infrastructure work (Part 1 audit → Part 2,
+  section 1 of the ordered CLAUDE.md→Skills→Agents→MCP→Hooks→Commands→
+  Settings→Phase Plan sequence). No product/application code, schema, or
+  config touched; nothing committed.
+- Audited actual repo infrastructure first (not assumed): confirmed zero
+  project-local `.claude/settings.json`, hooks, commands, or agents exist;
+  the only project-local `.claude/` content is a vendored `ui-ux-pro-max`
+  skill; no `.mcp.json`; no installed Playwright test framework (all UI
+  verification this project has done is ad-hoc MCP browser automation,
+  not a repeatable suite); `.playwright-mcp/` has accumulated 337 files/
+  2.8MB of untracked session output; and a second, previously-unexamined
+  instruction file, `AGENTS.md` (688 lines, repo root), exists and is
+  **not** part of Claude Code's automatic context here.
+- Compared `AGENTS.md` against this file section by section. Folded
+  genuinely new, still-relevant information into the right existing
+  sections rather than a wholesale copy: permission/sensitive-data
+  specifics → §16; audit event taxonomy → §13; calling scope → §19;
+  architecture priority tiebreaker → §21; WABIS (a temporary, separate
+  WhatsApp integration this file had never once mentioned, and the actual
+  explanation for the `WEBHOOK_DISCOVERY_MODE` code comment found during
+  the Phase 4a verification session) and the Phase B3 WhatsApp
+  media-download record (commits `54a8c11`/`3c0f004`, verified against a
+  real Meta test WABA — a third already-built-and-verified WhatsApp
+  capability beyond what §32 previously credited) → §32. Added new §33
+  documenting AGENTS.md's status and pointing to where each piece landed.
+- Resolved the one direct contradiction: AGENTS.md said to auto-commit
+  after every successful phase; corrected that section in AGENTS.md
+  itself to point to CLAUDE.md §18/§27 (no automatic commits, ever) as
+  authoritative, rather than leaving two files disagreeing. Also marked
+  AGENTS.md's stale "STOP LEAD LEAKAGE" current-priority checklist as
+  resolved (CLAUDE.md §16 already covers this as done), pointing back
+  here instead of reading like an open emergency. Added a short header
+  note at the top of AGENTS.md stating CLAUDE.md is authoritative.
+- Left completely untouched: the Next.js 16 dev-server's auto-generated
+  `<!-- BEGIN:nextjs-agent-rules -->` block at the end of AGENTS.md
+  (confirmed byte-for-byte unchanged) — that's tooling-managed content,
+  not something to fight or rewrite.
+- Verified: re-read both files in full after editing. Heading numbering
+  in CLAUDE.md is sequential 0–33 with no gaps (one placement mistake
+  caught and fixed mid-edit — §33 briefly landed before the WABIS/B3
+  subsections that belong under §32; corrected). No lint/tsc/build run —
+  this session touched only two Markdown files, nothing that affects the
+  Next.js build.
+- Not done: Skills/Agents/MCP/Hooks/Commands/Settings sections of the
+  infrastructure redesign — explicitly next, not started, per the
+  one-section-at-a-time rule. Not started: repeatable Playwright test
+  suite, `.gitignore` additions for `.playwright-mcp/`/`.claude/`/
+  `design/`/`graphify-out/`/loose screenshots (flagged in the audit,
+  deferred to whichever future section covers it).
+
+### 2026-08-30 — Documentation reconciliation (this session)
+- Phase: none — documentation/architecture update only, no source touched.
+- Read CLAUDE.md in full and compared it against live product decisions
+  made in conversation since the last update. Found and fixed: §0 was
+  missing three sessions' worth of real work (the 0a/0b/1/2/3 commit,
+  Phase 4a verification, and the WhatsApp Numbers Settings UI session —
+  all backfilled below); §22 "Current priority" still pointed at Phase 3
+  after it shipped; §15 said no Settings page existed after one had been
+  built (uncommitted).
+- Added §27–§32: strict one-phase-then-`/clear` workflow, UI-first rule,
+  token/session efficiency rule, the current central-WhatsApp-number
+  production architecture, future (not-yet-implemented) Coexistence
+  direction, and a reconciled Phase 4a/4b status replacing the stale
+  bundled description in §25/§26 (left those sections' original text
+  intact for history; §32 is the current source of truth on WhatsApp
+  phase status).
+- Not done: no code, schema, or config changed; no commit made.
+
+### 2026-08-30 — WhatsApp Number Management UI (Settings)
+- Phase: new, ad hoc — not in the original §7 list (see §32/§15). UI/UX
+  only, explicitly no backend, per session instruction.
+- Built: `/settings` (index) and `/settings/whatsapp-numbers`, admin-only
+  (page-level check, same pattern as `/automation`). A list of WhatsApp
+  numbers in business language (name, formatted number, status badge,
+  purpose tag, assigned staff or "All staff", default badge) plus a
+  guided 5-step "Add WhatsApp Number" wizard (Connect → Purpose → Assign →
+  Default → Review) and a single-screen "Manage" edit form. Added a
+  "Settings" entry to the admin desktop sidebar and mobile "More" menu.
+  Staff picker uses real `getAssignableStaff()` data; everything else
+  (`lib/settings/whatsapp-numbers.ts`) is local component state seeded
+  with mock numbers — no `whatsapp_numbers` table exists, matching the
+  Automation prototype's precedent (§12) and §3's no-new-schema rule.
+- Fixed two real accessibility bugs found during Playwright testing
+  (button-group controls nested inside a single `<label>`, producing
+  garbled combined accessible names — switched to `<fieldset>`/`<legend>`)
+  and one real logic bug (editing the number that's already default
+  incorrectly warned it would "replace" the current default).
+- Verified: lint/tsc/build clean. Playwright — Admin 1440×900/390×844/
+  375×812: full add-wizard flow, edit, set-default, all correct, no
+  overflow. Staff: no Settings nav entry anywhere, and both `/settings`
+  and `/settings/whatsapp-numbers` return server-side 404.
+- Not done / explicitly deferred: no persistence, no real Meta connection,
+  no Realtime — see §32.
+
+### 2026-08-30 — Phase 4a verification (no implementation)
+- Phase: 4a (§25/§26) — verification only, per explicit instruction not to
+  touch Phase 4b.
+- Found that Phase 4a's env-var prerequisites already existed
+  (`WHATSAPP_VERIFY_TOKEN`/`WHATSAPP_APP_SECRET`/`WHATSAPP_ACCESS_TOKEN`)
+  and that most of what §25/§26 call "Phase 4b" was already built and
+  already committed from before this session (webhook receiver, outbound
+  sender, three-column Conversations UI) — see §32 for the full
+  reconciliation this triggered.
+- Verified locally (no Meta contact): GET verification handshake (correct/
+  wrong token); POST with a self-computed valid HMAC-SHA256 signature
+  ingests correctly into `conversations`/`messages`; invalid signature
+  correctly rejected (401). Verified live in the UI: Admin sees the
+  ingested message, thread + lead-details panel render correctly, Staff's
+  list is correctly empty and a direct URL to an unlinked conversation
+  404s. Test data cleaned up afterward (DB confirmed back to its exact
+  prior single-conversation state).
+- Not verified (and not safe to from this environment): a real send
+  through Meta's live Graph API (would be a genuine external side effect
+  on the real business account) and Meta's own delivery of a webhook call
+  from its real infrastructure (requires this URL to be publicly
+  registered, which is the Phase 4a account-setup step itself).
+- Confirmed gap, not fixed (explicitly out of scope): no Supabase Realtime
+  anywhere in the codebase — new messages need a manual refresh.
+
+### 2026-08-30 — Phase 0a/0b/1/2/3 commit
+- Phase: committing already-verified work, no new implementation.
+- All four phases existed uncommitted in the working tree from prior
+  sessions (Phase 3 had just been verified per the entry below; 0a/0b/1/2
+  were already logged/built but never committed). Staged and committed
+  exactly those files — commit `c6834a9` — deliberately excluding the
+  in-progress Automation prototype, its `@xyflow/react` dependency bump,
+  and all design/screenshot assets sitting in the same working tree.
+- Not pushed, not deployed.
+
 ### 2026-08-30 — Phase 3 (verification only)
 - Phase: 3 (Stage-aware Lead Detail, §5/§7/§22)
 - Scope: this session did NOT write the Phase 3 implementation — it already
@@ -369,6 +499,19 @@ Admin only, desktop oriented, not in mobile nav. Per-lead Activity can
 exist (it already does) without exposing the full Audit Log workspace to
 staff/mobile.
 
+**Target event taxonomy (reconciled from AGENTS.md, 2026-08-30):** login,
+failed login, logout, lead created/viewed/updated/assigned/reassigned/
+deleted, phone number viewed, conversation viewed, message sent, follow-up
+created/completed, export attempted/completed, user created, role/
+permission changed. Confirmed already implemented in code today:
+`lead_updated`, `message_sent`, `conversation_viewed`, `lead_viewed`
+(`lib/audit-logs.ts`, `lib/actions/leads.ts`, `lib/conversations.ts`) —
+the rest (auth events, export events, user/role management events) are
+aspirational, not yet wired, since the features they'd attach to (login
+audit, export, user management) don't exist yet either. Never log message
+contents (§16) — `message_sent` audit metadata already excludes body text,
+keep it that way.
+
 ## 14. Reports
 
 No `/reports` route exists yet. Dashboard covers KPI/pipeline overview.
@@ -379,9 +522,15 @@ data, no required new table.
 
 ## 15. Admin/Settings
 
-No dedicated Admin/Settings page exists. User/profile/role management is
-currently handled directly through Supabase. Don't assume this module
-already exists.
+User/profile/role management is still handled directly through Supabase —
+no admin UI for that exists.
+
+> **Update (2026-08-30):** a first Settings section now exists —
+> `/settings` (index) and `/settings/whatsapp-numbers` — built as a pure
+> UI/UX prototype (see §32). It is **uncommitted** and holds its data in
+> local component state only; nothing persists across a reload and nothing
+> is wired to Meta. Don't treat it as a working feature yet, but don't
+> re-build it from scratch either — see §32 before touching it.
 
 ---
 
@@ -397,6 +546,20 @@ Staff see only their own assigned leads. Admin sees all. Other tables have
 appropriate admin/owner restrictions already verified. **Never replace
 database security with UI-only hiding**, and never weaken or bypass RLS to
 make a UI problem easier to solve.
+
+**Permission specifics (reconciled from AGENTS.md, 2026-08-30):** Staff
+must never be able to — reassign leads, bulk-export leads, manage
+users/roles, change security settings, or view audit logs, including via
+direct API/URL access, not just hidden UI. Admin-only: manage staff,
+manage system settings, manage WhatsApp configuration, bulk export. Bulk
+export doesn't exist as a feature yet, but when it's built it must be
+Admin-only and server-enforced, same as everything else in this section.
+
+Treat as sensitive (don't put in logs, error messages, or diagnostics):
+phone numbers, emails, customer names, addresses, lead notes, conversation
+contents, WhatsApp identifiers, call info. Never log passwords, API keys,
+access tokens, webhook secrets, service-role keys, or full auth
+cookies/headers.
 
 ---
 
@@ -439,6 +602,14 @@ customer, schedule site visit, send quotation, follow up on quotation,
 negotiate, close lead). If there's no real next action, don't invent a
 fake task just to fill the slot.
 
+**Calling scope (reconciled from AGENTS.md, 2026-08-30):** "Call" today
+means a plain `tel:` link — nothing more. Don't claim or imply the CRM can
+access call audio, transcripts, duration, or keywords unless a call is
+actually routed through a supported telephony provider, which it isn't. A
+future pipeline (CRM → telephony provider → recording/transcription → AI
+extraction → CRM) is plausible scope one day but needs explicit approval
+before any of it is built — don't design toward it speculatively.
+
 ## 20. Qualification Score vs Pipeline Stage — do not conflate
 
 Pipeline stage = where the lead is in the sales process (§4).
@@ -462,16 +633,29 @@ never merge them into one number or one card.
 9. Run lint/typecheck/build (§18).
 10. Report exactly what changed and what was verified — update §0.
 
+**Tiebreaker when priorities conflict (reconciled from AGENTS.md,
+2026-08-30):** security > data integrity > correctness > reliability >
+maintainability > performance > UI convenience. Never sacrifice security
+or data integrity for a faster or prettier implementation.
+
 ---
 
 ## 22. Current priority
 
-Phase 3 (§5, §7): retrofit Lead Detail with real per-stage section
+> **Updated 2026-08-30 — superseded.** Phase 3 is done: retrofitted,
+> live-verified, and committed (`c6834a9`), alongside 0a/0b/1/2. Phase 4a
+> (Meta account setup) is verified satisfied, and most of what §25/§26
+> call "Phase 4b" already exists in the codebase (webhook, outbound
+> sender, three-column Conversations UI) — see §32 for the reconciled,
+> current breakdown of what's actually left. **Current priority is the
+> remaining Phase 4b scope in §32**, not a fresh Phase 3.
+
+~~Phase 3 (§5, §7): retrofit Lead Detail with real per-stage section
 visibility. This is the one rule in this document that governed the last
 restructuring pass but wasn't actually implemented yet. Fix this before
 starting Command Center / Leads list / any new module — the same
 STAGE_SECTIONS pattern will make every future module simpler to reason
-about too.
+about too.~~ *(kept for history — see the update note above)*
 
 ---
 
@@ -528,7 +712,7 @@ schema or UX that gets thrown away later (see §3, §21).
 | Mission Control | Not mentioned in the latest nav plan at all — unclear if this was ever distinct from Command Center/Dashboard. | Confirm whether this still exists as a concept. |
 | Documents | Not mentioned in the latest nav plan. | Confirm whether this is still wanted; if so, what's stored where. |
 | Reports | Scoped generally in §14, no mockup yet, but confirmed as a real nav item. | Paste the Reports screen mockup/spec if one exists. |
-| Settings | §15 confirms no page exists yet, but confirmed as a real nav item. | Paste the Settings screen mockup/spec, and what's actually configurable. |
+| Settings | Confirmed as a real nav item. A first section (WhatsApp Numbers) now exists as a UI prototype — see §15/§32 — but nothing beyond that is designed, and the rest of Admin/Settings (user/role management etc.) still has no spec. | Paste a mockup/spec for whatever comes after WhatsApp Numbers, and confirm what else belongs under Settings. |
 
 **What to bring back from ChatGPT (or wherever the spec lives):**
 1. Confirmation on whether Customers/Services/Team/Mission

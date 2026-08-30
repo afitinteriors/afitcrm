@@ -1,5 +1,15 @@
 # AFIT CRM — Permanent Architecture & Development Rules
 
+> **Note (2026-08-30):** `CLAUDE.md` at the repo root is now the single
+> authoritative, actively-maintained source of truth for this project's
+> current rules and status — see its §33 for the full explanation of how
+> this file relates to it. This file is kept for historical/technical
+> record (see §25 below) and because some tools default to reading
+> `AGENTS.md` by convention. Where anything here conflicts with
+> CLAUDE.md, **CLAUDE.md wins** — in particular §21 below (git
+> checkpoints) and §24 (current priority) have been corrected to point to
+> CLAUDE.md rather than left contradicting it.
+
 You are working on AFIT CRM.
 
 You are an implementation agent, not the system architect.
@@ -570,15 +580,18 @@ Temporary diagnostic features must have:
 21. GIT CHECKPOINTS
 ==================================================
 
-Before a major change:
+CORRECTED 2026-08-30 — see CLAUDE.md §18/§27, which is authoritative:
 
-Create a Git checkpoint.
+Do NOT create commits automatically, including after a "successful
+phase." No automatic commits, no automatic pushes, no automatic
+deployment. Only commit when the user explicitly asks, and only exactly
+the files that belong to what was approved.
 
-After a successful phase:
+(This replaces the file's original instruction here, which said to
+auto-commit after every successful phase — that is no longer correct.)
 
-Create a Git commit describing the completed phase.
-
-Do not accumulate many unrelated changes in one commit.
+Do not accumulate many unrelated changes in one commit when a commit is
+actually requested.
 
 ==================================================
 22. WHEN REQUIREMENTS ARE UNCLEAR
@@ -616,28 +629,30 @@ Priority order:
 Never sacrifice security or data integrity for faster implementation.
 
 ==================================================
-24. CURRENT IMMEDIATE PRIORITY
+24. CURRENT IMMEDIATE PRIORITY — RESOLVED, see CLAUDE.md
 ==================================================
 
-The immediate priority is:
+RESOLVED 2026-08-30. Everything this section originally called an
+immediate priority (server-side authorization, lead ownership, RLS,
+staff bulk-export prevention, testing staff can't reach another user's
+leads via direct URL/API/DB access) has since been implemented and
+verified — see CLAUDE.md §16 ("Authorization / RLS — verified, do not
+weaken"). This is no longer the current priority.
 
-STOP LEAD LEAKAGE.
+CLAUDE.md is authoritative on current status and priority — see its §22
+(current priority) and §32 (WhatsApp phase status) rather than treating
+the checklist below as still open.
 
-Before implementing the redesigned UI or advanced WhatsApp features:
+Original text, kept for history only:
 
-1. Audit authentication.
-2. Audit Admin/Staff roles.
-3. Implement server-side authorization.
-4. Implement lead ownership.
-5. Implement Supabase RLS.
-6. Prevent staff bulk export.
-7. Implement audit logging.
-8. Test that STAFF cannot access another user's leads.
-9. Test direct URL access.
-10. Test direct API access.
-11. Test database-level access.
-
-Only after these are verified should feature development continue.
+The immediate priority is: STOP LEAD LEAKAGE. Before implementing the
+redesigned UI or advanced WhatsApp features: 1. Audit authentication.
+2. Audit Admin/Staff roles. 3. Implement server-side authorization.
+4. Implement lead ownership. 5. Implement Supabase RLS. 6. Prevent staff
+bulk export. 7. Implement audit logging. 8. Test that STAFF cannot
+access another user's leads. 9. Test direct URL access. 10. Test direct
+API access. 11. Test database-level access. Only after these are
+verified should feature development continue.
 
 ==================================================
 25. WHATSAPP INTEGRATION STATUS
