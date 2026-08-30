@@ -14,6 +14,69 @@ session has real state instead of re-reading intentions.
 ## 0. Session Log
 <!-- Append one entry per session. Newest at top. -->
 
+### 2026-08-30 — Mobile Navigation IA restructure (§1, Option B)
+- Phase: mobile navigation only, per the approved audit's Option B. No
+  schema, Supabase, Realtime, WhatsApp, API, or data-layer change; no
+  desktop navigation change; no product/data behavior touched outside
+  mobile nav. Not committed, not pushed.
+- Problem this fixes, not just reshuffles: before this phase, Deals and
+  Quotations had **zero** mobile navigation path for either role -- not a
+  crowding risk, an existing gap. The old "More" was admin-only end to
+  end (`MobileAdminMore` returned `null` for staff), so it could never
+  have been the fix for that gap even before it started getting crowded.
+- Built: bottom bar cut from 5 tabs to 4 -- Home, Leads, Chats (`/
+  conversations`), Tasks (`/follow-ups`) -- Site Visits removed
+  (`components/MobileBottomNav.tsx`). New `components/MobileMoreMenu.tsx`
+  (full rewrite, same outside-click/Escape-to-close logic preserved) is
+  now **one role-aware architecture for both roles**, not an admin-only
+  gate: a `Work` group (Site Visits, Deals, Quotations) always renders;
+  `Management` (Automation, Audit Log) and `System` (Settings) render only
+  when `isAdmin` is true. `components/MobileAdminMore.tsx` (admin-only
+  gate, entire component returned `null` for staff) removed and replaced
+  by `components/MobileMoreEntry.tsx` (always renders, fetches the
+  profile, passes `isAdmin` down) -- `app/(app)/layout.tsx` rewired to the
+  new component accordingly. Did not add Reports or Team links -- neither
+  destination is built or approved (§24), and a dead link is worse than an
+  absent one. Kept the existing "Chats"/"Tasks" mobile-label abbreviation
+  convention rather than expanding to "Conversations"/"Follow-ups" to
+  avoid re-introducing label-wrapping risk on already-verified tab widths.
+- CLAUDE.md §1 amended: the mobile paragraph now explicitly tiers Home/
+  Leads/Conversations/Follow-ups-Tasks as primary (bottom bar) versus
+  Site Visits/Deals/Quotations as secondary (mobile-reachable via More's
+  Work section, not the bar) -- replacing the flat, untiered list that
+  produced the crowding trajectory this phase exists to stop. Also
+  corrected an adjacent, already-stale claim in the same paragraph
+  ("Automation and Audit Log ... never in mobile nav") that predated and
+  contradicted the admin-only mobile More menu built back in Phase 0b --
+  found while editing this exact paragraph, not a separate unrelated
+  cleanup.
+- Verified live, not from source inspection, as Admin at 390x844 and
+  375x812: bottom bar shows exactly Home/Leads/Chats/Tasks/More, Site
+  Visits confirmed absent from it; opening More shows all three groups
+  (Work/Management/System) with the correct items in each; navigating to
+  Site Visits via the menu works and the menu correctly re-shows both the
+  More tab and the specific Site Visits item as `aria-current="page"` when
+  reopened on that route; outside-click correctly closes the menu
+  (confirmed via a real dispatched `mousedown`, not a synthetic `.click()`,
+  after an initial false negative from checking the DOM before React's
+  state update had flushed); no horizontal overflow
+  (`scrollWidth === clientWidth`) at either size, menu included, with the
+  open menu's bounding box confirmed fully on-screen at 375px. Confirmed
+  desktop sidebar completely unchanged (same 7 items + admin section, same
+  order) at 1440x900. No console errors at any point.
+- Not verified live: Staff-role visibility (Work shown, Management/System
+  absent) -- no Staff login credentials were available, same gap as every
+  phase since Follow-ups. Verified structurally instead: `isAdmin` is a
+  plain boolean prop gating a ternary between a 1-group and a 3-group
+  array, and `MobileMoreEntry`'s role check
+  (`profile?.role === "admin"`) is the exact same pattern already
+  live-verified for this exact "Automation/Audit Log hidden from staff on
+  mobile" behavior back in Phase 0b (`git log`/session log: "exactly 3
+  nav items + admin 'More' ... for Admin, ... no 'More' for Staff on
+  mobile") -- not new, unverified authorization logic.
+- `npm run lint` / `npx tsc --noEmit` / `npm run build`: all clean.
+- Not committed, not pushed. Not proceeding to the next product phase.
+
 ### 2026-08-30 — Phase 7 (§8): Deals workspace
 - Phase: Deals only, per the approved next-phase plan. UI-level only -- no
   schema, migration, RLS, or Supabase config change; no new query
@@ -810,16 +873,37 @@ management, detailed lead/customer info, commercial info, quotations,
 site-visit management, follow-ups/tasks, conversations, reports,
 automation, audit log, admin/settings.
 
-**Mobile = daily field/work execution.** Today/home, leads, conversations,
-follow-ups/tasks, site visits, quick actions, status updates,
-calling/WhatsApp, notes.
+**Mobile = daily field/work execution.** Primary (bottom bar, every role):
+today/home, leads, conversations, follow-ups/tasks. Secondary (mobile-
+reachable, but via the More menu's Work section, not the bottom bar, every
+role): site visits, deals, quotations. Quick actions, status updates,
+calling/WhatsApp, and notes are embedded within these surfaces, not
+separate nav destinations.
+
+> **Updated 2026-08-30 (Mobile Navigation IA restructure):** this section
+> originally listed mobile priorities as one flat, untiered set including
+> site visits. That became the literal 5-tab bottom bar built across the
+> Follow-ups/Site-Visits/Deals/Quotations phases — workable at the time,
+> but the wrong shape for a bar that's supposed to stay 4 items as more
+> modules arrive. Site visits (and, newly, deals/quotations, which had no
+> mobile path at all before this) are still mobile-accessible — just one
+> tap into More, not a permanent tab — rather than left desktop-only or
+> silently contradicting this section.
 
 Rules:
 - Do NOT shrink the desktop UI onto mobile. Build two intentional surfaces.
 - Do NOT expose every desktop module on mobile.
-- Automation and Audit Log are desktop/admin-only — never in mobile nav.
+- Automation, Audit Log, and Settings are desktop/admin-only for primary
+  navigation — never in the primary bottom bar, never visible to staff on
+  mobile at all. On mobile they exist only inside the More menu's
+  admin-only Management/System sections. (Corrects this rule's earlier
+  "never in mobile nav" wording, which was already stale — the admin-only
+  mobile More menu exposing exactly these two/three has existed since
+  Phase 0b, before this section was last edited.)
 - Mobile prioritizes what a salesperson needs *during the day*, not parity
-  with desktop.
+  with desktop. The bottom bar itself prioritizes the highest-frequency
+  subset of that — everything else mobile-relevant lives one tap away in
+  More, not permanently on the bar.
 
 ---
 

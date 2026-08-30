@@ -52,27 +52,17 @@ const NAV_ITEMS = [
       />
     ),
   },
-  {
-    href: "/site-visits",
-    label: "Visits",
-    icon: (
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={1.75}
-        d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z"
-      />
-    ),
-  },
 ];
 
-// Primary mobile navigation -- the five real, built destinations, plus an
-// optional admin-only "More" slot (Automation/Audit Log/Settings) passed in
-// from the layout. Follow-ups/Tasks and Site Visits are real tabs -- §1
-// lists both as mobile priorities for every role. Quotations is
-// deliberately NOT here -- §1 lists "quotations" under Desktop's full CRM
-// operations, not among Mobile's daily-work priorities, so it stays
-// sidebar-only.
+// Primary mobile navigation -- the four highest-frequency daily
+// destinations (§1, post-restructure), plus a real "More" slot rendered
+// for every role via MobileMoreEntry/MobileMoreMenu, not an admin-only
+// gate. Site Visits, Deals, and Quotations are still mobile-reachable --
+// they live in More's "Work" section -- but are deliberately not
+// bottom-bar tabs, so this bar doesn't grow into a module directory as
+// future features arrive. Automation/Audit Log/Settings stay entirely out
+// of this primary bar (Management/System sections inside More, admin-only)
+// per §1's rules.
 export function MobileBottomNav({ moreSlot }: { moreSlot?: React.ReactNode }) {
   const pathname = usePathname();
 

@@ -5,7 +5,7 @@ import { SidebarProfileFooter } from "@/components/SidebarProfileFooter";
 import { SidebarAdminNav } from "@/components/SidebarAdminNav";
 import { SignOutButton } from "@/components/SignOutButton";
 import { MobileBottomNav } from "@/components/MobileBottomNav";
-import { MobileAdminMore } from "@/components/MobileAdminMore";
+import { MobileMoreEntry } from "@/components/MobileMoreEntry";
 import { BuildingEmblem } from "@/components/BuildingEmblem";
 
 function SidebarFooterSkeleton() {
@@ -67,7 +67,7 @@ export default function AppLayout({ children }: LayoutProps<"/">) {
         <MobileBottomNav
           moreSlot={
             <Suspense fallback={null}>
-              <MobileAdminMore />
+              <MobileMoreEntry />
             </Suspense>
           }
         />
