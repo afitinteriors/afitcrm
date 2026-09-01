@@ -46,7 +46,7 @@ export function MessageBubble({ message }: { message: MessageListItem }) {
     <div className={`flex ${isOutbound ? "justify-end" : "justify-start"}`}>
       <div
         className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm shadow-sm sm:max-w-lg ${
-          isOutbound ? "bg-[#14342a] text-white" : "border border-slate-200 bg-white text-slate-900"
+          isOutbound ? "bg-[#14342a] text-white" : "border border-border bg-white text-foreground"
         }`}
       >
         {isMedia ? (
@@ -54,13 +54,13 @@ export function MessageBubble({ message }: { message: MessageListItem }) {
         ) : message.body ? (
           <p className="whitespace-pre-wrap break-words">{message.body}</p>
         ) : (
-          <p className={`italic ${isOutbound ? "text-emerald-100" : "text-slate-400"}`}>
+          <p className={`italic ${isOutbound ? "text-emerald-100" : "text-muted-foreground"}`}>
             Unsupported message type: {message.message_type}
           </p>
         )}
         <p
           className={`mt-1 flex items-center justify-end gap-1 text-[11px] ${
-            isOutbound && message.status === "failed" ? "text-red-200" : isOutbound ? "text-emerald-100" : "text-slate-500"
+            isOutbound && message.status === "failed" ? "text-red-200" : isOutbound ? "text-emerald-100" : "text-muted-foreground"
           }`}
         >
           {formatDateTime(message.created_at)}

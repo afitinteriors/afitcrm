@@ -38,7 +38,7 @@ export function LiveMessageList({
   }, [messages.length, lastUpdateSource]);
 
   if (messages.length === 0) {
-    return <p className="py-8 text-center text-sm text-slate-500">No messages in this conversation yet.</p>;
+    return <p className="py-8 text-center text-sm text-muted-foreground">No messages in this conversation yet.</p>;
   }
 
   return (

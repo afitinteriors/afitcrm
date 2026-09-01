@@ -61,7 +61,7 @@ export function MessageThread({
   }, [messages.length, lastUpdateSource]);
 
   if (messages.length === 0) {
-    return <p className="py-8 text-center text-sm text-slate-500">No messages in this conversation yet.</p>;
+    return <p className="py-8 text-center text-sm text-muted-foreground">No messages in this conversation yet.</p>;
   }
 
   const items: React.ReactNode[] = [];
@@ -80,7 +80,7 @@ export function MessageThread({
     if (showDaySeparator) {
       items.push(
         <div key={`sep-${message.id}`} className="flex justify-center py-2">
-          <span className="rounded-full bg-white/80 px-3 py-1 text-[11px] font-medium text-slate-500 shadow-sm ring-1 ring-slate-200">
+          <span className="rounded-full bg-white/80 px-3 py-1 text-[11px] font-medium text-muted-foreground shadow-sm ring-1 ring-border">
             {dayLabel(created)}
           </span>
         </div>

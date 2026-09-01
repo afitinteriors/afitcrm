@@ -10,7 +10,7 @@ import { ConnectionIndicator } from "@/components/conversations/ConnectionIndica
 
 const STATUS_DOT: Record<string, string> = {
   open: "bg-emerald-500",
-  closed: "bg-slate-300",
+  closed: "bg-muted-foreground",
 };
 
 // basePath lets this list be reused by both the CRM's embedded /conversations
@@ -50,26 +50,26 @@ export function ConversationListPanel({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <ConnectionIndicator state={connectionState} />
-      <div className="shrink-0 border-b border-slate-100 p-2.5">
+      <div className="shrink-0 border-b border-border p-2.5">
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search"
           aria-label="Search conversations"
-          className="block w-full rounded-full border border-slate-200 bg-slate-50 px-3.5 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-300 focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-300"
+          className="block w-full rounded-full border border-border bg-secondary px-3.5 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:bg-card focus:outline-none focus:ring-1 focus:ring-primary"
         />
       </div>
 
       {conversations.length === 0 ? (
-        <div className="flex flex-1 items-center justify-center p-8 text-center text-sm text-slate-500">
+        <div className="flex flex-1 items-center justify-center p-8 text-center text-sm text-muted-foreground">
           No conversations yet.
         </div>
       ) : visible.length === 0 ? (
-        <div className="flex flex-1 items-center justify-center p-8 text-center text-sm text-slate-500">
+        <div className="flex flex-1 items-center justify-center p-8 text-center text-sm text-muted-foreground">
           No conversations match &quot;{search}&quot;.
         </div>
       ) : (
-        <ul className="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto">
+        <ul className="min-h-0 flex-1 divide-y divide-border overflow-y-auto">
           {visible.map((conversation) => {
             const active = pathname === `${basePath}/${conversation.id}`;
             const name = conversation.lead?.customer_name || "Unlinked conversation";
@@ -84,8 +84,8 @@ export function ConversationListPanel({
                   onKeyDown={(e) => {
                     if (e.key === "Enter") router.push(href);
                   }}
-                  className={`flex cursor-pointer items-center gap-3 px-3.5 py-3 transition-colors active:bg-slate-100 ${
-                    active ? "bg-[#eef4f1]" : "hover:bg-slate-50"
+                  className={`flex cursor-pointer items-center gap-3 px-3.5 py-3 transition-colors active:bg-secondary ${
+                    active ? "bg-[#eef4f1]" : "hover:bg-secondary"
                   }`}
                 >
                   <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#14342a] text-base font-semibold text-white">
@@ -103,16 +103,16 @@ export function ConversationListPanel({
                         <Link
                           href={href}
                           onClick={(e) => e.stopPropagation()}
-                          className="truncate text-sm font-medium text-slate-900"
+                          className="truncate text-sm font-medium text-foreground"
                         >
                           {name}
                         </Link>
                       </span>
-                      <span className="shrink-0 text-[11px] text-slate-500">{formatRelative(conversation.updated_at)}</span>
+                      <span className="shrink-0 text-[11px] text-muted-foreground">{formatRelative(conversation.updated_at)}</span>
                     </div>
                     <div className="mt-0.5 flex items-center gap-1.5">
                       <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT[conversation.status] ?? STATUS_DOT.closed}`} />
-                      <p className="truncate text-xs text-slate-500">{conversation.lead?.phone || conversation.wa_id}</p>
+                      <p className="truncate text-xs text-muted-foreground">{conversation.lead?.phone || conversation.wa_id}</p>
                     </div>
                   </div>
                 </div>

@@ -71,17 +71,17 @@ export function MobileChatHeader({
           <button
             type="button"
             aria-label="Close lead details"
-            className="absolute inset-0 bg-slate-900/40"
+            className="absolute inset-0 bg-black/40"
             onClick={() => setSheetOpen(false)}
           />
           <div className="absolute inset-x-0 bottom-0 max-h-[80vh] overflow-y-auto rounded-t-2xl bg-white shadow-xl">
-            <div className="sticky top-0 flex items-center justify-between border-b border-slate-100 bg-white px-4 py-3">
-              <p className="text-sm font-semibold text-slate-900">Lead details</p>
+            <div className="sticky top-0 flex items-center justify-between border-b border-border bg-white px-4 py-3">
+              <p className="text-sm font-semibold text-foreground">Lead details</p>
               <button
                 type="button"
                 onClick={() => setSheetOpen(false)}
                 aria-label="Close"
-                className="flex h-11 w-11 items-center justify-center rounded-full text-slate-500 active:bg-slate-100"
+                className="flex h-11 w-11 items-center justify-center rounded-full text-muted-foreground active:bg-secondary"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" className="h-5 w-5">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

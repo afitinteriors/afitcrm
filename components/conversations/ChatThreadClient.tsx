@@ -37,17 +37,17 @@ export function ChatThreadClient({
       {/* Desktop: thread column + persistent contact panel column. */}
       <div className="hidden h-full lg:flex">
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-          <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+          <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <div className="flex items-center gap-3">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#14342a] text-sm font-semibold text-white">
                 {name.charAt(0).toUpperCase()}
               </div>
               <div>
-                <p className="text-sm font-semibold text-slate-900">{name}</p>
-                <p className="text-xs text-slate-500">{subtitle}</p>
+                <p className="text-sm font-semibold text-foreground">{name}</p>
+                <p className="text-xs text-muted-foreground">{subtitle}</p>
               </div>
             </div>
-            <Link href="/chat" className="text-xs font-medium text-slate-500 hover:text-slate-700">
+            <Link href="/chat" className="text-xs font-medium text-muted-foreground hover:text-foreground">
               ← Conversations
             </Link>
           </div>
@@ -57,9 +57,9 @@ export function ChatThreadClient({
           <ReplyComposer conversationId={conversation.id} />
         </div>
 
-        <div className="w-[320px] shrink-0 overflow-y-auto border-l border-slate-100">
-          <div className="border-b border-slate-100 px-4 py-3">
-            <p className="text-sm font-semibold text-slate-900">Contact</p>
+        <div className="w-[320px] shrink-0 overflow-y-auto border-l border-border">
+          <div className="border-b border-border px-4 py-3">
+            <p className="text-sm font-semibold text-foreground">Contact</p>
           </div>
           <LeadDetailsContent lead={conversation.lead} />
         </div>

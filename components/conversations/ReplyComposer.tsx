@@ -20,7 +20,7 @@ export function ReplyComposer({ conversationId }: { conversationId: string }) {
   }, [isPending, state]);
 
   return (
-    <form action={formAction} className="shrink-0 border-t border-slate-200 bg-white p-2">
+    <form action={formAction} className="shrink-0 border-t border-border bg-white p-2">
       <input type="hidden" name="conversation_id" value={conversationId} />
       {state?.error && <p className="mb-2 px-1 text-xs text-red-600">{state.error}</p>}
       <div className="flex items-end gap-2">
@@ -37,7 +37,7 @@ export function ReplyComposer({ conversationId }: { conversationId: string }) {
           placeholder="Type a message"
           rows={1}
           disabled={isPending}
-          className="min-h-11 flex-1 resize-none rounded-full border border-slate-300 bg-slate-50 px-4 py-2.5 text-sm focus:border-[#14342a] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#14342a] disabled:opacity-60"
+          className="min-h-11 flex-1 resize-none rounded-full border border-border bg-secondary px-4 py-2.5 text-sm focus:border-[#14342a] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#14342a] disabled:opacity-60"
         />
         <button
           type="submit"

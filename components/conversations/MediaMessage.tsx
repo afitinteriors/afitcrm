@@ -64,9 +64,9 @@ export function MediaMessage({
         <img
           src={state.url}
           alt={caption || "WhatsApp image"}
-          className="max-w-xs rounded-lg border border-slate-200 object-cover"
+          className="max-w-xs rounded-lg border border-border object-cover"
         />
-        {caption && <p className="mt-1 text-sm text-slate-700">{caption}</p>}
+        {caption && <p className="mt-1 text-sm text-foreground">{caption}</p>}
       </div>
     );
   }
@@ -77,7 +77,7 @@ export function MediaMessage({
         href={state.url}
         target="_blank"
         rel="noopener noreferrer"
-        className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-blue-700 active:bg-slate-100"
+        className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-border bg-secondary px-3 py-2 text-sm font-medium text-blue-700 active:bg-secondary"
       >
         {TYPE_ICON[messageType] ?? "📎"} Open {messageType} again
       </a>
@@ -89,7 +89,7 @@ export function MediaMessage({
       type="button"
       onClick={load}
       disabled={state.status === "loading"}
-      className="flex min-h-11 w-full min-w-40 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-left text-sm font-medium text-slate-700 active:bg-slate-100 disabled:opacity-70"
+      className="flex min-h-11 w-full min-w-40 items-center gap-2 rounded-lg border border-border bg-secondary px-3 py-2.5 text-left text-sm font-medium text-foreground active:bg-secondary disabled:opacity-70"
     >
       <span className="text-lg">{TYPE_ICON[messageType] ?? "📎"}</span>
       <span className="flex-1">
@@ -97,7 +97,7 @@ export function MediaMessage({
           ? "Loading…"
           : `Tap to ${isImage ? "view" : "open"} ${messageType}`}
         {caption && state.status !== "loading" && (
-          <span className="block truncate text-xs font-normal text-slate-500">{caption}</span>
+          <span className="block truncate text-xs font-normal text-muted-foreground">{caption}</span>
         )}
         {state.status === "error" && (
           <span className="block text-xs font-normal text-red-600">{state.message}</span>

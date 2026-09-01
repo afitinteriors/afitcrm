@@ -31,7 +31,7 @@ export function ConversationThreadClient({
           screens/sheets, not columns -- this is not a shrunk desktop view. */}
       <div className="flex h-[calc(100vh-13rem)] flex-col lg:hidden">
         <MobileChatHeader name={name} subtitle={subtitle} lead={conversation.lead} />
-        <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50 p-3" data-scroll-container>
+        <div className="min-h-0 flex-1 overflow-y-auto bg-muted p-3" data-scroll-container>
           <LiveMessageList messages={messages} lastUpdateSource={lastUpdateSource} />
         </div>
         <ReplyComposer conversationId={conversation.id} />
@@ -40,25 +40,25 @@ export function ConversationThreadClient({
       {/* Desktop: three-column workspace -- this thread is the center
           column, lead details are an always-visible right column. */}
       <div className="hidden h-full lg:flex lg:gap-4">
-        <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-          <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+          <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <div>
-              <p className="text-sm font-semibold text-slate-900">{name}</p>
-              <p className="text-xs text-slate-500">{subtitle}</p>
+              <p className="text-sm font-semibold text-foreground">{name}</p>
+              <p className="text-xs text-muted-foreground">{subtitle}</p>
             </div>
-            <Link href="/conversations" className="text-xs font-medium text-slate-500 hover:text-slate-700">
+            <Link href="/conversations" className="text-xs font-medium text-muted-foreground hover:text-foreground">
               ← Back
             </Link>
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50 p-4" data-scroll-container>
+          <div className="min-h-0 flex-1 overflow-y-auto bg-muted p-4" data-scroll-container>
             <LiveMessageList messages={messages} lastUpdateSource={lastUpdateSource} />
           </div>
           <ReplyComposer conversationId={conversation.id} />
         </div>
 
-        <div className="w-72 shrink-0 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-100 px-4 py-3">
-            <p className="text-sm font-semibold text-slate-900">Lead details</p>
+        <div className="w-72 shrink-0 overflow-y-auto rounded-xl border border-border bg-card shadow-sm">
+          <div className="border-b border-border px-4 py-3">
+            <p className="text-sm font-semibold text-foreground">Lead details</p>
           </div>
           <LeadDetailsContent lead={conversation.lead} />
         </div>
