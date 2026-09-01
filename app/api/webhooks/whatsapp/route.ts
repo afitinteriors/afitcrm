@@ -8,6 +8,7 @@ import {
   type ParsedWhatsAppMessage,
 } from "@/lib/whatsapp/parse-webhook";
 import { describeShape } from "@/lib/whatsapp/describe-shape";
+import { triggerAutomationForMessage } from "@/lib/automations/trigger";
 import type { Database } from "@/lib/supabase/types";
 
 // Needs the Node.js runtime for node:crypto (HMAC signature verification).
@@ -101,23 +102,28 @@ async function ingestMessage(supabase: SupabaseClient<Database>, message: Parsed
   const conversationId = await findOrCreateConversation(supabase, message);
   if (!conversationId) return;
 
-  const { error } = await supabase.from("messages").insert({
-    conversation_id: conversationId,
-    wa_message_id: message.waMessageId,
-    direction: "inbound",
-    message_type: message.messageType,
-    body: message.body,
-    media_id: message.mediaId,
-    raw_payload: message.raw,
-  });
+  const { data: inserted, error } = await supabase
+    .from("messages")
+    .insert({
+      conversation_id: conversationId,
+      wa_message_id: message.waMessageId,
+      direction: "inbound",
+      message_type: message.messageType,
+      body: message.body,
+      media_id: message.mediaId,
+      raw_payload: message.raw,
+    })
+    .select("id")
+    .single();
 
-  if (error) {
-    if (error.code !== "23505") {
+  if (error || !inserted) {
+    if (error?.code !== "23505") {
       // 23505 = unique_violation on wa_message_id -> already recorded (retry), not an error.
-      console.error("Failed to persist WhatsApp message:", error.message);
+      console.error("Failed to persist WhatsApp message:", error?.message);
     }
     // Either way, no new row was inserted this call -- don't touch the
-    // conversation's updated_at for a retry/duplicate delivery.
+    // conversation's updated_at for a retry/duplicate delivery, and don't
+    // evaluate automations for a message that was already processed.
     return;
   }
 
@@ -132,6 +138,23 @@ async function ingestMessage(supabase: SupabaseClient<Database>, message: Parsed
 
   if (touchError) {
     console.error("Failed to update conversation updated_at after inbound message:", touchError.message);
+  }
+
+  // Keyword-triggered service automation (Phase 2) is a pure add-on to
+  // inbound ingestion -- the message above is already durably persisted
+  // regardless of what happens here. Any failure is caught locally so it
+  // can never affect the webhook's own 2xx response to Meta or cause a
+  // retry that would re-process an already-recorded message.
+  try {
+    await triggerAutomationForMessage(supabase, {
+      messageId: inserted.id,
+      conversationId,
+      body: message.body,
+      phone: message.fromPhone,
+      customerName: message.customerName,
+    });
+  } catch (err) {
+    console.error("Automation trigger failed unexpectedly:", err instanceof Error ? err.message : err);
   }
 }
 

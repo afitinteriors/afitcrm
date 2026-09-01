@@ -105,3 +105,127 @@ export async function sendTextMessage(
 
   return { waMessageId };
 }
+
+export type UploadMediaResult = { mediaId: string };
+
+/**
+ * Uploads media bytes to Meta's Media Upload API
+ * (POST /{phone_number_id}/media, multipart/form-data), returning a media
+ * id that can be referenced in a subsequent send. Reuses the same
+ * WHATSAPP_ACCESS_TOKEN as every other outbound call in this module.
+ * Throws SendMessageError on any failure -- same error vocabulary as
+ * sendTextMessage/sendMediaMessage, since this is a sibling operation in
+ * the same send pipeline, not a distinct concern.
+ */
+export async function uploadMediaToMeta(
+  phoneNumberId: string,
+  bytes: Buffer,
+  mimeType: string
+): Promise<UploadMediaResult> {
+  const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
+  if (!accessToken) {
+    throw new SendMessageError("not_configured", "WHATSAPP_ACCESS_TOKEN is not configured.");
+  }
+
+  const apiVersion = process.env.WHATSAPP_GRAPH_API_VERSION || DEFAULT_GRAPH_API_VERSION;
+
+  const form = new FormData();
+  form.append("messaging_product", "whatsapp");
+  form.append("type", mimeType);
+  form.append("file", new Blob([new Uint8Array(bytes)], { type: mimeType }));
+
+  const response = await fetch(
+    `https://graph.facebook.com/${apiVersion}/${encodeURIComponent(phoneNumberId)}/media`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}` },
+      body: form,
+    }
+  );
+
+  const data = (await response.json().catch(() => ({}))) as {
+    error?: { code?: number; message?: string };
+    id?: string;
+  };
+
+  if (!response.ok) {
+    const metaMessage = data.error?.message ?? `HTTP ${response.status}`;
+    throw new SendMessageError(
+      "meta_api_error",
+      `Meta media upload failed: ${metaMessage}`,
+      `WhatsApp rejected this media file: ${metaMessage}`
+    );
+  }
+
+  if (typeof data.id !== "string") {
+    throw new SendMessageError("meta_api_error", "Meta media upload response was missing a media id.");
+  }
+
+  return { mediaId: data.id };
+}
+
+export type SendMediaMessageResult = { waMessageId: string };
+
+/**
+ * Sends an image or video message referencing an already-uploaded Meta
+ * media id (see uploadMediaToMeta). No caption -- v1 keeps media nodes
+ * focused only on sending the media; a caption/text follow-up is a
+ * separate send_text node, not a parameter here.
+ */
+export async function sendMediaMessage(
+  phoneNumberId: string,
+  to: string,
+  mediaType: "image" | "video",
+  mediaId: string
+): Promise<SendMediaMessageResult> {
+  const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
+  if (!accessToken) {
+    throw new SendMessageError("not_configured", "WHATSAPP_ACCESS_TOKEN is not configured.");
+  }
+
+  const apiVersion = process.env.WHATSAPP_GRAPH_API_VERSION || DEFAULT_GRAPH_API_VERSION;
+  const response = await fetch(
+    `https://graph.facebook.com/${apiVersion}/${encodeURIComponent(phoneNumberId)}/messages`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to,
+        type: mediaType,
+        [mediaType]: { id: mediaId },
+      }),
+    }
+  );
+
+  const data = (await response.json().catch(() => ({}))) as {
+    error?: { code?: number; message?: string };
+    messages?: { id?: string }[];
+  };
+
+  if (!response.ok) {
+    if (data.error?.code === WINDOW_CLOSED_ERROR_CODE) {
+      throw new SendMessageError(
+        "outside_window",
+        `Meta rejected send: 24-hour window closed (error code ${data.error.code})`
+      );
+    }
+    const metaMessage = data.error?.message ?? `HTTP ${response.status}`;
+    throw new SendMessageError(
+      "meta_api_error",
+      `Meta media send failed: ${metaMessage}`,
+      `WhatsApp did not accept this message: ${metaMessage}`
+    );
+  }
+
+  const waMessageId = data.messages?.[0]?.id;
+  if (typeof waMessageId !== "string") {
+    throw new SendMessageError("meta_api_error", "Meta response was missing a message id.");
+  }
+
+  return { waMessageId };
+}

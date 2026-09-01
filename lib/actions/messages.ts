@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentProfile } from "@/lib/auth";
 import { recordAuditEvent } from "@/lib/audit";
 import { sendTextMessage, SendMessageError } from "@/lib/whatsapp/send-message";
+import { handOffActiveSession } from "@/lib/automations/sessions";
 
 export type SendMessageState = { error: string } | null;
 
@@ -67,6 +68,17 @@ export async function sendMessage(_prevState: SendMessageState, formData: FormDa
   if (insertError) {
     return { error: "Message was sent, but saving it to the conversation failed. Refresh to check." };
   }
+
+  // Human handoff: a staff/admin manual reply means a human has taken
+  // over this conversation -- any in-progress automation session must
+  // stop responding to it. Best-effort and non-blocking: RLS
+  // (automation_sessions_handoff_admin_or_owner) is what actually
+  // authorizes this using the same admin-or-lead-owner rule as every
+  // other write in this action; there's simply nothing to hand off (or a
+  // concurrent customer reply already resolved the session) when this
+  // returns false, and that must never affect the manual reply that has
+  // already succeeded above.
+  await handOffActiveSession(supabase, conversation.id);
 
   // Audit metadata never includes the message body (AGENTS.md: don't log
   // message contents).

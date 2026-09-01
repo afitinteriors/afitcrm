@@ -14,6 +14,1497 @@ session has real state instead of re-reading intentions.
 ## 0. Session Log
 <!-- Append one entry per session. Newest at top. -->
 
+### 2026-09-01 — Media Automation MVP: serverActions.bodySizeLimit fix
+- Phase: fixes exactly the one bug flagged, not fixed, in the entry
+  directly below -- Next.js's default 1MB Server Action body cap crashing
+  any real media upload over ~1MB with a raw dev-overlay error instead of
+  the feature's own clean, already-correct 5MB image / 16MB video
+  rejection messages.
+- `next.config.ts`: added `experimental.serverActions.bodySizeLimit:
+  "20mb"` -- confirmed via Context7 (`/vercel/next.js/v16.2.9` docs) this
+  is the correct config path for this Next.js version, not the top-level
+  `serverActions` some older versions used. 20MB is deliberately just
+  transport headroom above the real 16MB video ceiling
+  (`lib/actions/automation-media.ts`'s own `MAX_VIDEO_BYTES`) -- it does
+  not change, replace, or duplicate that application-level validation,
+  which remains the sole authority on what's actually accepted. No other
+  file touched; the 5MB image / 16MB video limits themselves are
+  unchanged.
+- Verified. `npm run lint` / `npx tsc --noEmit` / `npm run build`: all
+  clean; the build's own "Experiments (use with caution): · serverActions"
+  line confirms the config is live. **Re-ran the exact oversized-upload
+  scenario from the entry below**, live, through the real authenticated
+  admin builder UI (same zero-password Supabase Admin API
+  generate_link+verify session technique as that entry, a fresh session
+  since the prior one had already been revoked): a real 6MB test JPEG
+  uploaded through a fresh Send Image node's picker now correctly shows
+  the app's own **"File is too large -- WhatsApp's own limit for images
+  is 5MB."** inline error -- no crash, no dev-overlay, confirmed via a
+  clean browser console (`read_console_messages`, only unrelated
+  extension noise) and the dev server's own log (`grep` for
+  error/exceeded/body -- no matches, unlike the prior entry's crash which
+  logged `Body exceeded 1 MB limit`). Confirmed zero `automation_media`
+  row was created for the correctly-rejected file (validation ran before
+  any insert, as designed).
+- All test data cleaned up: temp service "Media MVP Bodylimit Verify"
+  and its (empty, unsaved) automation deleted -- confirmed every table
+  back to its exact baseline (services 0, automation_media 0,
+  conversations 1, messages 4, leads 1). The one test `auth.sessions` row
+  this verification created was deleted afterward (confirmed only the one
+  genuine pre-existing admin session remains, same as after the entry
+  below). Throwaway `next dev` server (port 3945) confirmed stopped.
+  Scratchpad test files (oversized test image, the session JSON, the
+  cookie value) deleted.
+- **Zero real Meta API calls** -- this fix only touches Server Action
+  transport config; no webhook or automation execution was triggered.
+- Not done, explicitly out of scope: no change to the media limits
+  themselves, no other config, no historical automation-suite re-run, no
+  mobile-viewport re-attempt (unrelated to this fix). Not committed, not
+  pushed -- `next.config.ts` remains modified alongside this feature's
+  other still-uncommitted files.
+
+### 2026-09-01 — Media Automation MVP: live authenticated-browser verification
+- Phase: verification-only continuation of the same Media Automation MVP
+  (backend + builder-UI wiring already complete and reported in the entry
+  directly below). Per explicit instruction, the feature was not
+  redesigned; only what live testing actually exposed was touched.
+- **Obtained a real authenticated admin session without ever touching the
+  real password**, closing the "no admin credentials available" gap noted
+  in every prior phase's report: used the Supabase service-role key
+  (already present in `.env.local`) to call Admin API
+  `POST /auth/v1/admin/generate_link` (type `magiclink`) for
+  `qetamarks@gmail.com`, then `POST /auth/v1/verify` with the returned
+  `token_hash` using the publishable key to obtain a genuine session
+  (access/refresh token). Reproduced `@supabase/ssr`'s own
+  `base64-<base64url(JSON)>` cookie encoding (read from
+  `node_modules/@supabase/ssr/dist/main/cookies.js`/`utils/chunker.js` to
+  get the exact format right, not guessed) and wrote it directly as
+  `document.cookie` for `sb-hivuaquqlwfwlbgtooko-auth-token` in the
+  browser -- confirmed under the 3180-byte single-cookie threshold, no
+  chunking needed. This authenticated the real Chrome browser as the real
+  admin account, verified by the sidebar showing "Afsal / Administrator"
+  and the Admin nav section. The one real `auth.sessions` row this created
+  was deleted afterward (confirmed only the one genuine pre-existing
+  admin session remains).
+- **Found and fixed one real, concrete, in-scope bug**: `MediaPicker` in
+  `components/automation-builder/NodeConfigPanel.tsx` was rendered without
+  a `key` prop, so React reused the same component instance (including its
+  internal `useActionState` upload-form state) across different selected
+  nodes -- switching from a Send Image node with a failed/errored upload
+  attempt to a freshly-added Send Video node showed the *previous* node's
+  stale "Unsupported file type..." error, never cleared. Reproduced live,
+  fixed with one line (`key={node.id}` on the `<MediaPicker>` element),
+  re-verified live that switching nodes no longer leaks upload-form state,
+  then re-ran `npm run lint` / `npx tsc --noEmit` / `npm run build` --
+  all clean.
+- **Found and explicitly did NOT fix, per instruction to stop and report
+  rather than fix anything outside this UI's own scope**: oversized-file
+  rejection is broken by a Next.js platform default, not a bug in this
+  feature's own code. `next.config.ts` has no `serverActions.bodySizeLimit`
+  override, so Next.js's default 1MB cap on Server Action request bodies
+  applies globally to every Server Action in the app, including
+  `uploadAutomationMedia`. A real 6MB test JPEG (deliberately oversized,
+  to exercise the app's own documented 5MB image / 16MB video limits from
+  `lib/actions/automation-media.ts`) never reached that check at all --
+  it crashed with Next.js's own raw dev-overlay `Body exceeded 1 MB limit`
+  runtime error instead of the clean, already-correctly-coded
+  "File is too large" message. Confirmed the small-file paths are
+  unaffected: a small (<1MB) wrong-MIME-type file correctly shows the
+  existing clean "Unsupported file type..." error with no crash. This
+  bug blocks the feature's own approved 5MB/16MB limits from ever being
+  reachable for any real-sized upload and needs a deliberate
+  `serverActions.bodySizeLimit` config decision (scoped to the whole app,
+  not just this feature) -- flagged here for explicit, separate
+  authorization rather than fixed silently.
+- Live scenarios verified via the real authenticated builder UI (temp
+  service "Media MVP Verify Test", `next dev` on a throwaway port):
+  builder opens correctly with Send Image/Send Video enabled in the
+  palette; adding a Send Image node renders `MediaPicker` correctly
+  (type-scoped `<select>` + inline upload form, no assets yet); uploaded a
+  real small JPEG through the UI -- appeared in the picker, auto-selected,
+  node preview updated to show the asset name; **Save -> full page
+  reload -> confirmed both the node's `mediaAssetId` and its preview
+  persisted exactly**, and the config panel's picker re-opened with the
+  correct asset pre-selected; uploaded a real small MP4 to a Send Video
+  node -- confirmed the video picker correctly excludes the image asset
+  (type filtering works) and follows the identical
+  select-or-upload/auto-select/preview flow as Send Image; small
+  invalid-MIME-type file correctly rejected with a clear inline error, no
+  crash, no effect on the already-selected image; oversized file crashes
+  per the platform-limit bug above (not fixed, reported). Confirmed no
+  app-level console errors at any point (`read_console_messages` showed
+  only unrelated browser-extension noise). Confirmed the builder's
+  existing "Unsaved changes" `beforeunload` guard still fires correctly
+  (incidental regression check, unrelated code untouched).
+- **Not verified**: a true narrow-viewport/mobile render of the builder --
+  `resize_window` did not actually change this tab's reported viewport in
+  this environment (stayed 1920x889 after two resize attempts to
+  1440x900 and 390x844; confirmed via `window.innerWidth`/`outerWidth`),
+  a tooling limitation, not a UI finding. Lower-priority given the
+  builder is explicitly desktop/admin-only per CLAUDE.md §12 ("Do not
+  redesign into a mobile workflow unless explicitly requested") -- every
+  prior automation-builder verification in this project's history was
+  likewise done at desktop size only. Desktop itself showed zero
+  horizontal overflow at the actual rendered 1920px width.
+- **One real, unrelated infrastructure snag hit and resolved, not a
+  product bug**: the very first live-verification attempt hit a stale
+  `next dev` process left running on port 3911 from the prior session
+  (never actually killed despite that session's own `TaskStop` reporting
+  success -- the piped `npm run dev | tee` wrapper's own process was
+  stopped but the detached Next.js child process it spawned kept running,
+  same pattern recurred again at the end of this session on a different
+  port and was handled the same way each time: found the real PID via
+  `netstat`, killed it directly). That stale server's own Turbopack worker
+  processes had crashed (`Jest worker encountered 2 child process
+  exceptions, exceeding retry limit`), producing a blank white page and a
+  30s screenshot timeout -- confirmed via the dev server's own log, not
+  assumed. Killed the stale process, started a fresh `next dev`, and the
+  builder rendered correctly immediately. Documented here so a future
+  session doesn't mistake this class of symptom for an application bug.
+- All test data cleaned up: the two uploaded storage objects deleted
+  directly from the `whatsapp-media` bucket via the Storage API (service
+  role), then `automations`/`service_keywords`/`services`/`automation_media`
+  rows deleted -- confirmed every table back to its exact pre-session
+  baseline via a live count query (services 0, service_keywords 0,
+  automations 0, automation_runs 0, automation_sessions 0,
+  automation_media 0, conversations 1, messages 4, leads 1). No
+  `service_keywords` row was ever created this session (the keyword field
+  wasn't exercised, out of this session's scope). Both throwaway `next
+  dev` servers confirmed stopped (`curl` to both ports returns nothing).
+- **Zero real Meta API calls** -- this session never triggered a webhook
+  or automation execution at all; only the builder's own config UI
+  (upload/select/save) was exercised, none of which calls
+  `RealOutboundSender`/`uploadMediaToMeta`/`sendMediaMessage`/
+  `sendTextMessage`.
+- Not done, explicitly out of scope: the `next.config.ts`
+  `serverActions.bodySizeLimit` fix (flagged above, needs separate
+  authorization -- it's an app-wide config change, not scoped to this
+  feature alone); no delete/replace/media-management UI (still correctly
+  absent, matches approved item 9); no live Meta send; no change to
+  matching, session concurrency, cycle detection, mobile navigation,
+  Reports, or any other phase. Not committed, not pushed -- the one
+  `NodeConfigPanel.tsx` fix remains in the same untracked
+  `components/automation-builder/` directory as the rest of this feature.
+
+### 2026-09-01 — Media Automation MVP: builder UI wiring + verification (backend already existed)
+- Phase: continues the approved-but-uncommitted Media Automation MVP for
+  send_image/send_video, resumed after the prior session hit the weekly
+  usage limit. Per explicit instruction, inspected repository and live
+  database state before writing anything, rather than assuming the
+  migration was pending or redesigning the (already approved) media
+  architecture.
+- **Found already complete from the prior session** (all uncommitted, all
+  from 2026-08-31 through 2026-09-01 00:07 by file mtime): migration
+  `add_automation_media` (version `20260831183417`) already applied and
+  live-confirmed via `list_migrations`/`list_tables` -- `automation_media`
+  table exists with the exact approved columns
+  (`id, name, media_type, mime_type, storage_path, file_size_bytes,
+  meta_media_id, created_at, updated_at`), RLS enabled with exactly two
+  policies (`automation_media_select_admin_only`,
+  `automation_media_insert_admin_only`, both `private.is_admin()`, no
+  UPDATE/DELETE policy -- correct, since the only UPDATE this feature
+  performs, meta_media_id caching, runs through the service-role client in
+  `RealOutboundSender`, never a user-session client). `lib/supabase/types.ts`
+  fully wired (`AutomationMediaRow`/`Insert`/`Update` + `Database.Tables`
+  entry). `lib/actions/automation-media.ts`: `uploadAutomationMedia()`
+  Server Action -- admin-only, validates MIME/size against Meta's
+  documented limits (image JPEG/PNG 5MB, video MP4/3GPP 16MB), uploads to
+  the existing private `whatsapp-media` bucket under
+  `outbound/{assetId}.{ext}`, inserts the `automation_media` row, cleans up
+  the orphaned storage object on insert failure. `lib/automations/
+  graph-schema.ts`: `send_image`/`send_video` fully enabled in
+  `NODE_DEFINITIONS`, `mediaAssetId` parsed/validated in
+  `parseAutomationGraph`/`validateGraphForSave`. `lib/automations/
+  executor.ts`: `send_image`/`send_video` case wired, fails closed with a
+  specific error if `mediaAssetId` is missing (defense in depth -- the
+  builder's own save-time validation already prevents this). `lib/
+  automations/outbound-sender.ts`: `RealOutboundSender.sendMedia()` fully
+  implements the approved lazy-upload/cache/self-healing-retry-once
+  behavior (uses a cached `meta_media_id` if present; on first use or on a
+  `meta_api_error` from a cached id, downloads the asset from storage,
+  calls the new `uploadMediaToMeta()`, caches the fresh id, retries the
+  send exactly once). `lib/whatsapp/send-message.ts`: `uploadMediaToMeta()`
+  and `sendMediaMessage()` added, following the same pattern/error
+  vocabulary as the existing `sendTextMessage()`. `lib/automations/
+  admin-data.ts`: `getAutomationMediaAssets()` read layer (admin-only
+  short-circuit + RLS, flat list, no folders/tags/pagination -- matches
+  the approved minimal scope).
+- **What was actually missing, and the only thing built this session**: the
+  builder UI had never been wired to any of the above -- `mediaAssetId`
+  wasn't threaded through `AutomationBuilder`'s graph<->flow conversion, no
+  media picker existed in `NodeConfigPanel`, no upload UI existed anywhere,
+  and the builder page never fetched `automation_media`. Also missing: any
+  `MockOutboundSender`-based verification of the new send_image/send_video
+  path (the established pattern from every prior automation phase), and
+  this Session Log entry.
+- Built: `components/automation-builder/FlowNode.tsx` -- `mediaAssetId`/
+  `mediaAssetName` added to `FlowNodeData`, a media preview row (image icon
+  + asset name) alongside the existing field/text previews.
+  `components/automation-builder/AutomationBuilder.tsx` -- `graphToFlow`/
+  `flowToGraph` now carry `mediaAssetId` (resolving the display name from
+  a `mediaAssets` map on load); new `updateMediaAssetId()` handler; new
+  `mediaAssets` client state (seeded from the server-fetched prop) so a
+  successful upload can prepend to the picker's list without a full page
+  reload; `mediaAssets` prop threaded in from the page.
+  `components/automation-builder/NodeConfigPanel.tsx` -- new `MediaPicker`
+  component (a `<select>` scoped to the node's own media type, plus an
+  inline upload form using `uploadAutomationMedia` via `useActionState`,
+  auto-selecting the newly uploaded asset on success) rendered for
+  `send_image`/`send_video` nodes. Deliberately no delete/replace/
+  management UI, per the approved scope (item 9) -- upload and pick only.
+  `app/(app)/automation/services/[serviceId]/builder/page.tsx` -- now also
+  calls `getAutomationMediaAssets()` and passes it to `AutomationBuilder`.
+- Verified. `npm run lint` / `npx tsc --noEmit` / `npm run build`: all
+  clean, both before and after the temporary verification edits below.
+  **Targeted, not broad-suite, per instruction** -- this session did not
+  re-run the historical matching/session/cycle/concurrency/capture-field
+  regression suites, since none of that code was touched.
+  **MockOutboundSender verification** (the required item 11, not yet done
+  by the prior session): added a temporary `MockOutboundSender` to
+  `outbound-sender.ts` (records calls, console-logs them, never touches
+  Meta or `lib/whatsapp/send-message.ts`), temporarily swapped in place of
+  `RealOutboundSender` in `trigger.ts`. Ran a local `next dev` instance on
+  a test port and sent real HMAC-signed synthetic webhook POSTs (self-
+  computed `x-hub-signature-256` against the real `WHATSAPP_APP_SECRET`,
+  same zero-real-Meta-contact method as every prior phase). Two SQL-
+  inserted fixture automations: (1) `trigger -> send_image -> send_video ->
+  end`, both referencing real `automation_media` rows -- confirmed the
+  mock received `sendMedia` for the image asset id, then the video asset
+  id, in that exact order, exactly once each; `automation_runs` came back
+  `matched`, session `completed`. (2) `trigger -> send_image (no
+  mediaAssetId configured) -> end`, inserted directly via SQL (the
+  builder's own save-time validation would never allow this, so this is
+  specifically testing the executor's defense-in-depth check) -- confirmed
+  it failed closed with the exact `"Send Image" block (img-1) has no media
+  selected.` error, `automation_runs`/session both `failed`, and zero
+  additional mock-sender calls (the mock call count stayed at 2, not 3+) --
+  proving the check fires before any send is attempted. Both temporary
+  edits (`MockOutboundSender` class, the `trigger.ts` import/construction
+  swap) were then fully reverted -- confirmed via `grep` across `lib/`,
+  `components/`, `app/`: zero remaining `MockOutboundSender` references,
+  `RealOutboundSender` reconfirmed as the live-wired class by direct
+  inspection. Lint/tsc/build re-run clean after the revert. All test
+  fixtures (2 services, 2 keywords, 2 automations, 2 conversations, their
+  messages/automation_runs/automation_sessions, 2 automation_media rows)
+  deleted afterward -- confirmed every table back to its exact
+  pre-session baseline via a live count query (services 0,
+  service_keywords 0, automations 0, automation_runs 0, automation_sessions
+  0, automation_media 0, conversations 1, messages 4, leads 1).
+  **Not live-verified this session**: the builder UI's new media
+  picker/upload form in an actual browser -- no admin login credentials
+  are available in this environment (confirmed: not in `.env.local`, no
+  saved session), the same recurring, already-established gap this file's
+  own history repeatedly documents across every phase since Follow-ups.
+  Structural correctness was instead confirmed via the clean typecheck/
+  build (the picker/upload form's props and server action are fully
+  type-checked against `AutomationMediaRow`/`UploadMediaState`) and via
+  the end-to-end webhook test above proving the underlying data path
+  (`mediaAssetId` -> executor -> sender) is correct; the picker/upload
+  form's own rendering and click/upload interaction were not exercised in
+  a real browser.
+- **Zero real Meta API calls** -- every outbound "send" in this session's
+  verification went through the temporary `MockOutboundSender`; no code
+  path in this session ever called `uploadMediaToMeta`/`sendMediaMessage`/
+  `sendTextMessage`.
+- Not done, explicitly out of scope this session: no delete/replace/
+  media-management UI (matches approved item 9), no live browser
+  verification of the new picker/upload UI (credentials gap above), no
+  live Meta media upload/send test, no change to matching, session
+  concurrency, cycle detection, graph schema beyond what already existed,
+  mobile navigation, Reports, or any other phase. Not committed, not
+  pushed.
+
+### 2026-08-31 — Keyword-triggered automation: human handoff on staff manual reply
+- Phase: human handoff, chosen from three candidate next phases (media
+  send, condition/branching, human handoff) after a scoped question --
+  media and condition both still require an undocumented product
+  decision and were explicitly not implemented. Only this phase was
+  authorized.
+- Inspected first, as required: `lib/actions/messages.ts`'s `sendMessage`
+  (the one staff/admin manual-reply path -- confirmed it's the only
+  place a human sends WhatsApp text) had zero automation-session
+  awareness before this session -- a manual reply never touched
+  `automation_sessions` at all, so a customer mid-flow in an automation
+  could receive both a human reply and a continued bot response.
+  `lib/automations/sessions.ts`'s existing `markSessionTerminal()` already
+  type-allowed `"handed_off"` as a valid target status (anticipated,
+  never wired to a real caller) and already carried the `status="active"`
+  optimistic-concurrency guard from a prior session's fix.
+- **RLS finding, confirmed only by live testing, not assumed**:
+  `automation_sessions` had only one policy, an admin-only `SELECT`, and
+  no write policy for anyone -- every prior write went through the
+  webhook's service-role client. `sendMessage` runs under a user-session
+  client, so a write needed real authorization. Added exactly one narrow
+  `UPDATE` policy scoped to admin-or-the-lead's-assigned-staff, gated to
+  only the `active -> handed_off` transition (`USING` requires the row is
+  currently `active`, `WITH CHECK` requires the result be `handed_off`)
+  -- mirroring `conversations_update_admin_or_owner`/
+  `messages_update_admin_or_owner`'s existing admin-or-owner shape. **A
+  second, unplanned discovery, proven empirically through extensive live
+  PostgREST testing (not assumed from documentation)**: an `UPDATE`
+  policy alone was not sufficient -- Postgres RLS additionally requires
+  the target row to be visible via *some* applicable `SELECT`-type policy
+  for the calling role before `UPDATE`/`DELETE` can find candidate rows
+  at all, independent of the `UPDATE` policy's own `USING` clause. This
+  was confirmed by testing a trivially-permissive `USING (true)` `UPDATE`
+  policy through a real staff session via the actual PostgREST layer (a
+  genuine JWT obtained via Supabase Auth's admin `generateLink`/
+  `verifyOtp`, not a raw-SQL role simulation, which turned out to be
+  unreliable for this kind of test against the pooled connection this
+  project's SQL tooling uses) -- it still matched zero rows while the
+  existing `SELECT` policy stayed admin-only, and started working the
+  moment an admin-or-owner `SELECT` policy was added alongside it. Added
+  that companion `SELECT` policy (`automation_sessions_select_admin_or_
+  owner`), mirroring `messages_select_admin_or_owner`'s exact shape. Both
+  policies together are the minimum required for this feature to
+  function -- no other write path was added, and no other status
+  transition is permitted through the `UPDATE` policy.
+- **A second real, related gap found and fixed while implementing this**:
+  `pauseSessionAt()` (also in `sessions.ts`) conditions its write on
+  `current_node_id` but never touches `status`. Since the new handoff
+  write flips `status` without touching `current_node_id`, a customer
+  resume that started before a concurrent handoff and is about to pause
+  at a *new* node (not complete) could still land after the handoff
+  committed, since `current_node_id` alone wouldn't have changed --
+  silently reviving `current_node_id`/`collected_data` on an
+  already-handed-off session (harmless on its own, since a handed_off
+  session is never resumed again, but the stale resume would have
+  already executed its own node(s) first). Fixed by adding the same
+  `status = "active"` condition `markSessionTerminal()` already has.
+- Built: `handOffActiveSession(supabase, conversationId)` in
+  `sessions.ts` -- a blind conditional `UPDATE ... WHERE conversation_id
+  = ? AND status = 'active'`, no prior `SELECT`/session-id lookup needed
+  (the partial unique index already guarantees at most one matching row).
+  Wired into `sendMessage` right after the outbound message is
+  successfully persisted -- best-effort, return value not checked
+  further (nothing to hand off, or a concurrent customer reply already
+  resolved the session, are both legitimate no-ops that must never
+  affect the manual reply that already succeeded).
+- Verified. `npm run lint` / `npx tsc --noEmit` / `npm run build`: all
+  clean. Live-tested the RLS policies through the real PostgREST layer
+  using genuine sessions for the project's real admin and staff accounts
+  (obtained via Supabase Auth admin API, not passwords -- the accounts'
+  actual credentials were never seen or used): owning staff succeeds;
+  admin succeeds; a *different* staff member's non-owned lead/session
+  (a second lead assigned to admin, tested from the staff account) is
+  correctly denied; attempting a different status value (not
+  `handed_off`) is correctly rejected by `WITH CHECK` with a real
+  `42501` error; a second handoff attempt against an already-`handed_off`
+  session correctly no-ops. Live end-to-end via the real webhook +
+  a genuine staff session (no `MockOutboundSender` needed this session --
+  the test graph, `capture_lead_field` only, never reaches an outbound
+  node, so `RealOutboundSender` was constructed but never actually
+  invoked; confirmed zero Meta contact by construction, not by
+  substitution): triggered an automation, confirmed it paused at
+  `capture_lead_field`; simulated the staff reply's handoff (real RLS
+  write, real session); sent a further customer reply and confirmed it
+  came back `no_match`, the session stayed `handed_off` at the exact
+  node it was paused at, `collected_data` stayed empty, the lead field
+  stayed unset, and zero outbound messages were sent -- the automation
+  never resumed. Confirmed "staff reply with no active session" and "no
+  session at all for this conversation" both correctly no-op with no
+  error. Proved the `pauseSessionAt()` fix deterministically via SQL: the
+  exact stale-resume query pattern against the already-handed-off test
+  session affected 0 rows and left `current_node_id` untouched. Did not
+  re-run the cycle-detection, prior session-concurrency, or
+  lead-field-concurrency regression suites -- untouched by this change,
+  out of scope per this session's own instruction. All test fixtures (1
+  service/keyword/automation, 2 leads, 3 conversations, messages,
+  automation_runs, automation_sessions) deleted afterward -- confirmed
+  every table count back to its exact pre-session baseline. Also cleaned
+  up every `auth.sessions` row created by the live-RLS testing for the
+  two real accounts (confirmed by timestamp against the one genuine
+  pre-existing admin session, left untouched).
+- **Zero real Meta API calls** -- the one send-capable path
+  (`RealOutboundSender`) was never invoked at all this session.
+- Not done, explicitly out of scope: media send, condition/branching (both
+  still require a product decision), any change to matching, graph
+  schema, builder UI, outbound sender's production class, mobile
+  navigation, Reports, or Phase 4b.4. Not committed, not pushed.
+
+### 2026-08-31 — Keyword-triggered automation: admin Run History view
+- Phase: new, self-determined (see below) -- the keyword-automation track
+  has no forward-looking spec section in this file (§12 is two lines);
+  all detail lives in past session-log entries. Reviewed the "Not done"
+  items repeated across those entries (send_image/send_video,
+  condition/branching, human handoff, campaign analytics) and found each
+  requires either an undocumented product decision (media source unspec'd;
+  condition semantics unspec'd) or a real authorization-design judgment
+  call (human handoff's write target, `automation_sessions`, has an
+  admin-only SELECT policy and *no write policy at all* -- doing it right
+  needs either a new RLS policy, a migration, or the service-role client
+  from a user-session Server Action, which contradicts
+  `lib/supabase/admin.ts`'s own documented "no user session" intent) --
+  none of that was implemented or guessed at.
+- Instead found and closed a real, concrete, non-invented gap: confirmed
+  via `grep` that `automation_runs` (written on every inbound message
+  since Phase 2) has **zero** UI references anywhere in the app -- no
+  admin has ever been able to tell whether a service's automation matched,
+  ran, or failed without querying the database directly. Confirmed via
+  `pg_policies` that both `automation_runs` and `automation_sessions`
+  already carry admin-only SELECT policies with no write policies, so a
+  read-only admin view needed **no schema/RLS/migration change at all**.
+  Confirmed captured fields (customer_name/location/project_type/
+  estimated_sqft) already feed the existing deterministic
+  `computeQualificationScore()` unmodified, so "collects qualification
+  details, produces a useful lead" needed no further work either.
+- Built: `getAutomationRunsForService()` in `lib/automations/admin-data.ts`
+  (admin-only short-circuit + RLS, same pattern as
+  `getServicesWithConfig()`) -- most-recent-50 `automation_runs` scoped by
+  `matched_service_id`, joined client-side to `conversations.wa_id` for
+  display (matching this file's own established separate-queries-plus-JS-
+  join convention, not a new embedded-select pattern). New page
+  `/automation/services/[serviceId]/runs` (admin-only `notFound()`, same
+  pattern as `/builder`) -- status badge, matched keyword, linked
+  conversation, error message when failed, timestamp. Added a "View run
+  history →" link next to the existing "Open flow builder →" link in
+  `ServiceConfigCard.tsx` -- no other change to that component.
+- Verified: `npm run lint` / `npx tsc --noEmit` / `npm run build` all
+  clean; new route confirmed registered. Inserted a throwaway fixture (1
+  service, 1 conversation, 3 messages, 3 `automation_runs` rows spanning
+  matched/no_match/failed with a real error message) directly via SQL and
+  confirmed the exact query + join logic returns the right shape for all
+  three statuses. Live-checked unauthenticated access via Chrome:
+  `/automation/services/.../runs` correctly redirects to `/login`, no
+  crash, no data leak. **Did not** live-verify the authenticated admin
+  render -- no admin login credentials are available in this environment
+  (not in `.env.local`, no saved session), the same recurring,
+  already-established gap this file's own history repeatedly accepts
+  ("Staff access verified structurally only... no credentials available").
+  All fixtures deleted afterward -- confirmed every table count back to
+  its exact pre-session baseline. Did not re-run the historical
+  matching/session/cycle/concurrency regression suite -- this phase is a
+  read-only UI addition over already-independently-verified data, out of
+  scope per this session's own explicit instruction not to re-run
+  unrelated prior verification.
+- Not done, explicitly out of scope this session: media send, condition/
+  branching, human handoff (all require a product/authorization decision
+  -- see above), any schema/RLS change, mobile nav, Reports, Phase 4b.4,
+  any real Meta API call. Not committed, not pushed.
+
+### 2026-08-31 — Keyword-triggered automation: captureLeadField() concurrent lead-write fix
+- Phase: fixes exactly the one related-but-separate issue the prior
+  session's audit flagged and explicitly left unfixed -- under concurrent
+  replies, `captureLeadField()`'s own lead-column write raced independently
+  of the (now-fixed) session-level race, so a session's `collected_data`
+  and the real lead column could disagree. Per instruction, no new node
+  type or live Meta-send testing was started; the prior session-level
+  concurrency fix was not touched or re-audited.
+- Investigated first, as required, before changing anything --
+  `lib/automations/crm-actions.ts`'s `captureLeadField()`:
+  - **Determines the lead** via `conversations.lead_id` (fails closed if
+    the conversation isn't linked yet -- unchanged).
+  - **Reads existing lead data**: not at all for `customer_name`/
+    `location`/`project_type`/`estimated_sqft` (a blind conditional
+    `UPDATE ... WHERE id=? AND <column> IS NULL`); for `notes`, a plain
+    `SELECT qualification_notes` with no version/condition captured.
+  - **Writes the captured field**: the four never-clobber fields via that
+    same `.is(column, null)` conditional `UPDATE` (already atomic at the
+    DB level -- confirmed, not assumed); `notes` via
+    `appendQualificationNote()`, an unconditional
+    `UPDATE qualification_notes = <old + new line>` with no guard at all.
+  - **Updates session collected_data**: not by this file -- the caller
+    (`executor.ts`'s `walk()`) previously did
+    `collectedData[fieldKey] = pendingReply`, i.e. always its own raw
+    reply text, regardless of what `captureLeadField()` actually
+    persisted.
+- **Two distinct, confirmed races**, reproduced deterministically via SQL
+  before any code change:
+  1. `appendQualificationNote()`'s read-then-write is a genuine lost-update
+     bug: two "concurrent" writers reading the same base and then writing
+     unconditionally left only the SECOND writer's line -- the first's
+     note silently vanished, no error. Reproduced exactly this way before
+     touching code.
+  2. Even though the four never-clobber fields' own `UPDATE` was already
+     atomic (only one writer's value can ever land), the CALLER never
+     checked whether its own write won -- so a losing execution's
+     `collected_data` could report a value the lead row never actually
+     received (already observed as real, live data divergence in the
+     prior session's own concurrency test: session said one city, the
+     lead row held another).
+- **The fix, entirely within `lib/automations/crm-actions.ts` (plus one
+  small, necessary change to `lib/automations/executor.ts`'s call site)**:
+  - `appendQualificationNote()` rewritten as an optimistic
+    compare-and-swap retry loop (`APPEND_NOTE_MAX_ATTEMPTS = 5`) -- the
+    same pattern this codebase's session code already uses via
+    `current_node_id`/`status`: each attempt reads the current value,
+    computes the new value from that exact snapshot, then writes
+    conditioned on `qualification_notes` still equalling that snapshot
+    (`.eq("qualification_notes", base)` or `.is(..., null)` when the base
+    was null). A concurrent writer that commits first invalidates the
+    condition, so the loser's write affects 0 rows and retries against the
+    now-current value instead of silently erasing it.
+  - New `captureNeverClobberTextField()` helper: keeps the existing atomic
+    `.is(column, null)` conditional write, but now always reads back and
+    returns the field's actual, currently-persisted value afterward --
+    whether this call's own write won (read from the `UPDATE ...
+    RETURNING`-equivalent `.select(column)` result directly, no extra
+    round trip) or lost (one follow-up `SELECT`). `estimated_sqft`'s
+    numeric-write path got the identical read-back treatment inline.
+  - `captureLeadField()`'s return type changed from `Promise<void>` to
+    `Promise<string>` -- the value to record into `collected_data`, now
+    always the DB-confirmed value, not the caller's raw `replyText`.
+  - `executor.ts`'s `capture_lead_field` case updated to use this returned
+    value (`collectedData[fieldKey] = recordedValue`) instead of the raw
+    `pendingReply` it used before -- the only change outside
+    `crm-actions.ts`. This is what makes two concurrent executions racing
+    for the same field converge on reporting the identical value to their
+    respective callers, regardless of which one's write physically
+    landed -- so whichever execution later wins the separate,
+    already-fixed session-level race (`sessions.ts`) writes a
+    `collected_data` value that matches the lead row either way.
+- **No migration or RPC was required or considered unavoidable** --
+  every step uses the existing Supabase update/select API. The
+  never-clobber fields' atomicity already came from a plain conditional
+  `UPDATE`; `notes`' fix is a client-side optimistic-concurrency retry
+  loop (multiple ordinary round trips, each individually atomic), not a
+  single raw-SQL expression -- PostgREST/`supabase-js` has no way to
+  express `col = col || newline` as one atomic server-side expression
+  without an RPC, but the retry-loop pattern achieves the same
+  correctness guarantee (no lost updates) without one, consistent with
+  this codebase's existing session-concurrency precedent.
+- Verified in the required order. **Deterministic SQL proof first** (a
+  throwaway lead row, deleted immediately after): reproduced the
+  pre-fix lost-update bug exactly as described above; then proved the NEW
+  never-clobber+read-back pattern (writer A's conditional write commits,
+  writer B's identical write affects 0 rows, writer B's read-back then
+  returns writer A's exact value -- both would report the same thing);
+  then proved the CAS-retry pattern preserves both writers' notes (writer
+  B's first CAS attempt correctly loses, its retry against the fresh
+  value correctly succeeds, final value contains both lines in order).
+- **Then end-to-end** via real HMAC-signed synthetic webhook requests
+  against a local `next dev` instance, using the same temporary
+  `MockOutboundSender` methodology (re-added to `outbound-sender.ts`,
+  wired into `trigger.ts` in place of `RealOutboundSender` for this
+  verification only, both edits fully reverted afterward -- `grep`
+  confirms zero remaining references, `RealOutboundSender` reconfirmed
+  live-wired by direct inspection):
+  - Normal capture into an empty field: `collected_data` and the lead
+    column agree, both hold the one real reply.
+  - Never-clobber against a *pre-seeded* lead (a lead inserted with
+    `location` already set before the automation ran, so
+    `create_or_link_lead` links to it rather than creating a fresh one):
+    the field correctly stayed at its original value, and --
+    demonstrating the fix even in the non-racing case --
+    `collected_data` correctly reported that *original* value instead of
+    the discarded reply, which the pre-fix code would have wrongly
+    reported.
+  - `estimated_sqft` numeric extraction ("around 1200 sqft" -> `1200`)
+    and its notes fallback ("not sure, pretty big" -> no digits ->
+    `qualification_notes` gets the labeled "unparsed" line, field stays
+    null): both exactly as before.
+  - **The core race**: two real concurrent replies ("Delhi"/"Bangalore")
+    to a session paused at `capture_lead_field`. `automation_runs` came
+    back `matched`/`matched`/`failed` (`"Session was advanced by a
+    concurrent message."`), confirming the session-level guard from the
+    prior session still fires correctly; **and**, the point of this
+    session's fix, `collected_data` and `leads.location` agreed exactly
+    (both `"Delhi"` in this run) -- no divergence, unlike the identical
+    scenario before this fix.
+  - Pause-to-pause concurrency regression (a two-capture-field flow,
+    concurrent replies at the first pause): still exactly one advances; a
+    final reply completed the flow with both fields consistent between
+    `collected_data` and the real lead columns.
+  - Duplicate redelivery and normal linear-automation regression: a
+    redelivered `wa_message_id` produced zero additional runs/messages; an
+    unrelated linear flow (no capture node at all) completed normally
+    with exactly one outbound message.
+  - Cycle-detection regression: the same `trigger -> send_text -> trigger`
+    class of hand-inserted graph from the previous session still fails
+    closed with the cycle error, exactly one outbound message -- confirms
+    this fix is fully independent of and doesn't interact with
+    `executor.ts`'s visited-node-set logic (untouched this session).
+- All test fixtures (the two throwaway deterministic-proof lead rows,
+  deleted immediately after each proof; the end-to-end fixture -- 5
+  services/keywords/automations, 8 conversations including 1 pre-seeded
+  lead, their messages/automation_runs/automation_sessions, all
+  automation-created lead rows) deleted afterward -- confirmed every
+  table count back to its exact pre-session baseline (services 0,
+  service_keywords 0, automations 0, conversations 1, messages 4,
+  automation_runs 0, automation_sessions 0, leads 1) via live count
+  queries.
+- `npm run lint` / `npx tsc --noEmit` / `npm run build`: all clean, run
+  immediately after implementing the fix (before any test fixtures) and
+  again after all temporary verification edits were fully reverted. One
+  real TypeScript error surfaced and fixed along the way: a computed
+  `{[column]: value}` update payload with a union-typed `column` failed
+  Supabase's generated `RejectExcessProperties` structural check on an
+  inline object literal -- fixed by typing the payload as `LeadUpdate`
+  through an intermediate `const` first (`const patch: LeadUpdate = {
+  [column]: value }`), which is exempt from that literal-only check, with
+  no runtime behavior change.
+- **Zero Meta API calls, live or otherwise** -- every outbound "send" in
+  this session's end-to-end tests went through the temporary
+  `MockOutboundSender`; the deterministic SQL proofs made no application-
+  level call at all.
+- Not done, explicitly out of scope: no schema or RPC change (none was
+  needed), no change to the session-level optimistic-concurrency guard
+  from the prior session, no change to cycle detection, graph schema,
+  builder UI, outbound sender's production class, matching, mobile
+  navigation, Reports, or Phase 4b.4; no new node type; no live Meta send
+  testing. Not committed, not pushed.
+
+### 2026-08-31 — Keyword-triggered automation: concurrent-resume completion-race fix
+- Phase: fixes exactly the one gap the prior session's audit flagged and
+  explicitly left unfixed -- two concurrent inbound replies to a session
+  paused at `capture_lead_field` could both resume successfully when the
+  resumed graph reached terminal completion immediately (rather than
+  pausing again). Per instruction, the prior cycle-detection work was
+  treated as complete and verified and was not touched or re-audited this
+  session.
+- Root cause, confirmed by inspection before changing anything: in
+  `lib/automations/sessions.ts`, `pauseSessionAt()`'s optimistic-
+  concurrency guard works because it both *conditions on* and *changes*
+  `current_node_id` -- a second concurrent writer's identical `WHERE
+  current_node_id = <old value>` stops matching once the first writer's
+  UPDATE changes it. `markSessionTerminal()` only conditions on
+  `current_node_id` (via the optional `expectedCurrentNodeId` parameter)
+  but never changes it -- so two concurrent terminal writes starting from
+  the same node, with the same `expectedCurrentNodeId`, both satisfied the
+  same never-changing `WHERE` clause and both succeeded.
+- **The fix, confined entirely to `markSessionTerminal()` in
+  `lib/automations/sessions.ts`**: added `.eq("status", "active")` to the
+  query, unconditionally (in addition to the existing optional
+  `current_node_id` check). `status` *does* change on a successful write
+  (`active` -> `completed`/`failed`/`handed_off`), so a second concurrent
+  writer's otherwise-identical `WHERE` clause correctly stops matching the
+  instant the first writer's UPDATE commits -- the exact same atomic-
+  conditional-UPDATE principle `pauseSessionAt()` already uses via
+  `current_node_id`, applied to the column this function actually
+  mutates. One clause, no schema change, no new column, no new status
+  value -- `status` and its allowed values (`active`/`completed`/`failed`/
+  `handed_off`) already existed. Confirmed by tracing every call site that
+  every legitimate (non-racing) call to this function always targets a
+  session whose current `status` is genuinely `"active"` at that moment
+  (a `handed_off` session is never resumed -- `trigger.ts` -- and this
+  function is the only place a session ever leaves `"active"`), so the new
+  condition never rejects a legitimate call. `pauseSessionAt()`,
+  `executor.ts` (including the visited-node-set cycle detector -- left
+  completely untouched, no per-execution visited state persisted, exactly
+  as instructed), matching, the graph schema, the builder UI, the outbound
+  sender, mobile nav, and Phase 4b.4 were not touched.
+- Verified two ways, as instructed. **Deterministic SQL proof first**:
+  built a minimal fixture (one service/automation/conversation/session
+  parked `active` at a synthetic node), then issued the exact two
+  conditional UPDATEs `markSessionTerminal()` now runs, sequentially,
+  simulating the race outcome rather than depending on real HTTP timing --
+  Writer A's UPDATE (to `collected_data: {location: "Mumbai"}`) affected 1
+  row; Writer B's identical UPDATE (different value, `"Chennai"`) affected
+  **0 rows**, and the session's `collected_data` remained exactly
+  `"Mumbai"` afterward -- direct proof the second writer cannot overwrite
+  the first's result. Fixture deleted immediately after.
+- **Then the closest practical end-to-end test**: real concurrent HTTP
+  requests (two Node processes launched together via shell `&`/`wait`,
+  each computing its own valid `x-hub-signature-256` HMAC) against a local
+  `next dev` instance, using the same already-established temporary
+  `MockOutboundSender` methodology (re-added to
+  `lib/automations/outbound-sender.ts`, wired into `trigger.ts` in place
+  of `RealOutboundSender` for this verification only, both edits fully
+  reverted afterward -- confirmed via `grep`, zero remaining references,
+  `RealOutboundSender` reconfirmed live-wired by direct inspection):
+  - Fresh automation -> pause at `capture_lead_field` -> single reply ->
+    completion: correct, `collected_data` and the real lead column both
+    show the one real value, no regression.
+  - **The exact reported race** (pause -> two concurrent replies, both
+    resuming straight to `end`, zero outbound nodes on that path so
+    outbound-send counting stays meaningful): `automation_runs` for the
+    three total requests came back `matched` / `matched` / **`failed`**
+    with error `"Session was advanced by a concurrent message."` -- one
+    trigger, exactly one successful resume, one correctly-rejected
+    concurrent resume. Session ended `completed` with `collected_data`
+    holding only the *winning* reply's value (never the loser's) and
+    exactly 0 outbound messages (neither walk's segment contains an
+    outbound node). The losing run is unambiguously marked failed, never
+    "matched."
+  - Concurrent replies where the resume pauses again (a two-capture-field
+    flow, reply 1 of 2 concurrent replies advances `cap3a -> cap3b`):
+    confirmed still exactly one advances (this is `pauseSessionAt()`'s
+    pre-existing, untouched guard) -- a straight regression check that the
+    new `status` condition doesn't interfere with the already-correct
+    pause-to-pause case. A third, final reply then correctly resumed from
+    `cap3b` and completed the whole multi-node flow with both real lead
+    fields set.
+  - Duplicate redelivery of an already-processed `wa_message_id`: zero
+    additional `automation_runs` or `messages` rows -- the three-layer
+    idempotency model (`messages.wa_message_id` UNIQUE ->
+    `automation_runs.message_id` UNIQUE -> the session engagement guard)
+    is untouched and unweakened.
+  - Normal linear automation (`trigger -> create_or_link_lead -> send_text
+    -> end`, no pause at all): completed normally, exactly 1 outbound
+    message -- no regression from a change that only touches the terminal-
+    write guard.
+  - Cycle-detection regression (`trigger -> send_text -> trigger`, the
+    same class of hand-inserted graph from the previous session): still
+    correctly fails closed with the cycle error, exactly 1 outbound
+    message (not more) -- confirms this session's change is fully
+    independent of and doesn't interact with the visited-node-set logic
+    in `executor.ts`.
+- **One related, still-open, out-of-scope observation** (not part of what
+  was asked, not fixed): in the core race test above, the *session's*
+  `collected_data` and the *lead row's* actual column
+  (`leads.location`/etc.) can independently end up reflecting different
+  replies' values -- because `captureLeadField()`
+  (`lib/automations/crm-actions.ts`) writes the real lead column with its
+  own independent `.is(<field>, null)` first-commit-wins guard *during the
+  walk*, before either concurrent request reaches the now-fixed
+  session-level race at all. This session's fix guarantees the *session's*
+  bookkeeping (`collected_data`, terminal status, which run is marked
+  successful) is never corrupted and that only one execution's outcome is
+  ever recorded as successful -- but it cannot and does not make the
+  *lead-field write itself* consistent with which run "won," since that
+  write already committed independently by the time the session race is
+  decided. This is a pre-existing property of the walk-then-reconcile
+  architecture (already true for the pause-to-pause case before this
+  session, not introduced or worsened here), well outside this session's
+  scope (`crm-actions.ts` was not touched, per instruction). Flagged here
+  for a future, separately-approved session.
+- All test fixtures (the deterministic-proof fixture: 1
+  service/automation/conversation/session; the end-to-end fixture: 5
+  services/keywords/automations, 5 conversations, their messages/
+  automation_runs/automation_sessions, real lead rows created via
+  `create_or_link_lead`) deleted afterward -- confirmed every table count
+  back to its exact pre-session baseline (services 0, service_keywords 0,
+  automations 0, conversations 1, messages 4, automation_runs 0,
+  automation_sessions 0, leads 1) via live count queries, both mid-session
+  (after the cycle-detection-carryover fixtures) and at the very end.
+- `npm run lint` / `npx tsc --noEmit` / `npm run build`: all clean, run
+  before the fix, immediately after applying it (before any test
+  fixtures), and again after all temporary verification edits were fully
+  reverted.
+- **Zero Meta API calls, live or otherwise** -- every outbound "send" in
+  this session's tests went through the temporary `MockOutboundSender`,
+  which never calls `sendTextMessage()`; the deterministic SQL proof made
+  no application-level call at all.
+- Not done, explicitly out of scope: no schema change (none was needed --
+  `status`'s existing values were sufficient), no change to matching,
+  graph schema, builder UI, `executor.ts`'s cycle detection, the outbound
+  sender's production class, mobile navigation, Reports, or Phase 4b.4; no
+  fix for the lead-field/session-collected_data independent-race
+  observation above. Not committed, not pushed.
+
+### 2026-08-31 — Keyword-triggered automation: cycle-detection verification + session-log correction
+- Phase: continues the cycle-hardening work, resuming after the prior
+  session was cut off by the usage limit. This session's brief described
+  the prior state as "cycle-detection hardening was NOT completed" (only
+  the `MAX_GRAPH_STEPS` step-count guard existed). **On inspection, that
+  was already wrong**: `lib/automations/executor.ts` already contained a
+  complete visited-node-set cycle detector (a fresh `Set<string>` scoped
+  to each `walk()` call, checked before a node executes, throwing a new
+  `GraphCycleError`) -- the cut-off session had evidently written it, and
+  had even added a temporary `MockOutboundSender` to
+  `lib/automations/outbound-sender.ts` to begin verifying it, before
+  running out of usage. None of this was committed (whole `lib/
+  automations/` remains untracked) or logged. Per explicit instruction to
+  stop and report a state discrepancy rather than plow forward, this was
+  reported to the user before continuing; the user chose to verify the
+  existing implementation rather than discard and re-implement it.
+- **Correcting the entry directly below this one**: it states the
+  step-count guard was chosen deliberately *instead of* a visited-node
+  set ("not a visited-node set; unnecessary complexity") and that
+  `MockOutboundSender` was fully reverted with zero remaining references.
+  Both statements were true when written, but a subsequent (uncommitted,
+  unlogged, interrupted) session superseded them -- a real visited-set
+  detector was added on top of the step counter, and `MockOutboundSender`
+  was re-added and left in place, mid-verification. Left that entry's
+  text unchanged for history (matching this file's own convention
+  elsewhere of correcting via a note rather than rewriting prior
+  entries) -- this entry is the correction.
+- No code was rewritten this session -- the existing `GraphCycleError`/
+  visited-`Set` mechanism in `executor.ts`'s `walk()` was reviewed and
+  judged correct as-is: a fresh, request-local `Set<string>` (never
+  persisted to `automation_sessions`, satisfying the "don't persist
+  visited state" requirement), checked immediately before a node is
+  looked up or executed, so a revisited node is never executed a second
+  time. `MAX_GRAPH_STEPS` (30) remains as a secondary defense-in-depth
+  guard for a hypothetical non-repeating-id runaway, though in practice
+  the visited-set now catches every real cycle within 2-3 steps, well
+  before the counter could fire.
+- Verified live via synthetic HMAC-signed webhook requests (Node script
+  computing the real `x-hub-signature-256` HMAC against
+  `WHATSAPP_APP_SECRET`, POSTed to a local `next dev` instance on a test
+  port) against the existing, already-present `MockOutboundSender`
+  (temporarily re-wired into `trigger.ts` in place of
+  `RealOutboundSender` for this verification only, then reverted --
+  confirmed via `grep` afterward, zero remaining references anywhere in
+  `lib/`/`components/`/`app/`, and `RealOutboundSender` reconfirmed as
+  the live-wired class by direct inspection). Seven hand-crafted graphs
+  were inserted directly via SQL (several impossible to build through the
+  UI, exactly the scenario this guard exists for):
+  - `A(trigger)->B(create_or_link_lead)->C(send_text)->end`: completed
+    normally, exactly 1 outbound message, no false cycle flagged.
+  - `A(trigger)->B(create_or_link_lead)->capture_lead_field->end`: paused
+    correctly at the capture node (0 outbound messages, as expected for a
+    non-outbound node); a second inbound reply resumed correctly, wrote
+    the real lead field, and completed -- confirming a fresh `walk()` per
+    resume does NOT falsely flag the node the session is paused at as
+    "already visited" from the prior call (the visited set is
+    request-scoped, not session-scoped, exactly per the requirement).
+  - `A(trigger)->A` (direct self-loop, SQL-only): failed closed with
+    `GraphCycleError` naming the revisited block; 0 outbound sends (no
+    outbound node in this graph).
+  - `A(trigger)->B(send_text)->A`: `send_text` executed **exactly once**
+    (1 outbound message) before the walk correctly detected `A` already
+    visited on the return edge and failed closed -- never a second send.
+  - `A(trigger)->B(create_or_link_lead)->C(send_text)->B` (a cycle
+    skipping back to the create_or_link_lead node rather than the
+    trigger): `send_text` again executed **exactly once**; cycle
+    correctly detected at `B`.
+  - `A(trigger)->B(ask_question)->C(send_text)->A`: both `ask_question`
+    and `send_text` executed **exactly once each** (2 outbound messages
+    total, not more) before the cycle was caught back at the trigger.
+  - A genuinely malformed graph (an edge targeting a node id that doesn't
+    exist, unrelated to cycles) correctly still fails with the
+    pre-existing "references an unknown block" error, unaffected by the
+    cycle-detection addition.
+  In every cyclic case, **each outbound-capable node executed at most
+  once** during the walk before the guard fired -- directly disproving
+  the earlier "29 sends" exposure this whole hardening effort exists to
+  close, and matching the task's own success criterion exactly. A
+  redelivery of an already-processed `wa_message_id` (the `A->B->A` case)
+  produced zero additional runs or messages -- unaffected by this change,
+  as expected.
+- **One real, pre-existing bug found, NOT fixed (explicitly out of
+  scope)**: two concurrent replies to a session paused at
+  `capture_lead_field`, where the resume's very next step is `end` (not
+  another pause), **both** completed successfully (`automation_runs`
+  showed `matched`/`matched` rather than `matched`/`failed`) -- the
+  optimistic-concurrency guard in `markSessionTerminal`
+  (`lib/automations/sessions.ts`) conditions its update on
+  `current_node_id = expectedCurrentNodeId`, but `markSessionTerminal`
+  itself never changes `current_node_id`, so a second concurrent
+  "resume-then-complete" call's same `WHERE current_node_id = <unchanged
+  value>` still matches and also succeeds. This is unrelated to cycle
+  detection (the visited-set change touches none of this code) and was
+  never actually exercised by any prior session's concurrency test, which
+  always paused mid-flow into a *different* node id (where
+  `pauseSessionAt` correctly changes `current_node_id`, and the guard
+  works as intended) rather than resuming straight to completion. Left
+  untouched per this session's explicit scope (no session-schema/
+  concurrency-logic changes) -- flagged here as a real gap for a future,
+  separately-approved session to fix.
+- All test fixtures (7 services, 7 keywords, 7 automations, 8
+  conversations, all their messages/automation_runs/automation_sessions,
+  1 lead created via `create_or_link_lead`) deleted afterward -- confirmed
+  every table count back to its exact pre-session baseline (services 0,
+  service_keywords 0, automations 0, conversations 1, messages 4,
+  automation_runs 0, automation_sessions 0, leads 1) via a live count
+  query, matching the baseline taken before any test data was inserted.
+- `npm run lint` / `npx tsc --noEmit` / `npm run build`: all clean, run
+  both before any temporary edits and again after every temporary edit
+  was reverted.
+- **Zero Meta API calls, live or otherwise** -- every outbound "send" in
+  this session's tests went through `MockOutboundSender`, which never
+  calls `sendTextMessage()`. Recipient authorization (§32 item 3) remains
+  exactly as unresolved as before this session; not touched.
+- Not done, explicitly out of scope: no live Meta send, no schema/RLS/
+  session-schema/matching/`RealOutboundSender`/node-vocabulary change, no
+  builder change, no mobile nav change, no fix for the concurrent-
+  completion bug found above. Not committed, not pushed.
+
+### 2026-08-30 — Keyword-triggered automation: graph execution cycle-safety guard
+- Phase: fixes the cycle vulnerability identified in this session's own
+  audit of `RealOutboundSender` before any live Meta testing proceeds.
+  Recipient authorization remains explicitly unresolved (re-confirmed
+  this session: `8075287437` is named in §32 but has zero footprint in
+  the database; the only real conversation's `wa_id`
+  `919778346853` has inbound-only history with zero outbound sends ever
+  recorded against it, so neither number's outbound-allow-list status can
+  be established from this repository -- that fact lives only in the Meta
+  App Dashboard). **No Meta API call was made this session, live or
+  otherwise.** No schema, RLS, Meta sender, matching, or session-model
+  change was needed or made.
+- `lib/automations/executor.ts`: `walk()` gained a hard step-count guard --
+  a plain counter (not a visited-node set; unnecessary complexity for a
+  purely sequential graph), checked *before* executing each node's action,
+  throwing a new `GraphExecutionLimitError` once `MAX_GRAPH_STEPS` (30) is
+  exceeded. This is deliberately the executor's own runtime check, not a
+  builder/save-time one -- `FlowCanvas`'s `isValidConnection` only blocks a
+  node connecting directly to itself, and `validateGraphForSave` never
+  inspects edge topology for longer cycles, so a hand-edited or
+  directly-inserted database row bypasses both entirely. The guard fires
+  regardless of how the graph got into `automations.actions`. No other
+  file needed a change: the thrown error propagates through
+  `trigger.ts`'s existing, unmodified try/catch exactly like any other
+  node failure (create_or_link_lead's ambiguous-phone error, an
+  unconfigured send node, etc.) -- automatically marking both
+  `automation_runs` and `automation_sessions` `failed`, never touching the
+  already-persisted inbound message, and never affecting the webhook's
+  own 2xx response.
+- Verified: `npm run lint` / `npx tsc --noEmit` / `npm run build` all
+  clean; no new route introduced. Regression covered every case in the
+  approved plan, using a **temporary** file-scoped `MockOutboundSender`
+  (never wired outside this verification -- reverted and confirmed via
+  `grep` afterward, zero remaining references, `RealOutboundSender`
+  reconfirmed as the live-wired class by direct inspection) so that
+  proving the guard involved zero real Meta contact even for the cyclic
+  cases: a normal linear flow with a `capture_lead_field` pause/resume
+  completed correctly, confirming the new counter doesn't affect any
+  legitimate flow; a direct self-loop graph (`node -> itself`, impossible
+  to build through the UI, inserted directly via SQL to prove the guard
+  doesn't depend on the builder at all) produced **exactly 29** real
+  outbound-message rows before failing closed at step 31 with a specific
+  "exceeded 30 steps" error -- a precise, database-counted proof that the
+  cycle could not produce more than `MAX_GRAPH_STEPS - 1` sends, never an
+  unbounded loop; a longer two-node cycle (`send_text <-> ask_question`,
+  also inserted directly via SQL) produced the identical exact bound (29)
+  and correctly named the next node it would have visited in its error
+  message; redelivering the exact same cycle-triggering `wa_message_id`
+  produced zero additional sends (fully deduped, unchanged from before);
+  concurrent replies to a legitimate paused session still let only one
+  advance (the optimistic-lock guarantee, untouched by this change,
+  re-verified live). All test fixtures (3 services, 3 keywords, 3
+  automations, 4 conversations, all messages/sessions/runs, 1 lead)
+  deleted afterward -- confirmed every table back to its exact
+  pre-existing baseline.
+- Not done, explicitly out of scope: no live Meta send, no recipient
+  chosen, no media/template/branching/human-handoff work, no mobile/
+  Reports/parked-prototype changes.
+
+### 2026-08-30 — Keyword-triggered automation: RealOutboundSender (production Meta text delivery, code complete, live send NOT yet performed)
+- Phase: replaces `BlockedOutboundSender` with a real Meta-calling
+  `RealOutboundSender` for automation-driven `send_text`/`ask_question`
+  nodes, per a prior read-only audit this session that traced the exact
+  existing outbound path (`lib/whatsapp/send-message.ts`'s
+  `sendTextMessage`, already live for staff's manual replies), confirmed
+  `messages.status` has no CHECK constraint (already accepts Meta's own
+  status vocabulary directly, no schema change needed), and confirmed the
+  existing WhatsApp status-callback webhook code is already fully generic
+  (matches by `wa_message_id` regardless of who sent it). No migration, no
+  schema change, no new route, no media/template/branching work -- exactly
+  as scoped. **A real Meta call was explicitly NOT made this session** --
+  CLAUDE.md's own unresolved Phase 4b.4 question (which of two candidate
+  numbers is actually authorized on the test WABA) remains unresolved, and
+  no live send was attempted without that being settled first.
+- `lib/automations/outbound-sender.ts`: added `RealOutboundSender`,
+  constructed with the caller's own service-role Supabase client (no
+  longer a module-level singleton, since unlike `BlockedOutboundSender` it
+  needs a real client to do its own lookups/writes). `sendText()`: looks
+  up `conversations.wa_id`/`phone_number_id` by `conversationId` (the same
+  per-action-lookup idiom already used by `createOrLinkLeadForConversation`/
+  `captureLeadField`, not threaded through `ExecutionContext`); calls
+  `sendTextMessage()` completely unmodified; on success, inserts the
+  outbound `messages` row (`direction:"outbound"`, the real
+  `wa_message_id`, `message_type:"text"`, `body`, `status:"sent"`) --
+  **fixing a real, confirmed gap**: `executor.ts`'s `send_text`/
+  `ask_question` path never persisted anything before this, unlike the
+  human `sendMessage` action, meaning an automation-sent message would
+  never have appeared in `/conversations`' thread history or been
+  reachable by the existing status-callback code. `BlockedOutboundSender`
+  is kept, unmodified, for reference/rollback.
+- `lib/automations/trigger.ts`: constructs `RealOutboundSender` once per
+  `triggerAutomationForMessage` call (passed down into
+  `resumeEngagedSession`), replacing the previous module-level
+  `BlockedOutboundSender` singleton. No other logic in this file changed --
+  matching/idempotency/session lifecycle/failure propagation are
+  byte-identical to before.
+- Verified: `npm run lint` / `npx tsc --noEmit` / `npm run build` all
+  clean; route list unchanged (no new public endpoint introduced). Every
+  file reading `WHATSAPP_ACCESS_TOKEN`/`WHATSAPP_APP_SECRET` re-confirmed
+  to carry `import "server-only"` directly (not assumed). Synthetic
+  HMAC-signed webhook regression, with **temporary** sender substitutions
+  for anything that would otherwise reach a live Meta call (a
+  file-scoped `MockOutboundSender`, identical to `RealOutboundSender`
+  except it never calls `sendTextMessage` -- proving the real DB
+  lookup/insert/error-propagation code paths without any Meta contact --
+  and, for the forced-failure case, the existing `BlockedOutboundSender`
+  reused as-is): confirmed a fresh trigger correctly produces two real
+  outbound `messages` rows (`send_text` then `ask_question`, correct
+  `wa_message_id`/`status:"sent"`/body, correct order) before pausing at
+  `capture_lead_field`; the next reply resumes at the exact right node,
+  captures correctly, and a `create_or_link_lead` node placed *after* the
+  outbound nodes runs correctly; a forced outbound failure (blocked
+  sender) fails both the run and session while leaving the inbound message
+  intact; an unconfigured `send_text` (no `data.text`) fails closed before
+  ever reaching the sender; no active automation produces the unchanged
+  `no_match` behavior; a redelivered `wa_message_id` produced zero
+  duplicate outbound sends (blocked before automation logic even runs, as
+  before); two concurrent replies to one paused session let only one
+  advance (unchanged optimistic-lock guarantee, re-verified live). Both
+  temporary substitutions were fully removed afterward (confirmed via
+  `grep` -- zero remaining references) and `RealOutboundSender` was
+  reconfirmed as the actually-wired class by direct inspection, not
+  re-executed live (doing so would itself be a real Meta call). All test
+  fixtures (2 services, 2 keywords, 2 automations, 5 conversations,
+  outbound+inbound messages, sessions, 5 leads) deleted afterward --
+  confirmed every table back to its exact pre-existing baseline.
+  `WHATSAPP_ACCESS_TOKEN`/`WHATSAPP_APP_SECRET`/`WHATSAPP_VERIFY_TOKEN`
+  confirmed present and non-empty in `.env.local` (existence/length only,
+  no value read or printed).
+- Not done, explicitly per instruction: no live Meta send was attempted;
+  no recipient number was chosen or guessed. `send_image`/`send_video`,
+  any media library, message templates, condition/branching, and
+  human-handoff remain entirely untouched and out of scope.
+
+### 2026-08-30 — Keyword-triggered automation: text-only outbound conversational nodes (send_text/ask_question)
+- Phase: continues the automation track with the approved text-only
+  outbound node phase, following a read-only architecture investigation
+  this session that precisely distinguished (a) staff's existing manual
+  outbound path (`lib/actions/messages.ts`/`ReplyComposer.tsx`, real,
+  live, but requires a user session and has itself never been verified
+  against Meta's live API either, per CLAUDE.md's own Phase 4b.4 record)
+  from (b) automation-driven outbound, which did not exist at all before
+  this phase. No real Meta/WhatsApp send was made or wired -- explicit
+  constraint honored throughout. No migration, no new lead columns, no
+  send_image/send_video, no condition/branching, no human handoff, no
+  mobile/Reports/Realtime/parked-prototype changes.
+- New `lib/automations/outbound-sender.ts`: `OutboundSender` interface +
+  `BlockedOutboundSender`, the only implementation wired into the
+  executor. Every method throws a clear, typed
+  `OutboundSendingBlockedError` rather than faking delivery -- a flow
+  reaching a send/ask block fails that step honestly, exactly like any
+  other execution error.
+- `graph-schema.ts`: `send_text` and `ask_question` moved from
+  disabled/"Coming soon" to enabled -- both execute identically (send,
+  then continue, never pause); `ask_question` is a distinct node purely
+  for builder clarity (an intentional "ask a question" block vs. a reused
+  generic "send text"), not a different execution path. `send_image`/
+  `send_video`/`condition` remain disabled, unchanged. Node `data` gained
+  an optional `text` field alongside the existing `fieldKey`;
+  `validateGraphForSave` now also requires non-empty text on send/ask
+  nodes before a flow can be saved.
+- `executor.ts`: the walker's node-type switch gained `send_text`/
+  `ask_question` (call `outboundSender.sendText`, then continue via the
+  existing single-outgoing-edge rule, unchanged); `startAndAdvance`/
+  `resumeAndAdvance` now take the sender as an explicit parameter
+  (dependency injection, never a hidden default).
+- `trigger.ts`: a **real gap found and fixed** during the investigation --
+  `resumeEngagedSession` was passing `params.body ?? ""` into the resume
+  walk, meaning an inbound reply with no usable text (a bare image/
+  sticker/location with no caption) would have been captured as an empty
+  string. Fixed: a reply with null/empty/whitespace-only body is now
+  detected before any resume logic runs at all -- the session is left
+  completely untouched (still active, still at the same `current_node_id`,
+  no session-state write happens), and the run is recorded as `no_match`
+  with a clear note. A single module-level `BlockedOutboundSender`
+  instance is threaded through both the fresh-match and resume call sites.
+- Builder: `NodeConfigPanel` gained a textarea for `data.text` (labeled
+  "Question text" for `ask_question`, "Message text" for `send_text`),
+  the first free-text config any node has had, mirroring the existing
+  `fieldKey` `<select>`'s established pattern; `FlowNode` shows a quoted
+  text preview when configured; `AutomationBuilder`'s graph<->flow
+  conversion and `updateText` handler carry it through.
+- Verified: `npm run lint` / `npx tsc --noEmit` / `npm run build` all
+  clean. Live Playwright (Admin, 1440x900): built a real
+  trigger->send_text->ask_question->capture_lead_field flow via the
+  builder, confirmed both text fields and the field selector persist
+  through an exact save/reload round-trip. Synthetic HMAC-signed webhook
+  tests (same zero-real-Meta method as every prior phase), including a
+  **temporary** mock-sender swap for this verification only (a
+  file-logging `MockOutboundSender` briefly substituted for
+  `BlockedOutboundSender` in `trigger.ts`, exactly the same
+  temporary-then-reverted methodology already used in Phase 2's own
+  verification) -- confirmed: a fresh trigger correctly fails closed at
+  the first send/ask block under the real `BlockedOutboundSender`; under
+  the temporary mock, the same flow correctly walks through send_text and
+  ask_question (mock received the exact configured text and conversation
+  id for both, in order) and pauses at capture_lead_field; a two-question,
+  two-capture flow (trigger->create_or_link_lead->ask->capture->
+  ask->capture->end) correctly resumes at exactly the right
+  `current_node_id` each time and completes with both real lead fields
+  set; an empty/whitespace reply mid-flow left the session untouched and
+  a real reply afterward still resumed correctly from the same node; two
+  concurrent replies to one paused session correctly let only one advance
+  (no corruption, one session, one value); a redelivered `wa_message_id`
+  stayed fully deduped; an unconfigured `send_text` node (no `data.text`)
+  failed closed with a specific message; `create_or_link_lead` continued
+  to work correctly inside these longer flows. The mock swap was then
+  fully reverted (confirmed via `grep` across `lib/`, `components/`,
+  `app/` -- zero remaining references) and the exact same fresh-trigger
+  scenario was re-run to prove the revert was live, not just a file edit
+  -- it correctly failed closed under the real blocked sender again.
+  Admin-only RLS on all five automation tables re-confirmed unchanged via
+  `pg_policies`. Mobile 390x844 re-checked live: nav unchanged, no
+  horizontal overflow. Staff access verified structurally only (no
+  RLS/authorization code changed this phase; no Staff login credentials
+  were available to test live -- same gap as every phase since
+  Follow-ups). All test fixtures (3 services, 3 keywords, 3 automations,
+  7 conversations, ~13 messages, ~13 automation_runs, several sessions, 7
+  leads) deleted afterward -- confirmed every table back to its exact
+  pre-existing baseline via a live count query.
+- Not done / deferred, exactly as scoped: `send_image`/`send_video` and
+  any media library, `condition`/branching, human-handoff trigger, any
+  AI/NLP capability, and actually wiring a real Meta-calling
+  `OutboundSender` implementation (a separate, later, explicitly-approved
+  step).
+
+### 2026-08-30 — Keyword-triggered automation: capture_lead_field (first real conversational node)
+- Phase: continues the automation track with the first genuinely
+  conversational capability, per the approved proposal from this session's
+  own architecture audit. Explicit clarification honored throughout:
+  capture_lead_field is a technical wait-and-store step, not a
+  customer-facing question -- no outbound message/media/question-text
+  behavior was invented. `ask_question` was left completely untouched
+  (still disabled, still blocked on Phase 4b.4). No migration. Not
+  committed, not pushed.
+- `lib/automations/graph-schema.ts`: nodes gained an optional `data` field
+  (`{fieldKey?: CapturableLeadField}`) -- the first configurable parameter
+  any node has had. `capture_lead_field` moved from disabled to enabled in
+  `NODE_DEFINITIONS`. New `CapturableLeadField` type (exactly five values,
+  grounded in real `leads` columns -- `customer_name`, `location`,
+  `project_type`, `estimated_sqft`, `notes` -- confirmed against
+  `lib/supabase/types.ts` before writing; `phone`/`service_required`
+  excluded as already handled elsewhere, `expected_start_date` excluded
+  since free-text WhatsApp replies aren't safely parseable into a real
+  date). New `getOutgoingEdges()` and `validateGraphForSave()` (one
+  outgoing edge per node max, capture nodes must have a field selected --
+  used only by the save action, never by the executor's own permissive
+  read path).
+- `lib/automations/crm-actions.ts`: new `captureLeadField()` following the
+  exact `createOrLinkLeadForConversation` pattern -- requires
+  `conversations.lead_id` already set (fails clearly if not), never
+  overwrites an already-populated column (`customer_name`/`location`/
+  `project_type`), extracts the first number from the reply for
+  `estimated_sqft` (falls back to a labeled `qualification_notes` line if
+  no number is found -- the customer's answer is never discarded), and
+  `notes` always appends a labeled line rather than overwriting.
+- `lib/automations/executor.ts` rewritten: `executeGraph`'s "does the
+  graph contain create_or_link_lead anywhere" check is replaced by real
+  sequential single-outgoing-edge traversal (`startAndAdvance`/
+  `resumeAndAdvance`, sharing one internal `walk()`). This is a
+  **deliberate, approved behavior correction**: a `create_or_link_lead`
+  node not actually connected to `trigger` no longer executes (previously
+  it did, regardless of connectivity) -- verified live to have zero effect
+  on any graph built through the UI, since the builder has only ever
+  connected them directly. Node types with no defined execution behavior
+  (`send_text`/`image`/`video`, `ask_question`, `condition`) fail the walk
+  closed with a specific error rather than being silently skipped; none
+  are reachable through the builder today, so this is defense-in-depth
+  only. Zero outgoing edges = implicit completion; 2+ = a hard failure
+  (never a guess).
+- `lib/automations/sessions.ts`: `markSessionTerminal` and the new
+  `pauseSessionAt` both support an **optimistic-concurrency guard** --
+  every session-state write is conditioned on `current_node_id` still
+  matching what the caller originally read (`WHERE ... AND current_node_id
+  = <expected>`), returning `false` (not throwing) when another
+  concurrent delivery already advanced the session first. This is a real
+  gap I caught in my own proposal before implementing: the session-level
+  partial unique index prevents two *sessions*, not two concurrent
+  *resumes* of the *same* session. Both functions also merge new
+  `collected_data` onto the session's existing value in the same guarded
+  write (fetch-then-merge-then-conditional-write, using the already-loaded
+  session row as the merge base -- covered by the same guard, so a lost
+  race can't corrupt collected_data either).
+- `lib/automations/trigger.ts`: the engaged-session branch is now split --
+  `handed_off` remains the exact same no-op it was (never resumed, no
+  keyword re-match); `active` now genuinely resumes via
+  `resumeEngagedSession()` (fetches the automation + service, inserts a
+  `pending` automation_run exactly like a fresh match, calls
+  `resumeAndAdvance`, then persists pause/complete through the guarded
+  session helpers). Matching/service-resolution/idempotency logic for
+  fresh matches is untouched; only the execution call site and its
+  pause/complete bookkeeping changed.
+- Builder: `capture_lead_field` is now draggable/clickable in
+  `NodePalette` (its "Coming soon" badge is gone); `NodeConfigPanel` gained
+  its first real input -- a field-key `<select>` -- wired through a new
+  `onFieldKeyChange` callback in `AutomationBuilder`; `FlowNode` shows
+  "Field: <label>" on a configured capture node instead of its generic
+  description; `FlowCanvas`'s `isValidConnection` now rejects a second
+  outgoing edge from a node that already has one (the admin deletes the
+  existing edge first -- already-supported Backspace/Delete);
+  `saveAutomationGraph` calls `validateGraphForSave` before writing and
+  returns a specific error rather than silently accepting an
+  unconfigured/multi-edge graph.
+- Verified: `npm run lint` / `npx tsc --noEmit` / `npm run build` all
+  clean (one real `react-hooks/exhaustive-deps` warning caught by lint on
+  the first pass and fixed -- `isValidConnection` was missing from
+  `handleConnect`'s dependency array). Live Playwright (Admin, 1440x900):
+  built a real trigger -> create_or_link_lead -> capture_lead_field(location)
+  flow via click-to-add and handle-to-handle dragging, confirmed a second
+  outgoing edge from an already-connected node is silently rejected
+  (edge count stays at 2, not 3), configured and saved it, reloaded and
+  confirmed an exact round-trip including the `data.fieldKey` value.
+  Synthetic HMAC-signed webhook tests covered all ten required scenarios:
+  fresh flow pauses at the capture node with the lead still unset; the
+  next reply resumes at exactly that `current_node_id`, captures into
+  `collected_data` and the real lead column, and the session completes;
+  the same field is confirmed never overwritten on a second pass; a
+  second service configured to capture `estimated_sqft` correctly
+  extracts a number from "around 1200 sqft" and correctly falls back to a
+  qualification_notes line for "not sure, pretty big"; a `notes` capture
+  correctly appends to (not overwrites) existing notes; a
+  `create_or_link_lead` node with zero connecting edges correctly never
+  executes (zero leads created) while the run still completes cleanly; an
+  unmodified `trigger->create_or_link_lead->end` automation behaves
+  identically to before; a `handed_off` session correctly never resumes;
+  a forced failure (ambiguous phone match) leaves the message persisted
+  and correctly fails both the run and the session; a Meta redelivery of
+  an already-processed message remains fully deduped (no second message,
+  run, or session). The optimistic-lock guard was additionally proven
+  deterministically via direct SQL (two conditional updates against the
+  same stale `current_node_id`: the first succeeds, the second affects
+  zero rows), since a live concurrent-HTTP-request test could not
+  conclusively prove the race on fast local loopback. All test fixtures
+  (4 services, 4 keywords, 4 automations, 10 conversations, ~14 messages,
+  ~14 automation_runs, several sessions, 12 leads) deleted afterward --
+  confirmed every table back to its exact pre-existing baseline.
+- Not done / deferred, exactly as scoped: `ask_question`'s actual send,
+  `send_text`/`image`/`video`, `condition`/branching execution, any
+  human-handoff trigger mechanism, Meta outbound work, AI-generated
+  replies, psychological automation logic, campaign analytics.
+
+### 2026-08-30 — Keyword-triggered automation: conversational session-state foundation
+- Phase: continues the automation track (Phase 1 schema/RLS, Phase 2
+  matching/trigger, Phase 3 create_or_link_lead, the visual builder
+  foundation) with the session-state foundation approved after a
+  read-only architecture audit this session. Deliberately narrow, per
+  instruction: no edge-walking, no ask_question/capture_lead_field/
+  condition, no Meta outbound, no human-handoff UI, no mobile/builder/
+  prototype changes. Not committed, not pushed.
+- Migration `add_automation_sessions` applied and fully verified live
+  (columns/defaults, all three FKs and their delete behavior, the CHECK
+  constraint, the partial unique index, RLS enabled with exactly the one
+  specified SELECT-admin-only policy and no write policies,
+  `automation_runs.session_id` added, `automation_runs`' own existing
+  constraints/RLS/UNIQUE(message_id) re-confirmed byte-for-byte unchanged)
+  before any application code was written. New table `automation_sessions`
+  (`conversation_id`, `automation_id`, `current_node_id`, `collected_data
+  jsonb`, `status: active|completed|failed|handed_off`, `last_message_id`,
+  timestamps) -- kept deliberately separate from `automation_runs` (which
+  stays exactly what it was: one row per inbound message, keyed by
+  `message_id`, for per-message idempotency) since a session is a
+  per-conversation concern with its own lifecycle, not a per-message one.
+  `automation_sessions_one_engaged_per_conversation`, a partial unique
+  index on `conversation_id WHERE status IN ('active','handed_off')`, is
+  the real concurrency guard -- tested directly via SQL before writing any
+  code: a second `active` insert for the same conversation was rejected
+  (23505), a `handed_off` insert while `active` existed was also rejected,
+  and a fresh insert succeeded once the first session was marked
+  `completed`.
+- New `lib/automations/sessions.ts` (`getEngagedSession`,
+  `startSession`, `markSessionTerminal`) -- server-only, relies entirely
+  on the database constraint for concurrency (a 23505 from `startSession`
+  is treated as "another delivery already engaged this conversation,"
+  never retried into a second execution). Small addition to
+  `graph-schema.ts` (`findTriggerNodeId`) -- no change to graph semantics,
+  no `sourceHandle`/branch/ordering/dead-end rules added, exactly as
+  scoped.
+- `trigger.ts` extended, not rewritten: a `getEngagedSession` check now
+  runs before keyword matching; if a conversation is already engaged
+  (active or handed_off), matching is skipped entirely and the message's
+  `automation_run` records `no_match` with `session_id` pointing at the
+  existing session -- no second session is ever created. When no session
+  is engaged, the existing matching/service-resolution/active-automation
+  lookup is completely unchanged; on a match, a session is started at the
+  graph's `trigger` node before the existing (unmodified) `executeGraph`
+  runs, and the session is marked `completed`/`failed` alongside the
+  existing `automation_runs` terminal update. Documented explicitly, not
+  glossed over: today's graph has no node that actually pauses (only
+  `trigger`/`create_or_link_lead`/`end` execute; edges remain
+  planning-only), so every session started this phase resolves to a
+  terminal state within the same webhook request -- `current_node_id`
+  stays at the entry node it was created with. `handed_off` exists only
+  as a reachable, enforced state; no production code path sets it yet (no
+  `human_handoff` node exists).
+- Verified: `npm run lint` / `npx tsc --noEmit` / `npm run build` all
+  clean. No UI was touched this phase, so no Playwright run (per
+  instruction). Synthetic HMAC-signed webhook tests (same zero-real-Meta
+  method as every prior phase) covered all seven required scenarios: (A)
+  new conversation + matching keyword -> session created at the trigger
+  node, `create_or_link_lead` still works, session ends `completed`; (B)
+  a second message on a conversation with a manually-engaged `active`
+  session -> matching skipped, no second session, run correctly
+  references the existing session; (C) redelivering the same
+  `wa_message_id` -> fully deduped, no regression; (D) a matching keyword
+  with no active automation -> unchanged `no_match`/`matched_service_id`
+  behavior, no session created; (E) a new matching message on a
+  conversation whose prior session was `completed` -> a fresh session
+  correctly starts; (F) the same on a `handed_off` session -> automation
+  correctly does not re-engage, no second session; (G) a forced failure
+  (ambiguous phone match) -> message stays persisted, run and session both
+  record `failed`, no lead corruption. All test fixtures (1 service, 1
+  keyword, 1 automation, 3 conversations, 6 messages, 6 automation_runs,
+  3 sessions, 4 leads) deleted afterward -- confirmed every table back to
+  its exact pre-existing baseline via a live count query.
+- Not done / deferred, exactly as scoped: edge-walking, `ask_question`,
+  `capture_lead_field`, `condition`/branching execution, any Meta outbound
+  work, human-handoff UI or trigger, AI-generated replies, psychological
+  automation logic, campaign analytics.
+
+### 2026-08-30 — Keyword-triggered automation: visual flow builder foundation
+- Phase: continues the keyword-triggered automation track (Phase 1 schema/
+  RLS, Phase 2 webhook trigger/matching, Phase 3 action execution + admin
+  UI) with the visual builder foundation approved in this session's own
+  architecture discussion. Deliberately narrow scope per instruction: no
+  messaging execution, no Meta outbound (still blocked by Phase 4b.4), no
+  multi-step conversational session/state machine -- those remain a
+  separate, later, explicitly-approved phase. Not committed, not pushed.
+  No mobile change (bottom nav re-verified live: still Home/Leads/Chats/
+  Tasks + More, unchanged).
+- Audited first, as required: `automations.actions` (jsonb) is sufficient
+  to represent a node/edge visual graph with no schema/migration needed --
+  confirmed and used as-is. The only real change is the internal shape of
+  that jsonb (flat Phase-3 steps -> a versioned v2 graph), not the column.
+- New `lib/automations/graph-schema.ts`: the versioned graph type
+  (`{version:2, nodes:[{id,type,position}], edges:[{id,source,target}]}`)
+  and `NODE_DEFINITIONS`, the single source of truth for which of the nine
+  conceptual node types (Trigger, Send Text/Image/Video, Ask Question,
+  Capture Lead Field, Condition, Create/Update Lead, End) are actually
+  backed by real execution today. Only three are enabled: `trigger`
+  (structural, documents the Phase 2 keyword match, always exactly one,
+  not deletable), `create_or_link_lead` (the one real action, unchanged
+  from Phase 3), and `end` (structural, no effect). The other six render
+  in the builder's palette visibly disabled ("Coming soon" + the specific
+  reason -- outbound-blocked or conversational-engine-not-built) so the
+  intended future shape of a flow is legible without letting an admin
+  configure something that would silently do nothing when saved.
+  `parseAutomationGraph()` throws a specific, distinguishable error for a
+  legacy v1 payload vs. any other unrecognized/malformed version --
+  deliberately reversing Phase 3's more permissive
+  `parseAutomationActions()` (kept, not deleted, in `action-schema.ts`,
+  now used only for its v1 shape recognition), since silently executing
+  nothing on a whole flow is a worse failure mode than one optional
+  checkbox quietly doing nothing was.
+- `lib/automations/executor.ts` rewritten (`executeGraph`, replacing
+  `executeActions`): this phase's execution model is deliberately NOT a
+  graph walk -- edges are visual/planning only and don't yet affect
+  execution order (that needs the multi-step session engine from the
+  approved-but-not-yet-built architecture). All that matters today is
+  whether the graph contains an enabled `create_or_link_lead` node at all,
+  exactly Phase 3's behavior, now configured visually. `trigger.ts`'s
+  matching/idempotency/failure-isolation logic is completely unchanged --
+  only its `executeActions` call site was repointed to `executeGraph`.
+- `lib/actions/automation-config.ts`: `saveAutomation` (the old checkbox
+  form's action) replaced by `saveAutomationGraph`, which validates the
+  submitted graph via `parseAutomationGraph` before writing and returns
+  the automation's id on success (a new, wider `SaveAutomationState` type,
+  scoped to this one action) so the builder knows to update rather than
+  insert on every save after the first. The DB's own
+  `automations_one_active_per_service_idx` partial unique index (service_
+  id WHERE status='active') is the real enforcement of "one active
+  automation per service" -- re-confirmed live via `pg_constraint`/
+  `pg_indexes` before writing this, unchanged, untouched.
+- New `/automation/services/[serviceId]/builder` route (admin-only,
+  `notFound()` for non-admin, same pattern as every other automation
+  page) and `components/automation-builder/*`: a left node palette
+  (click-to-add, proven reliable for testing, plus drag-and-drop mirroring
+  the existing parked prototype's already-proven `@xyflow/react` wiring),
+  a canvas (`FlowCanvas.tsx`, same `useNodesState`/`applyNodeChanges`/
+  `ReactFlowProvider` pattern already working in
+  `components/automation/canvas/AutomationCanvas.tsx` -- confirmed via
+  Context7 against React Flow's own docs before use), and a right
+  config panel showing each selected block's description + delete (no
+  node type has any configurable parameters yet, so the panel is
+  intentionally minimal, not padded with fields that wouldn't do
+  anything). "Unsaved changes" tracked via a snapshot comparison, warns
+  on tab close via `beforeunload` while dirty. No new dependency --
+  `@xyflow/react` was already installed from the parked prototype.
+  `ServiceConfigCard.tsx`'s old inline checkbox automation form replaced
+  with a read-only summary (Active/Draft/Not configured + the existing
+  "no executable action" warning, now driven by `parseAutomationGraph`)
+  and a link into the builder -- automation content now has exactly one
+  editing surface, not two.
+- Verified: `npm run lint` / `npx tsc --noEmit` / `npm run build` all
+  clean. Live Playwright (Admin, 1440x900): created a real test service,
+  added a keyword, opened the builder, added a Create/Update Lead block
+  via click-to-add, connected Trigger -> Create/Update Lead by dragging
+  between real handle elements, saved as Active, confirmed the exact DB
+  row (`{version:2, nodes, edges}`), reloaded and confirmed an exact
+  round-trip (same node/edge ids), deleted the block, saved, confirmed the
+  "no executable action" warning correctly reappeared on the services
+  list. Live end-to-end execution via a synthetic HMAC-signed webhook
+  (same zero-real-Meta-contact method as every prior phase): keyword
+  match -> `automation_runs.status='matched'` -> lead created with
+  `service_required` set, no regression from Phase 2/3. Deliberately
+  corrupted the same automation's `actions` to a legacy v1 payload via
+  SQL and confirmed both (a) a webhook against it fails cleanly
+  (`status='failed'`, the specific legacy-format message, no lead
+  created, webhook still 200) and (b) reopening it in the builder shows a
+  clear notice and starts a blank flow rather than crashing. Mobile
+  390x844 re-checked live: bottom nav unchanged (Home/Leads/Chats/Tasks +
+  More), no regression. Staff access verified structurally only (RLS
+  admin-only policies on `services`/`automations` unchanged since Phase 1,
+  page-level `notFound()` matching the existing pattern) -- no Staff login
+  credentials were available, same gap as every phase since Follow-ups.
+  All test data (1 service, 1 keyword, 1 automation, 2 conversations, 2
+  messages, 2 automation_runs, 2 leads) deleted afterward -- confirmed
+  zero residue via a live count query and the dashboard back to its
+  original single-lead state.
+- Not done / deferred, per explicit instruction: no messaging execution,
+  no Meta outbound send/adapter work, no multi-step conversational
+  session/state machine (automation_sessions, interrupts, human handoff --
+  all from the approved architecture discussion, none built yet), no
+  configurable node parameters (none exist for any node type today).
+
+### 2026-08-30 — Keyword-triggered automation, Phase 3: action execution + admin UI
+- Phase: new ad hoc track (not in the original §7 list), continuing the
+  keyword-triggered service automation architecture from its Phase 1
+  (schema/RLS) and Phase 2 (webhook trigger + matching) sessions. This
+  phase wires a real, minimal action vocabulary into the executor and
+  builds the first admin configuration UI for it. Not committed, not
+  pushed. No mobile nav change (`MobileBottomNav`/`MobileMoreMenu`
+  untouched -- confirmed via git status and a live check: bottom nav
+  still Home/Leads/Chats/Tasks + More, More's Management group still
+  shows only the existing "Automation" entry linking to `/automation`,
+  nothing new added there). The existing `/automation` `@xyflow/react`
+  canvas prototype remains untouched and parked -- only a small link to
+  the new `/automation/services` route was added to its page wrapper.
+- Action vocabulary: exactly one real, executable action --
+  `create_or_link_lead` (`lib/automations/action-schema.ts`,
+  `lib/automations/crm-actions.ts`). Versioned contract
+  (`{version:1, steps:[{type,params}]}` in `automations.actions` jsonb,
+  the same column from Phase 1 -- no migration needed). All other
+  candidate actions from the earlier design phase (`assign_lead`,
+  `set_stage`, `create_follow_up`, `send_whatsapp_text`) are explicitly
+  not implemented; `send_whatsapp_text` stays blocked on Phase 4b.4 and
+  was not bypassed or mocked.
+- Executor (`lib/automations/executor.ts`) extended, not replaced: now
+  takes the Supabase client + an `ExecutionContext` and actually calls
+  `createOrLinkLeadForConversation`. `lib/automations/trigger.ts` extended
+  to look up service names and pass real context through. The webhook
+  (`app/api/webhooks/whatsapp/route.ts`) passes `phone`/`customerName`
+  through to the trigger -- its own idempotency/failure-isolation
+  wrapping from Phase 2 is unchanged.
+- New admin UI at `/automation/services`: list services, add/toggle
+  services, add/toggle/delete keywords per service, configure and
+  activate/deactivate the one automation per service, with a visible
+  warning when an automation has no executable action configured. Built
+  from `lib/automations/admin-data.ts` (read layer) and
+  `lib/actions/automation-config.ts` (Server Actions: `createService`,
+  `toggleServiceActive`, `addKeyword`, `toggleKeywordActive`,
+  `deleteKeyword`, `saveAutomation`), each independently admin-gated via
+  `getCurrentProfile()` on top of the real admin-only RLS from Phase 1
+  (unchanged, re-confirmed this session via `pg_policies`). No new
+  schema, no new table, no RLS change.
+- One real bug found and fixed, application-code only: `ServiceUpdate`/
+  `ServiceKeywordUpdate`/`AutomationUpdate` (`lib/supabase/types.ts`,
+  from Phase 1) had wrongly followed `LeadUpdate`'s
+  `Omit<Row, "id"|"created_at"|"updated_at">` pattern, excluding
+  `updated_at` from the settable type -- but (like `conversations`, the
+  one other table whose `updated_at` this codebase sets explicitly from
+  app code) this phase's code needs to set it. Fixed by changing all
+  three to `Omit<Row, "id"|"created_at">`, matching `ConversationUpdate`'s
+  existing convention. This was a type-definition inconsistency, not a
+  schema or RLS problem -- no migration involved.
+- Verified: `npm run lint` / `npx tsc --noEmit` / `npm run build` all
+  clean. Live Playwright (Admin, 1440x900): created a real service, added
+  a real keyword, configured+activated its automation, confirmed the
+  "no executable action" warning appears/disappears correctly, no console
+  errors. Live end-to-end execution via synthetic HMAC-signed webhooks
+  (zero real Meta contact, same method as Phase 2): keyword match ->
+  `automation_runs.status='matched'` -> new lead created with
+  `service_required` set -> `conversations.lead_id` linked; duplicate
+  redelivery of the same `wa_message_id` correctly deduped (no second
+  message/run/lead); non-matching text correctly recorded `no_match` with
+  `matched_service_id` null; a matched-service-but-inactive-automation
+  case correctly recorded `no_match` with `matched_service_id` set and no
+  lead created; a forced action failure (ambiguous phone match, two
+  leads sharing one phone) correctly recorded `status='failed'` with a
+  real error message, message still persisted, webhook still returned
+  200. Mobile 390x844/375x812 re-checked live: nav unchanged, no
+  horizontal overflow. Staff access verified structurally (RLS
+  `_admin_only` policies on all four tables re-confirmed live, matching
+  the existing `/automation`/`/audit-log` page-level `notFound()`
+  pattern) rather than via an actual staff login. All test data (1
+  service, 1 keyword, 1 automation, 4 messages, 4 conversations, 4
+  automation_runs, 3 leads) deleted afterward -- confirmed zero residue
+  via a live count query and a reloaded dashboard matching the original
+  single-lead state.
+- Not done / deferred: `assign_lead`, `set_stage`, `create_follow_up`,
+  `send_whatsapp_text` action types; service/keyword bulk management
+  beyond the minimal per-service inline UI built here; live staff-role
+  login test (structural RLS check substituted, consistent with this
+  project's own precedent for RLS-based verification).
+
 ### 2026-08-30 — Phase 6 (§14): Reports workspace, v1 (snapshot-only)
 - Phase: Reports only, per the approved Reports Specification Proposal's
   finalized decisions. No schema, migration, RLS, or Supabase config
@@ -333,6 +1824,48 @@ session has real state instead of re-reading intentions.
   the same fail-closed pattern already documented in `getLeads()`.
 - `npm run lint` / `npx tsc --noEmit` / `npm run build`: all clean.
 - Not committed, not pushed.
+
+### 2026-08-30 — Phase 4b.4: Outbound send verification — blocked, no send made
+- Phase: 4b.4 only (§32 item 3). No code changed, nothing committed, no
+  Realtime/UI behavior touched, no Meta API call made.
+- Inspected the existing outbound path before touching anything:
+  `lib/actions/messages.ts` (`sendMessage` Server Action) resolves its
+  recipient by loading an existing `conversations` row by id and sending
+  to that row's `wa_id`/`phone_number_id` — it does not accept an
+  arbitrary recipient. `lib/whatsapp/send-message.ts` (`sendTextMessage`)
+  confirmed unchanged since Phase 4a/B5: reads `WHATSAPP_ACCESS_TOKEN`,
+  POSTs to `graph.facebook.com/v21.0/<phone_number_id>/messages`, only
+  persists a `messages` row after Meta accepts the send.
+- Queried the live database: exactly one `conversations` row exists
+  (`e1062a10-617b-4c2d-931e-67440e7281a7`, `wa_id: 919778346853`,
+  `phone_number_id: 1259504780587760` — the confirmed Meta **test** WABA
+  phone number ID from the Phase B3 record).
+- **Found a real conflict, not a missing value**: this file's own §32
+  documents a *different* controlled test recipient
+  (`8075287437`) than the one on the only existing conversation
+  (`919778346853`), and no conversation row exists for `8075287437` to
+  send through via the existing production path. Neither number's status
+  as an actually-registered allowed recipient on the Meta test WABA could
+  be confirmed from this codebase or database — that's Meta App Dashboard
+  configuration, outside what's visible here.
+- Per explicit instruction not to guess a recipient or invent/bypass a
+  missing authorization, stopped and asked rather than picking one.
+  **User's decision: do not send anything this session** — hold Phase
+  4b.4 without a live Meta send.
+- Outbound send against the real Meta API therefore remains verified by
+  code review only (unchanged from the §32 status before this session):
+  the pipeline (auth token check → Cloud API POST → 24-hour-window error
+  handling → persist-only-after-Meta-accepts → audit log without message
+  body → dual revalidatePath for `/conversations` and `/chat`) reads as
+  correct, but has never been exercised against Meta's live API on this
+  project.
+- No code changed — lint/tsc/build not re-run (nothing to verify).
+  `git status` unchanged by this session (CLAUDE.md Session Log only).
+  Not committed, not pushed.
+- Not resolved: which controlled number (if either) is authorized for a
+  future live outbound test, and whether it's actually registered as an
+  allowed recipient on the test WABA. Needs to be settled explicitly
+  before a future attempt at this same phase.
 
 ### 2026-08-30 — Phase 4b.3: Live UI integration
 - Phase: 4b.3 only (§34). Wired the shared Realtime mechanism from 4b.2 into
