@@ -70,31 +70,66 @@ describe("parseWabisMessage", () => {
 
   // postbackid is an optional idempotency key, not a required identity
   // field -- a real production delivery showed it can arrive missing or
-  // empty, and neither should invalidate an otherwise-valid payload.
-  it("tolerates a missing postbackid (payload still valid, waMessageId becomes null)", () => {
+  // empty, and neither should invalidate an otherwise-valid payload. When
+  // it's absent, a deterministic content-derived key takes its place (see
+  // parse-wabis.ts's deterministicFallbackMessageId) so message-level dedup
+  // still works -- these messages must never end up with a null/absent
+  // idempotency key again.
+  it("tolerates a missing postbackid (payload still valid, gets a deterministic fallback waMessageId)", () => {
     const result = parseWabisMessage(omit(VALID_PAYLOAD, "postbackid"));
     expect(result).not.toBeNull();
-    expect(result?.waMessageId).toBeNull();
+    expect(result?.waMessageId).not.toBeNull();
+    expect(result?.waMessageId).toMatch(/^wabis-fallback:[0-9a-f]{64}$/);
     // The rest of the payload is still parsed normally.
     expect(result?.fromPhone).toBe("919000000000");
     expect(result?.phoneNumberId).toBe("wabis:+91 7356877322");
   });
 
-  it("tolerates an empty-string postbackid (payload still valid, waMessageId becomes null)", () => {
+  it("tolerates an empty-string postbackid (gets the same kind of deterministic fallback)", () => {
     const result = parseWabisMessage({ ...VALID_PAYLOAD, postbackid: "" });
     expect(result).not.toBeNull();
-    expect(result?.waMessageId).toBeNull();
+    expect(result?.waMessageId).toMatch(/^wabis-fallback:[0-9a-f]{64}$/);
   });
 
-  it("tolerates a wrong-type postbackid (treated as absent, not invalidating)", () => {
+  it("tolerates a wrong-type postbackid (treated as absent, gets the deterministic fallback)", () => {
     const result = parseWabisMessage({ ...VALID_PAYLOAD, postbackid: 12345 });
     expect(result).not.toBeNull();
-    expect(result?.waMessageId).toBeNull();
+    expect(result?.waMessageId).toMatch(/^wabis-fallback:[0-9a-f]{64}$/);
   });
 
-  it("uses a non-empty postbackid as waMessageId / idempotency key when present", () => {
+  it("uses a non-empty postbackid as waMessageId / idempotency key unchanged when present", () => {
     const result = parseWabisMessage(VALID_PAYLOAD);
     expect(result?.waMessageId).toBe("postback-abc123");
+  });
+
+  describe("deterministic fallback waMessageId (empty/missing postbackid)", () => {
+    it("the same redelivered payload produces the exact same fallback key (real duplicate-delivery dedup)", () => {
+      const payload = { ...VALID_PAYLOAD, postbackid: "" };
+      const first = parseWabisMessage(payload);
+      const second = parseWabisMessage({ ...payload }); // a fresh object, same content -- simulates a retry
+      expect(first?.waMessageId).not.toBeNull();
+      expect(first?.waMessageId).toBe(second?.waMessageId);
+    });
+
+    it("two genuinely different messages (different text) do not collide", () => {
+      const a = parseWabisMessage({ ...VALID_PAYLOAD, postbackid: "", user_message: "Hello" });
+      const b = parseWabisMessage({ ...VALID_PAYLOAD, postbackid: "", user_message: "Something else entirely" });
+      expect(a?.waMessageId).not.toBe(b?.waMessageId);
+    });
+
+    it("two genuinely different senders (different chat_id) do not collide", () => {
+      const a = parseWabisMessage({ ...VALID_PAYLOAD, postbackid: "", chat_id: "919000000000" });
+      const b = parseWabisMessage({ ...VALID_PAYLOAD, postbackid: "", chat_id: "919111111111" });
+      expect(a?.waMessageId).not.toBe(b?.waMessageId);
+    });
+
+    it("never collides with the real-postbackid path's own waMessageId", () => {
+      const withRealId = parseWabisMessage(VALID_PAYLOAD);
+      const withFallback = parseWabisMessage({ ...VALID_PAYLOAD, postbackid: "" });
+      expect(withRealId?.waMessageId).not.toBe(withFallback?.waMessageId);
+      expect(withFallback?.waMessageId?.startsWith("wabis-fallback:")).toBe(true);
+      expect(withRealId?.waMessageId?.startsWith("wabis-fallback:")).toBe(false);
+    });
   });
 
   it("tolerates a missing first_name (customerName becomes null, not invented)", () => {

@@ -21,7 +21,15 @@
 // a message id in the first place (see the comment on parseWabisMessage
 // below), so this parser now treats it as optional: required fields for a
 // valid payload are chat_id and whatsapp_bot_username only.
+//
+// Consequence, also observed live: with postbackid empty, waMessageId was
+// null for every such message, and messages.wa_message_id's UNIQUE
+// constraint allows any number of NULLs (Postgres's standard behavior) --
+// so WABIS's own confirmed duplicate-delivery/retry behavior produced two
+// message rows for one real send. See deterministicFallbackMessageId below
+// for the fix: a content-derived key, not a schema change.
 
+import { createHash } from "node:crypto";
 import type { InboundWhatsAppMessage } from "./ingest";
 
 export type ParsedWabisMessage = InboundWhatsAppMessage;
@@ -42,6 +50,29 @@ export function wabisPhoneNumberId(whatsappBotUsername: string): string {
   return `wabis:${whatsappBotUsername}`;
 }
 
+// Deterministic fallback idempotency key for exactly the case postbackid
+// can't cover: missing/empty/wrong-typed. Built only from data this parser
+// already extracts and trusts -- the bot identity + sender + message text --
+// so the SAME redelivered payload (WABIS's own confirmed retry behavior)
+// always hashes to the SAME key, letting the existing
+// messages.wa_message_id UNIQUE constraint (and ingest.ts's existing 23505
+// "already recorded" handling) dedupe it exactly like a real postbackid
+// would, without a schema change and without inventing/claiming a real
+// message id. Namespaced with a "wabis-fallback:" prefix so it can never
+// collide with a real postbackid or a Meta "wamid...." id.
+//
+// Known, accepted limitation: the WABIS payload carries no timestamp or any
+// other per-event field, so two genuinely different messages from the same
+// sender to the same bot with byte-identical text would also hash the same
+// and collide (the second would be silently dropped as "already recorded").
+// This fixes the demonstrated real problem (duplicate delivery of one
+// event) at the cost of not distinguishing that specific, narrower edge
+// case -- there's no data in this payload to do better.
+function deterministicFallbackMessageId(phoneNumberId: string, fromPhone: string, body: string | null): string {
+  const hash = createHash("sha256").update(JSON.stringify([phoneNumberId, fromPhone, body])).digest("hex");
+  return `wabis-fallback:${hash}`;
+}
+
 /**
  * chat_id is confirmed (live WABIS account inspection) to equal the
  * subscriber's phone number -- matched the same way the existing Meta
@@ -51,10 +82,10 @@ export function wabisPhoneNumberId(whatsappBotUsername: string): string {
  * delivery. Its semantics beyond "an identifier for this event" are not
  * confirmed -- it is NOT known to be a message id, and a real delivery has
  * shown it can arrive as an empty string. It is therefore optional: when
- * present and non-empty it's used as the closest available idempotency key
- * for messages.wa_message_id (nullable in the schema); otherwise
- * waMessageId is null, meaning this message simply has no idempotency key
- * -- not that the payload is invalid.
+ * present and non-empty it's used as the idempotency key for
+ * messages.wa_message_id exactly as before; otherwise
+ * deterministicFallbackMessageId() (see above) provides one instead, so
+ * this message still gets a stable dedup key rather than none.
  *
  * user_input_data was observed as an empty array in the one captured
  * delivery. Its populated shape is unknown, so nothing is extracted from
@@ -75,16 +106,18 @@ export function parseWabisMessage(payload: unknown): ParsedWabisMessage | null {
   if (!isNonEmptyString(chatId)) return null;
   if (!isNonEmptyString(whatsappBotUsername)) return null;
 
-  // Wrong type, missing, or empty -> treated as absent (null); never
-  // invalidates the whole payload -- see the comment above.
+  // Wrong type, missing, or empty -> treated as absent; never invalidates
+  // the whole payload -- see the comment above.
   const postbackId = isNonEmptyString(p.postbackid) ? p.postbackid : null;
 
   const firstName = typeof p.first_name === "string" && p.first_name.length > 0 ? p.first_name : null;
   const userMessage = typeof p.user_message === "string" ? p.user_message : null;
+  const phoneNumberId = wabisPhoneNumberId(whatsappBotUsername);
+  const waMessageId = postbackId ?? deterministicFallbackMessageId(phoneNumberId, chatId, userMessage);
 
   return {
-    waMessageId: postbackId,
-    phoneNumberId: wabisPhoneNumberId(whatsappBotUsername),
+    waMessageId,
+    phoneNumberId,
     fromPhone: chatId,
     customerName: firstName,
     messageType: "text",

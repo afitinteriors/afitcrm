@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 import { ingestInboundMessage, findLeadByExactPhone, type InboundWhatsAppMessage } from "./ingest";
 import { createOrLinkLeadForConversation } from "@/lib/automations/crm-actions";
+import { parseWabisMessage } from "./parse-wabis";
 
 // Automation matching/execution is a separate, already-covered concern with
 // its own multi-table lookups (services/service_keywords/automations/...).
@@ -181,6 +182,50 @@ describe("ingestInboundMessage", () => {
       expect.anything()
     );
     consoleErrorSpy.mockRestore();
+  });
+
+  it("a WABIS delivery with empty postbackid, processed twice, results in only one message row", async () => {
+    // Real scenario: WABIS's own confirmed duplicate-delivery/retry behavior
+    // sends the identical payload twice. parseWabisMessage() derives the
+    // same deterministic fallback waMessageId both times (see
+    // parse-wabis.test.ts), so the second insert hits the real
+    // messages.wa_message_id UNIQUE constraint exactly like a genuine
+    // duplicate postbackid would -- proven here via the same 23505 handling
+    // already covered above, but with an actual WABIS-shaped payload/key.
+    const wabisPayload = {
+      first_name: "Test",
+      chat_id: "919000000000",
+      postbackid: "", // the real-world production shape that triggered this fix
+      user_input_data: [] as unknown[],
+      user_message: "Hello",
+      whatsapp_bot_username: "+91 7356877322",
+    };
+    const parsed = parseWabisMessage(wabisPayload);
+    expect(parsed).not.toBeNull();
+    expect(parsed?.waMessageId).toMatch(/^wabis-fallback:[0-9a-f]{64}$/);
+
+    // First delivery: conversation created, message inserted successfully.
+    const first = createFakeSupabase({
+      conversations: [
+        { data: null, error: null },
+        { data: { id: "conv-wabis-dup" }, error: null },
+        { error: null },
+      ],
+      leads: [{ data: [], error: null }],
+      messages: [{ data: { id: "msg-first" }, error: null }],
+    });
+    await ingestInboundMessage(first.stub, parsed!);
+    expect(first.from.mock.calls.filter(([table]) => table === "messages")).toHaveLength(1);
+
+    // Second delivery (the retry): same conversation found, same
+    // waMessageId -- the DB rejects the insert with 23505, ingest treats it
+    // as an already-recorded no-op, not a second row.
+    const second = createFakeSupabase({
+      conversations: [{ data: { id: "conv-wabis-dup" }, error: null }],
+      messages: [{ data: null, error: { code: "23505", message: "duplicate key" } }],
+    });
+    await ingestInboundMessage(second.stub, parsed!);
+    expect(second.from.mock.calls.filter(([table]) => table === "conversations")).toHaveLength(1); // no update-touch after the duplicate
   });
 
   it("never invents/applies attribution for a WABIS-shaped message (referral: null)", async () => {
