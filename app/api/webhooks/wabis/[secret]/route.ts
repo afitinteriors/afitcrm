@@ -32,6 +32,34 @@ function describeRequiredFieldTypes(payload: unknown): Record<string, unknown> {
   return result;
 }
 
+// TEMPORARY DIAGNOSTIC, narrower follow-up: the shape-only log above showed
+// all three identity fields as JS type "string" on a real WABIS delivery
+// that still got rejected -- but parseWabisMessage()'s own isNonEmptyString
+// check (this same file's twin in parse-wabis.ts) additionally requires
+// length > 0, which describeShape() can't distinguish (it only reports
+// typeof). This reports exactly that length check's outcome -- never the
+// string content itself, only a category plus the numeric length (a count,
+// not the value) for the non-empty case.
+const WABIS_IDENTITY_FIELDS = ["chat_id", "postbackid", "whatsapp_bot_username"] as const;
+
+function describeIdentityFieldLengths(payload: unknown): Record<string, unknown> {
+  const obj = payload && typeof payload === "object" && !Array.isArray(payload) ? (payload as Record<string, unknown>) : {};
+  const result: Record<string, unknown> = {};
+  for (const key of WABIS_IDENTITY_FIELDS) {
+    if (!(key in obj)) {
+      result[key] = "missing";
+      continue;
+    }
+    const value = obj[key];
+    if (typeof value !== "string") {
+      result[key] = "not-a-string";
+      continue;
+    }
+    result[key] = value.length === 0 ? "empty-string" : { status: "non-empty-string", length: value.length };
+  }
+  return result;
+}
+
 // Needs the Node.js runtime for node:crypto (timing-safe secret comparison).
 export const runtime = "nodejs";
 
@@ -68,6 +96,10 @@ export async function POST(request: NextRequest, context: { params: Promise<{ se
   console.log(
     "[wabis-diagnostic] parser-required field types:",
     JSON.stringify(describeRequiredFieldTypes(payload))
+  );
+  console.log(
+    "[wabis-diagnostic] identity field length check:",
+    JSON.stringify(describeIdentityFieldLengths(payload))
   );
 
   const message = parseWabisMessage(payload);

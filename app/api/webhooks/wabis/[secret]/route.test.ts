@@ -209,4 +209,68 @@ describe("POST /api/webhooks/wabis/[secret]", () => {
       logSpy.mockRestore();
     });
   });
+
+  // Narrower follow-up diagnostic: describeShape() alone can't distinguish an
+  // empty string from a non-empty one (both are JS type "string"), so a real
+  // WABIS delivery showed all-strings-present yet still failed
+  // parseWabisMessage()'s isNonEmptyString (length > 0) check with no way to
+  // tell why. These tests pin that the added length classification never
+  // leaks the actual string content -- only a category and a numeric count.
+  describe("temporary identity-field length diagnostic", () => {
+    it("classifies a non-empty identity field as non-empty-string with its length, never its content", async () => {
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+      await POST(makeRequest(VALID_PAYLOAD), { params: Promise.resolve({ secret: TEST_SECRET }) });
+
+      const allLoggedText = logSpy.mock.calls.flat().map(String).join("\n");
+      expect(allLoggedText).not.toContain(VALID_PAYLOAD.chat_id);
+      expect(allLoggedText).not.toContain(VALID_PAYLOAD.postbackid);
+      expect(allLoggedText).not.toContain(VALID_PAYLOAD.whatsapp_bot_username);
+      expect(allLoggedText).toContain("non-empty-string");
+      // VALID_PAYLOAD.chat_id is "919000000000" -- 12 characters.
+      expect(allLoggedText).toContain(`"length":${VALID_PAYLOAD.chat_id.length}`);
+
+      logSpy.mockRestore();
+    });
+
+    it("classifies an empty-string identity field distinctly from a missing or non-string one", async () => {
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+      await POST(
+        makeRequest({
+          first_name: VALID_PAYLOAD.first_name,
+          user_input_data: VALID_PAYLOAD.user_input_data,
+          user_message: VALID_PAYLOAD.user_message,
+          chat_id: "", // empty-string
+          postbackid: 12345, // not-a-string
+          // whatsapp_bot_username omitted entirely -- missing
+        }),
+        { params: Promise.resolve({ secret: TEST_SECRET }) }
+      );
+
+      const allLoggedText = logSpy.mock.calls.flat().map(String).join("\n");
+      expect(allLoggedText).toContain('"chat_id":"empty-string"');
+      expect(allLoggedText).toContain('"postbackid":"not-a-string"');
+      expect(allLoggedText).toContain('"whatsapp_bot_username":"missing"');
+      // No stray digits from the not-a-string numeric value, and no length
+      // leaked for the empty/missing/wrong-type cases (only real non-empty
+      // strings get a "length" field at all).
+      expect(allLoggedText).not.toContain("12345");
+
+      logSpy.mockRestore();
+    });
+
+    it("existing malformed-payload behavior is still unchanged with the new diagnostic present", async () => {
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+      const response = await POST(makeRequest({ ...VALID_PAYLOAD, chat_id: "" }), {
+        params: Promise.resolve({ secret: TEST_SECRET }),
+      });
+
+      expect(response.status).toBe(400);
+      expect(ingestInboundMessageMock).not.toHaveBeenCalled();
+
+      logSpy.mockRestore();
+    });
+  });
 });
