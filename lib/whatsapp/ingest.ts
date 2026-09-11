@@ -10,7 +10,12 @@ import { createOrLinkLeadForConversation } from "@/lib/automations/crm-actions";
 // ParsedWhatsAppMessage, which also carries `timestamp`) is structurally
 // assignable here as long as it has these fields.
 export type InboundWhatsAppMessage = {
-  waMessageId: string;
+  // Meta always supplies a real message id. WABIS's payload carries no
+  // dedicated message-id field -- its optional postbackid (an event/
+  // idempotency identifier, not a message id) is used when present and
+  // non-empty; null otherwise, meaning "no idempotency key for this
+  // message" rather than an error.
+  waMessageId: string | null;
   phoneNumberId: string;
   fromPhone: string;
   customerName: string | null;

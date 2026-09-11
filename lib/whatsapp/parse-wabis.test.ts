@@ -59,18 +59,42 @@ describe("parseWabisMessage", () => {
     expect(parseWabisMessage(omit(VALID_PAYLOAD, "chat_id"))).toBeNull();
   });
 
-  it("rejects a payload missing postbackid", () => {
-    expect(parseWabisMessage(omit(VALID_PAYLOAD, "postbackid"))).toBeNull();
-  });
-
   it("rejects a payload missing whatsapp_bot_username", () => {
     expect(parseWabisMessage(omit(VALID_PAYLOAD, "whatsapp_bot_username"))).toBeNull();
   });
 
-  it("rejects empty-string identity fields", () => {
+  it("rejects empty-string required identity fields (chat_id, whatsapp_bot_username)", () => {
     expect(parseWabisMessage({ ...VALID_PAYLOAD, chat_id: "" })).toBeNull();
-    expect(parseWabisMessage({ ...VALID_PAYLOAD, postbackid: "" })).toBeNull();
     expect(parseWabisMessage({ ...VALID_PAYLOAD, whatsapp_bot_username: "" })).toBeNull();
+  });
+
+  // postbackid is an optional idempotency key, not a required identity
+  // field -- a real production delivery showed it can arrive missing or
+  // empty, and neither should invalidate an otherwise-valid payload.
+  it("tolerates a missing postbackid (payload still valid, waMessageId becomes null)", () => {
+    const result = parseWabisMessage(omit(VALID_PAYLOAD, "postbackid"));
+    expect(result).not.toBeNull();
+    expect(result?.waMessageId).toBeNull();
+    // The rest of the payload is still parsed normally.
+    expect(result?.fromPhone).toBe("919000000000");
+    expect(result?.phoneNumberId).toBe("wabis:+91 7356877322");
+  });
+
+  it("tolerates an empty-string postbackid (payload still valid, waMessageId becomes null)", () => {
+    const result = parseWabisMessage({ ...VALID_PAYLOAD, postbackid: "" });
+    expect(result).not.toBeNull();
+    expect(result?.waMessageId).toBeNull();
+  });
+
+  it("tolerates a wrong-type postbackid (treated as absent, not invalidating)", () => {
+    const result = parseWabisMessage({ ...VALID_PAYLOAD, postbackid: 12345 });
+    expect(result).not.toBeNull();
+    expect(result?.waMessageId).toBeNull();
+  });
+
+  it("uses a non-empty postbackid as waMessageId / idempotency key when present", () => {
+    const result = parseWabisMessage(VALID_PAYLOAD);
+    expect(result?.waMessageId).toBe("postback-abc123");
   });
 
   it("tolerates a missing first_name (customerName becomes null, not invented)", () => {

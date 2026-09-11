@@ -4,17 +4,23 @@
 // node). This is not Meta's Cloud API shape (entry[].changes[].value...) --
 // it's a completely different flat shape.
 //
-// Verified against ONE real captured delivery (Vercel Preview function
-// logs, 8 Sep 2026): the observed top-level keys were exactly
-// first_name, chat_id, postbackid, user_input_data, user_message,
-// whatsapp_bot_username. An earlier version of this parser assumed a
-// different shape (wa_message_id, whatsapp_bot_id, subscriber_id, ...)
-// based on a prior claim of being "confirmed against a live WABIS account
-// inspection" -- that claim was never backed by any saved evidence
-// (checked: no discovery-mode log, no saved payload, nothing in git
-// history) and did not match what was actually received. Only the fields
-// listed above are read here; nothing throws on malformed input, and no
-// field or semantic beyond what was directly observed is assumed.
+// Verified against real captured/production deliveries: the observed
+// top-level keys were exactly first_name, chat_id, postbackid,
+// user_input_data, user_message, whatsapp_bot_username. An earlier version
+// of this parser assumed a different shape (wa_message_id, whatsapp_bot_id,
+// subscriber_id, ...) based on a prior claim of being "confirmed against a
+// live WABIS account inspection" -- that claim was never backed by any
+// saved evidence (checked: no discovery-mode log, no saved payload, nothing
+// in git history) and did not match what was actually received. Only the
+// fields listed above are read here; nothing throws on malformed input, and
+// no field or semantic beyond what was directly observed is assumed.
+//
+// A real production delivery (11 Sep 2026, via a temporary structure-only
+// diagnostic on the live route -- see git history) showed postbackid can
+// arrive as an empty string. It was never confirmed to be required or to be
+// a message id in the first place (see the comment on parseWabisMessage
+// below), so this parser now treats it as optional: required fields for a
+// valid payload are chat_id and whatsapp_bot_username only.
 
 import type { InboundWhatsAppMessage } from "./ingest";
 
@@ -43,10 +49,12 @@ export function wabisPhoneNumberId(whatsappBotUsername: string): string {
  *
  * postbackid identifies the WABIS postback/action that triggered this
  * delivery. Its semantics beyond "an identifier for this event" are not
- * confirmed -- it is NOT known to be a message id. It's used below only
- * as the closest available idempotency key for messages.wa_message_id
- * (which requires a value), since this payload carries no dedicated
- * message-id field of its own.
+ * confirmed -- it is NOT known to be a message id, and a real delivery has
+ * shown it can arrive as an empty string. It is therefore optional: when
+ * present and non-empty it's used as the closest available idempotency key
+ * for messages.wa_message_id (nullable in the schema); otherwise
+ * waMessageId is null, meaning this message simply has no idempotency key
+ * -- not that the payload is invalid.
  *
  * user_input_data was observed as an empty array in the one captured
  * delivery. Its populated shape is unknown, so nothing is extracted from
@@ -62,12 +70,14 @@ export function parseWabisMessage(payload: unknown): ParsedWabisMessage | null {
   const p = payload as Record<string, unknown>;
 
   const chatId = p.chat_id;
-  const postbackId = p.postbackid;
   const whatsappBotUsername = p.whatsapp_bot_username;
 
   if (!isNonEmptyString(chatId)) return null;
-  if (!isNonEmptyString(postbackId)) return null;
   if (!isNonEmptyString(whatsappBotUsername)) return null;
+
+  // Wrong type, missing, or empty -> treated as absent (null); never
+  // invalidates the whole payload -- see the comment above.
+  const postbackId = isNonEmptyString(p.postbackid) ? p.postbackid : null;
 
   const firstName = typeof p.first_name === "string" && p.first_name.length > 0 ? p.first_name : null;
   const userMessage = typeof p.user_message === "string" ? p.user_message : null;
