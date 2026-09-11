@@ -3,6 +3,34 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { isValidWabisSecret } from "@/lib/whatsapp/wabis-auth";
 import { parseWabisMessage } from "@/lib/whatsapp/parse-wabis";
 import { ingestInboundMessage } from "@/lib/whatsapp/ingest";
+import { describeShape } from "@/lib/whatsapp/describe-shape";
+
+// TEMPORARY DIAGNOSTIC (approved for one production capture, remove once the
+// real WABIS payload shape is confirmed and the parser is updated to match
+// it): the two prior real WABIS deliveries both hit this route and returned
+// 400 from parseWabisMessage()/JSON parsing, with no way to tell why -- this
+// route never logged the payload, and Vercel's own request logs don't retain
+// bodies. describeShape() (lib/whatsapp/describe-shape.ts) reduces a value to
+// key names + value *types* only, recursively -- never the actual value --
+// so this is safe to log even though WABIS's real payload carries a phone
+// number, a name, and message text.
+const WABIS_REQUIRED_FIELDS = [
+  "chat_id",
+  "postbackid",
+  "whatsapp_bot_username",
+  "first_name",
+  "user_message",
+  "user_input_data",
+] as const;
+
+function describeRequiredFieldTypes(payload: unknown): Record<string, unknown> {
+  const obj = payload && typeof payload === "object" && !Array.isArray(payload) ? (payload as Record<string, unknown>) : {};
+  const result: Record<string, unknown> = {};
+  for (const key of WABIS_REQUIRED_FIELDS) {
+    result[key] = key in obj ? describeShape(obj[key]) : "missing";
+  }
+  return result;
+}
 
 // Needs the Node.js runtime for node:crypto (timing-safe secret comparison).
 export const runtime = "nodejs";
@@ -30,8 +58,17 @@ export async function POST(request: NextRequest, context: { params: Promise<{ se
   try {
     payload = await request.json();
   } catch {
+    // TEMPORARY DIAGNOSTIC -- see block above. Structure only, no body content.
+    console.log("[wabis-diagnostic] JSON parsing failed");
     return new NextResponse("Invalid JSON", { status: 400 });
   }
+
+  // TEMPORARY DIAGNOSTIC -- see block above. Logs field names/types only.
+  console.log("[wabis-diagnostic] JSON parsed ok, top-level shape:", JSON.stringify(describeShape(payload)));
+  console.log(
+    "[wabis-diagnostic] parser-required field types:",
+    JSON.stringify(describeRequiredFieldTypes(payload))
+  );
 
   const message = parseWabisMessage(payload);
   if (!message) {
