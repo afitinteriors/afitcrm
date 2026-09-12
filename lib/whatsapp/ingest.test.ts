@@ -63,31 +63,82 @@ function createFakeSupabase(script: Record<string, QueryResult[]>) {
 const BASE_MESSAGE: InboundWhatsAppMessage = {
   waMessageId: "wamid.TEST-MSG-1",
   phoneNumberId: "wabis:206059",
-  fromPhone: "919000000000",
+  fromPhone: "+919000000000",
   customerName: "Test Customer",
   messageType: "text",
   body: "Hello",
   mediaId: null,
   referral: null,
-  raw: { chat_id: "919000000000" },
+  raw: { chat_id: "+919000000000" },
 };
 
 describe("findLeadByExactPhone", () => {
+  // These use an already-canonical phone (see lib/phone.ts) so the lookup
+  // resolves on its first (canonical-form) query, keeping this describe
+  // block's scripted results one-per-test as before. The canonicalization
+  // and legacy-fallback behavior itself is covered separately below.
   it("matches an existing lead by exact phone", async () => {
     const { stub } = createFakeSupabase({ leads: [{ data: [{ id: "lead-1" }], error: null }] });
-    await expect(findLeadByExactPhone(stub, "919000000000")).resolves.toBe("lead-1");
+    await expect(findLeadByExactPhone(stub, "+919000000000")).resolves.toBe("lead-1");
   });
 
   it("returns null when no lead matches", async () => {
     const { stub } = createFakeSupabase({ leads: [{ data: [], error: null }] });
-    await expect(findLeadByExactPhone(stub, "919000000000")).resolves.toBeNull();
+    await expect(findLeadByExactPhone(stub, "+919000000000")).resolves.toBeNull();
   });
 
   it("returns null (fails closed) on an ambiguous match", async () => {
     const { stub } = createFakeSupabase({
       leads: [{ data: [{ id: "lead-1" }, { id: "lead-2" }], error: null }],
     });
-    await expect(findLeadByExactPhone(stub, "919000000000")).resolves.toBeNull();
+    await expect(findLeadByExactPhone(stub, "+919000000000")).resolves.toBeNull();
+  });
+
+  describe("phone canonicalization (lib/phone.ts)", () => {
+    it("+91, 91, and bare Indian national forms all resolve to the same lead", async () => {
+      for (const phone of ["+919000000000", "919000000000", "9000000000", "91-90000-00000"]) {
+        const { stub, from } = createFakeSupabase({ leads: [{ data: [{ id: "lead-1" }], error: null }] });
+        await expect(findLeadByExactPhone(stub, phone)).resolves.toBe("lead-1");
+        const lookupBuilder = from.mock.results[0].value as { eq: ReturnType<typeof vi.fn> };
+        expect(lookupBuilder.eq).toHaveBeenCalledWith("phone", "+919000000000");
+      }
+    });
+
+    it("preserves an international number's real country code rather than treating it as Indian", async () => {
+      const { stub, from } = createFakeSupabase({ leads: [{ data: [{ id: "lead-us" }], error: null }] });
+      await expect(findLeadByExactPhone(stub, "+1 415 555 2671")).resolves.toBe("lead-us");
+      const lookupBuilder = from.mock.results[0].value as { eq: ReturnType<typeof vi.fn> };
+      expect(lookupBuilder.eq).toHaveBeenCalledWith("phone", "+14155552671");
+    });
+
+    it("falls back to an exact match on the raw input when the canonical form finds nothing -- legacy pre-canonicalization leads", async () => {
+      const { stub, from } = createFakeSupabase({
+        leads: [
+          { data: [], error: null }, // canonical-form lookup: no match
+          { data: [{ id: "lead-legacy" }], error: null }, // raw-form fallback lookup: 1 match
+        ],
+      });
+
+      await expect(findLeadByExactPhone(stub, "919000000000")).resolves.toBe("lead-legacy");
+
+      const canonicalLookup = from.mock.results[0].value as { eq: ReturnType<typeof vi.fn> };
+      expect(canonicalLookup.eq).toHaveBeenCalledWith("phone", "+919000000000");
+      const rawFallbackLookup = from.mock.results[1].value as { eq: ReturnType<typeof vi.fn> };
+      expect(rawFallbackLookup.eq).toHaveBeenCalledWith("phone", "919000000000");
+    });
+
+    it("does not attempt a raw-form fallback when the input is already canonical", async () => {
+      const { stub, from } = createFakeSupabase({ leads: [{ data: [], error: null }] });
+      await expect(findLeadByExactPhone(stub, "+919000000000")).resolves.toBeNull();
+      expect(from.mock.calls.filter(([table]) => table === "leads")).toHaveLength(1);
+    });
+
+    it("falls back to matching the raw string as-is when the phone is unparseable, rather than refusing to look up", async () => {
+      const { stub, from } = createFakeSupabase({ leads: [{ data: [{ id: "lead-weird" }], error: null }] });
+      await expect(findLeadByExactPhone(stub, "not-a-phone-number")).resolves.toBe("lead-weird");
+      const lookupBuilder = from.mock.results[0].value as { eq: ReturnType<typeof vi.fn> };
+      expect(lookupBuilder.eq).toHaveBeenCalledWith("phone", "not-a-phone-number");
+    });
   });
 });
 
@@ -112,7 +163,7 @@ describe("ingestInboundMessage", () => {
     // 4 conversations.update (touch).
     const conversationsInsertBuilder = from.mock.results[2].value;
     expect(conversationsInsertBuilder.insert).toHaveBeenCalledWith(
-      expect.objectContaining({ lead_id: "lead-1", wa_id: "919000000000", phone_number_id: "wabis:206059" })
+      expect.objectContaining({ lead_id: "lead-1", wa_id: "+919000000000", phone_number_id: "wabis:206059" })
     );
 
     const messagesInsertBuilder = from.mock.results[3].value;
@@ -325,7 +376,7 @@ describe("ingestInboundMessage", () => {
       stub,
       expect.objectContaining({
         conversationId: "conv-9",
-        phone: "919000000000",
+        phone: "+919000000000",
         customerName: "Test Customer",
         serviceName: "Gypsum Plaster",
       })

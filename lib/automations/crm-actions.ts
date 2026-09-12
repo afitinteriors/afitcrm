@@ -2,6 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, LeadUpdate } from "@/lib/supabase/types";
 import type { CapturableLeadField } from "./graph-schema";
+import { toCanonicalPhone } from "@/lib/phone";
 
 // Webhook-context (service-role) CRM operations for the automation executor.
 // The existing lib/actions/leads.ts Server Actions (createLead, updateLead,
@@ -23,24 +24,47 @@ export type CreateOrLinkLeadResult = {
   created: boolean;
 };
 
+async function findLeadsByPhoneExact(
+  supabase: SupabaseClient<Database>,
+  phone: string
+): Promise<{ id: string }[]> {
+  // Exact phone match only, mirroring the webhook's own
+  // findLeadByExactPhone -- 0 or 2+ matches are handled explicitly by the
+  // caller rather than guessing which lead (if any) this is.
+  const { data, error } = await supabase.from("leads").select("id").eq("phone", phone).limit(2);
+  if (error) {
+    throw new Error(`Failed to look up lead by phone: ${error.message}`);
+  }
+  return data ?? [];
+}
+
 export async function createOrLinkLeadForConversation(
   supabase: SupabaseClient<Database>,
   context: CreateOrLinkLeadContext
 ): Promise<CreateOrLinkLeadResult> {
-  // Exact phone match only, mirroring the webhook's own
-  // findLeadByExactPhone -- 0 or 2+ matches are handled explicitly below
-  // rather than guessing which lead (if any) this is.
-  const { data: existingLeads, error: findError } = await supabase
-    .from("leads")
-    .select("id")
-    .eq("phone", context.phone)
-    .limit(2);
+  // Canonicalized to E.164 (lib/phone.ts) so +91/91/bare-national Indian
+  // variants, and international numbers by their real country code, all
+  // resolve to the same lead -- and so newly created leads are stored in
+  // canonical form going forward. An unparseable phone is a real,
+  // actionable data problem for an action specifically configured to
+  // create-or-link a lead, so it fails the run rather than silently
+  // storing a garbage value.
+  const canonical = toCanonicalPhone(context.phone);
+  if (!canonical.ok) {
+    throw new Error(`Cannot create or link a lead: phone number could not be parsed (${canonical.reason}).`);
+  }
+  const canonicalPhone = canonical.e164;
 
-  if (findError) {
-    throw new Error(`Failed to look up lead by phone: ${findError.message}`);
+  let existingLeads = await findLeadsByPhoneExact(supabase, canonicalPhone);
+  // Legacy fallback: leads created before canonicalization was introduced
+  // may still have the original raw phone value stored (no backfill has
+  // been run -- see lib/phone.ts). Only tried when nothing matched the
+  // canonical form and the raw input actually differs from it.
+  if (existingLeads.length === 0 && context.phone !== canonicalPhone) {
+    existingLeads = await findLeadsByPhoneExact(supabase, context.phone);
   }
 
-  if (existingLeads && existingLeads.length > 1) {
+  if (existingLeads.length > 1) {
     // Unlike the webhook's own find-or-create (which fails closed to
     // "unlinked" for a plain inbound message), an action that was
     // specifically configured to create-or-link a lead should not silently
@@ -52,7 +76,7 @@ export async function createOrLinkLeadForConversation(
   let leadId: string;
   let created = false;
 
-  if (existingLeads && existingLeads.length === 1) {
+  if (existingLeads.length === 1) {
     leadId = existingLeads[0].id;
     // Never overwrite an existing service_required -- same "don't clobber
     // a value that's already there" convention as the webhook's own
@@ -70,7 +94,7 @@ export async function createOrLinkLeadForConversation(
     const { data: newLead, error: insertError } = await supabase
       .from("leads")
       .insert({
-        phone: context.phone,
+        phone: canonicalPhone,
         customer_name: context.customerName,
         service_required: context.serviceName,
         source: "whatsapp",

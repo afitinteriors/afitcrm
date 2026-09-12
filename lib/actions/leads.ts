@@ -8,6 +8,7 @@ import { getCurrentProfile } from "@/lib/auth";
 import { recordAuditEvent } from "@/lib/audit";
 import type { Database, LeadStatus, LeadUpdate } from "@/lib/supabase/types";
 import { LEAD_STATUSES } from "@/lib/constants";
+import { toCanonicalPhone } from "@/lib/phone";
 
 export type ActionState = { error: string } | null;
 
@@ -58,12 +59,49 @@ async function checkLeadAccess(
   return null;
 }
 
+// Returns the id of a conflicting lead, if any -- checked against the
+// canonical (E.164) phone first (lib/phone.ts), then against the raw,
+// as-typed input as a fallback. The fallback exists because this project
+// has not backfilled leads.phone to canonical form for pre-existing rows
+// (a separate, not-yet-approved migration): a legacy lead may still be
+// stored under a raw, non-canonical value that the canonical-only check
+// would miss. Presence of either match (1 or more rows) is treated as a
+// duplicate -- this is a plain existence check, not a lookup that needs to
+// resolve to one specific lead. `excludeLeadId` lets an update exclude the
+// lead being edited from matching itself.
+async function findDuplicateLeadId(
+  supabase: SupabaseClient<Database>,
+  canonicalPhone: string,
+  rawPhone: string,
+  excludeLeadId?: string
+): Promise<string | null> {
+  const tryPhone = async (phone: string): Promise<string | null> => {
+    let query = supabase.from("leads").select("id").eq("phone", phone);
+    if (excludeLeadId) query = query.neq("id", excludeLeadId);
+    const { data } = await query.limit(2);
+    return data && data.length > 0 ? data[0].id : null;
+  };
+
+  const canonicalMatch = await tryPhone(canonicalPhone);
+  if (canonicalMatch) return canonicalMatch;
+  if (rawPhone !== canonicalPhone) {
+    return tryPhone(rawPhone);
+  }
+  return null;
+}
+
 export async function createLead(_prevState: ActionState, formData: FormData): Promise<ActionState> {
   const profile = await getCurrentProfile();
   if (!profile) return { error: "Not signed in." };
 
-  const phone = str(formData, "phone");
-  if (!phone) return { error: "Phone number is required." };
+  const rawPhone = str(formData, "phone");
+  if (!rawPhone) return { error: "Phone number is required." };
+
+  const canonicalPhone = toCanonicalPhone(rawPhone);
+  if (!canonicalPhone.ok) {
+    return { error: "Enter a valid phone number, including the country code if it isn't Indian (e.g. +14155552671)." };
+  }
+  const phone = canonicalPhone.e164;
 
   // Staff-created leads are always self-owned. assigned_to_id is never
   // read from client input -- formData.get("assigned_to_id") is never
@@ -73,6 +111,12 @@ export async function createLead(_prevState: ActionState, formData: FormData): P
   const assignedToId = profile.role === "staff" ? profile.id : null;
 
   const supabase = await createClient();
+
+  const duplicateLeadId = await findDuplicateLeadId(supabase, phone, rawPhone);
+  if (duplicateLeadId) {
+    return { error: "A lead with this phone number already exists." };
+  }
+
   const { data, error } = await supabase
     .from("leads")
     .insert({
@@ -110,12 +154,23 @@ export async function createLead(_prevState: ActionState, formData: FormData): P
 
 export async function updateLead(_prevState: ActionState, formData: FormData): Promise<ActionState> {
   const leadId = str(formData, "lead_id");
-  const phone = str(formData, "phone");
-  if (!phone) return { error: "Phone number is required." };
+  const rawPhone = str(formData, "phone");
+  if (!rawPhone) return { error: "Phone number is required." };
+
+  const canonicalPhone = toCanonicalPhone(rawPhone);
+  if (!canonicalPhone.ok) {
+    return { error: "Enter a valid phone number, including the country code if it isn't Indian (e.g. +14155552671)." };
+  }
+  const phone = canonicalPhone.e164;
 
   const supabase = await createClient();
   const accessError = await checkLeadAccess(supabase, leadId);
   if (accessError) return accessError;
+
+  const duplicateLeadId = await findDuplicateLeadId(supabase, phone, rawPhone, leadId);
+  if (duplicateLeadId) {
+    return { error: "Another lead already uses this phone number." };
+  }
 
   const update = {
     customer_name: optionalStr(formData, "customer_name"),

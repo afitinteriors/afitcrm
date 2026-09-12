@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 import { triggerAutomationForMessage } from "@/lib/automations/trigger";
 import { createOrLinkLeadForConversation } from "@/lib/automations/crm-actions";
+import { toCanonicalPhone } from "@/lib/phone";
 
 // Minimal shape needed to ingest one inbound message into
 // conversations/messages, shared by every inbound source (Meta Cloud API,
@@ -32,14 +33,40 @@ export type InboundWhatsAppMessage = {
   serviceHint?: string | null;
 };
 
-export async function findLeadByExactPhone(
-  supabase: SupabaseClient<Database>,
-  phone: string
-): Promise<string | null> {
+async function findLeadIdByPhoneExact(supabase: SupabaseClient<Database>, phone: string): Promise<string | null> {
   const { data, error } = await supabase.from("leads").select("id").eq("phone", phone).limit(2);
   // 0 matches (no lead yet) or 2+ matches (ambiguous) both fail closed to "unlinked".
   if (error || !data || data.length !== 1) return null;
   return data[0].id;
+}
+
+// Looks up by the canonical E.164 form of `phone` (see lib/phone.ts) so
+// +91/91/bare-national Indian variants, and international numbers by their
+// real country code, all resolve to the same lead. Falls back to an exact
+// match on the raw, uncanonicalized input when the canonical lookup misses
+// -- this project has not backfilled existing leads.phone values to
+// canonical form (a separate, not-yet-approved migration), so a lead
+// created before canonicalization was introduced may still be stored in
+// its original raw shape. This fallback narrows, but does not eliminate,
+// the transition-period duplicate-lead risk for such pre-existing leads;
+// see lib/phone.ts and this project's phone-normalization investigation
+// notes for the full caveat. Unparseable input falls back to the exact
+// pre-canonicalization behavior (match the raw string as given) rather
+// than refusing to look up at all.
+export async function findLeadByExactPhone(
+  supabase: SupabaseClient<Database>,
+  phone: string
+): Promise<string | null> {
+  const canonical = toCanonicalPhone(phone);
+  if (!canonical.ok) return findLeadIdByPhoneExact(supabase, phone);
+
+  const match = await findLeadIdByPhoneExact(supabase, canonical.e164);
+  if (match) return match;
+
+  if (phone !== canonical.e164) {
+    return findLeadIdByPhoneExact(supabase, phone);
+  }
+  return null;
 }
 
 export async function findOrCreateConversation(

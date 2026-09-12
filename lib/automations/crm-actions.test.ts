@@ -35,7 +35,7 @@ function createFakeSupabase(script: Record<string, QueryResult[]>) {
 
 const BASE_CONTEXT: CreateOrLinkLeadContext = {
   conversationId: "conv-1",
-  phone: "919000000000",
+  phone: "+919000000000",
   customerName: "Test Customer",
   serviceName: "Gypsum Plaster",
 };
@@ -58,7 +58,7 @@ describe("createOrLinkLeadForConversation", () => {
     // (left to the DB default) and no other invented field.
     const insertBuilder = from.mock.results[1].value;
     expect(insertBuilder.insert).toHaveBeenCalledWith({
-      phone: "919000000000",
+      phone: "+919000000000",
       customer_name: "Test Customer",
       service_required: "Gypsum Plaster",
       source: "whatsapp",
@@ -149,5 +149,111 @@ describe("createOrLinkLeadForConversation", () => {
     // Only the phone lookup happened -- no insert, no update, no link.
     expect(from.mock.calls.filter(([table]) => table === "leads")).toHaveLength(1);
     expect(from.mock.calls.filter(([table]) => table === "conversations")).toHaveLength(0);
+  });
+
+  describe("phone canonicalization (lib/phone.ts)", () => {
+    it("canonicalizes a raw WABIS-shaped phone (no +) to E.164 for both the lookup and the stored value", async () => {
+      const { stub, from } = createFakeSupabase({
+        leads: [
+          { data: [], error: null }, // canonical-form lookup: no match
+          { data: [], error: null }, // raw-form fallback lookup (raw differs from canonical): no match
+          { data: { id: "lead-new" }, error: null }, // insert
+        ],
+        conversations: [{ error: null }],
+      });
+
+      await createOrLinkLeadForConversation(stub, { ...BASE_CONTEXT, phone: "919000000000" });
+
+      const lookupBuilder = from.mock.results[0].value as { eq: ReturnType<typeof vi.fn> };
+      expect(lookupBuilder.eq).toHaveBeenCalledWith("phone", "+919000000000");
+
+      const insertBuilder = from.mock.results[2].value as { insert: ReturnType<typeof vi.fn> };
+      expect(insertBuilder.insert).toHaveBeenCalledWith(
+        expect.objectContaining({ phone: "+919000000000" })
+      );
+    });
+
+    it("+91, 91, and bare Indian national forms all look up the same canonical phone", async () => {
+      const variants = ["+919000000000", "919000000000", "9000000000", "91-90000-00000"];
+
+      for (const phone of variants) {
+        const { stub, from } = createFakeSupabase({
+          leads: [{ data: [{ id: "lead-existing" }], error: null }, { data: null, error: null }],
+          conversations: [{ error: null }],
+        });
+
+        await createOrLinkLeadForConversation(stub, { ...BASE_CONTEXT, phone });
+
+        const lookupBuilder = from.mock.results[0].value as { eq: ReturnType<typeof vi.fn> };
+        expect(lookupBuilder.eq).toHaveBeenCalledWith("phone", "+919000000000");
+      }
+    });
+
+    it("preserves an international number's real country code rather than treating it as Indian", async () => {
+      const { stub, from } = createFakeSupabase({
+        leads: [
+          { data: [], error: null }, // canonical-form lookup: no match
+          { data: [], error: null }, // raw-form fallback lookup ("+1 415 555 2671" differs from canonical): no match
+          { data: { id: "lead-us" }, error: null }, // insert
+        ],
+        conversations: [{ error: null }],
+      });
+
+      await createOrLinkLeadForConversation(stub, { ...BASE_CONTEXT, phone: "+1 415 555 2671" });
+
+      const lookupBuilder = from.mock.results[0].value as { eq: ReturnType<typeof vi.fn> };
+      expect(lookupBuilder.eq).toHaveBeenCalledWith("phone", "+14155552671");
+
+      const insertBuilder = from.mock.results[2].value as { insert: ReturnType<typeof vi.fn> };
+      expect(insertBuilder.insert).toHaveBeenCalledWith(expect.objectContaining({ phone: "+14155552671" }));
+    });
+
+    it("rejects an unparseable phone number without touching the database at all", async () => {
+      const { stub, from } = createFakeSupabase({});
+
+      await expect(
+        createOrLinkLeadForConversation(stub, { ...BASE_CONTEXT, phone: "not-a-phone-number" })
+      ).rejects.toThrow(/could not be parsed/);
+
+      expect(from).not.toHaveBeenCalled();
+    });
+
+    it("falls back to an exact match on the raw input when the canonical form finds nothing -- legacy pre-canonicalization leads", async () => {
+      // Simulates a lead created before canonicalization was introduced,
+      // still stored under its original raw (non-canonical) phone value.
+      const { stub, from } = createFakeSupabase({
+        leads: [
+          { data: [], error: null }, // canonical-form lookup: no match
+          { data: [{ id: "lead-legacy" }], error: null }, // raw-form fallback lookup: 1 match
+          { data: null, error: null }, // service_required fill-if-empty update
+        ],
+        conversations: [{ error: null }],
+      });
+
+      const result = await createOrLinkLeadForConversation(stub, { ...BASE_CONTEXT, phone: "919000000000" });
+
+      expect(result).toEqual({ leadId: "lead-legacy", created: false });
+
+      const canonicalLookup = from.mock.results[0].value as { eq: ReturnType<typeof vi.fn> };
+      expect(canonicalLookup.eq).toHaveBeenCalledWith("phone", "+919000000000");
+      const rawFallbackLookup = from.mock.results[1].value as { eq: ReturnType<typeof vi.fn> };
+      expect(rawFallbackLookup.eq).toHaveBeenCalledWith("phone", "919000000000");
+
+      // No insert -- the legacy lead was found and reused, not duplicated.
+      expect(from.mock.calls.filter(([table]) => table === "leads")).toHaveLength(3);
+    });
+
+    it("does not attempt the raw-form fallback lookup when the input is already canonical", async () => {
+      const { stub, from } = createFakeSupabase({
+        leads: [{ data: [], error: null }, { data: { id: "lead-new" }, error: null }],
+        conversations: [{ error: null }],
+      });
+
+      await createOrLinkLeadForConversation(stub, { ...BASE_CONTEXT, phone: "+919000000000" });
+
+      // Exactly one lookup (canonical) plus the insert -- no redundant
+      // second lookup when raw input already equals its canonical form.
+      expect(from.mock.calls.filter(([table]) => table === "leads")).toHaveLength(2);
+    });
   });
 });
