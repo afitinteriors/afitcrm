@@ -40,6 +40,7 @@ export async function getLeads(filters: LeadFilters): Promise<LeadListRow[]> {
   let query = supabase
     .from("leads")
     .select("*, assigned:profiles(display_name)")
+    .is("merged_into_id", null)
     .order("created_at", { ascending: false });
 
   if (profile.role === "staff") {
