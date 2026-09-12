@@ -39,6 +39,11 @@ export type LeadRow = {
   lost_reason: string | null;
   assigned_to: string | null;
   assigned_to_id: string | null;
+  // Soft-retirement marker for the legacy phone-duplicate merge process
+  // (supabase/migrations/20260912121025_leads_add_merged_into_id.sql):
+  // non-null means this lead was retired in favor of the lead it points
+  // to; NULL (every row's value today) means active/unmerged.
+  merged_into_id: string | null;
   created_at: string;
   updated_at: string;
   wa_message_id: string | null;
