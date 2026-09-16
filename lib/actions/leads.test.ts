@@ -65,7 +65,7 @@ vi.mock("next/cache", () => ({
   revalidatePath: vi.fn(),
 }));
 
-import { createLead, updateLead } from "./leads";
+import { createLead, updateLead, setLeadStatus } from "./leads";
 
 function formDataWith(fields: Record<string, string>): FormData {
   const fd = new FormData();
@@ -74,6 +74,7 @@ function formDataWith(fields: Record<string, string>): FormData {
 }
 
 const ADMIN_PROFILE = { id: "admin-1", role: "admin" as const };
+const STAFF_PROFILE = { id: "staff-1", role: "staff" as const };
 
 describe("createLead", () => {
   beforeEach(() => {
@@ -226,5 +227,163 @@ describe("updateLead", () => {
 
     expect(result).toEqual({ error: expect.stringContaining("valid phone number") });
     expect(from).not.toHaveBeenCalled();
+  });
+});
+
+describe("setLeadStatus", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getCurrentProfileMock.mockResolvedValue(ADMIN_PROFILE);
+  });
+
+  // Won/Lost stage-direction guard: setLeadStatus() must read the lead's
+  // CURRENT status and refuse to move it anywhere once that current status
+  // is "won" or "lost" -- both are terminal through this generic setter.
+  // See the investigation of lead 88b62dab-fe58-4ad4-90ad-9fcd00edadc5,
+  // which reached status=quotation with a stale Won-only job_value by going
+  // won -> quotation through this exact path before the guard existed.
+
+  it("allows quotation -> negotiation (admin)", async () => {
+    const { stub, from } = createFakeSupabase({
+      leads: [
+        { data: { status: "quotation" }, error: null }, // current-status read
+        { error: null }, // update
+      ],
+    });
+    fakeSupabase = stub;
+
+    const result = await setLeadStatus("lead-1", "negotiation");
+
+    expect(result).toBeNull();
+    const updateBuilder = from.mock.results[1].value as { update: ReturnType<typeof vi.fn> };
+    expect(updateBuilder.update).toHaveBeenCalledWith({ status: "negotiation", lost_reason: null });
+  });
+
+  it("allows qualified -> site_visit (admin)", async () => {
+    const { stub } = createFakeSupabase({
+      leads: [
+        { data: { status: "qualified" }, error: null },
+        { error: null },
+      ],
+    });
+    fakeSupabase = stub;
+
+    const result = await setLeadStatus("lead-1", "site_visit");
+
+    expect(result).toBeNull();
+  });
+
+  it("allows site_visit -> quotation (admin)", async () => {
+    const { stub } = createFakeSupabase({
+      leads: [
+        { data: { status: "site_visit" }, error: null },
+        { error: null },
+      ],
+    });
+    fakeSupabase = stub;
+
+    const result = await setLeadStatus("lead-1", "quotation");
+
+    expect(result).toBeNull();
+  });
+
+  it("rejects won -> quotation and never issues an update", async () => {
+    const { stub, from } = createFakeSupabase({
+      leads: [{ data: { status: "won" }, error: null }], // current-status read only
+    });
+    fakeSupabase = stub;
+
+    const result = await setLeadStatus("lead-1", "quotation");
+
+    expect(result).toEqual({ error: expect.stringContaining("closed (Won/Lost)") });
+    expect(from.mock.calls.filter(([table]) => table === "leads")).toHaveLength(1);
+  });
+
+  it("rejects won -> negotiation and never issues an update", async () => {
+    const { stub, from } = createFakeSupabase({
+      leads: [{ data: { status: "won" }, error: null }],
+    });
+    fakeSupabase = stub;
+
+    const result = await setLeadStatus("lead-1", "negotiation");
+
+    expect(result).toEqual({ error: expect.stringContaining("closed (Won/Lost)") });
+    expect(from.mock.calls.filter(([table]) => table === "leads")).toHaveLength(1);
+  });
+
+  it("rejects lost -> quotation and never issues an update", async () => {
+    const { stub, from } = createFakeSupabase({
+      leads: [{ data: { status: "lost" }, error: null }],
+    });
+    fakeSupabase = stub;
+
+    const result = await setLeadStatus("lead-1", "quotation");
+
+    expect(result).toEqual({ error: expect.stringContaining("closed (Won/Lost)") });
+    expect(from.mock.calls.filter(([table]) => table === "leads")).toHaveLength(1);
+  });
+
+  it("rejects lost -> new and never issues an update", async () => {
+    const { stub, from } = createFakeSupabase({
+      leads: [{ data: { status: "lost" }, error: null }],
+    });
+    fakeSupabase = stub;
+
+    const result = await setLeadStatus("lead-1", "new");
+
+    expect(result).toEqual({ error: expect.stringContaining("closed (Won/Lost)") });
+    expect(from.mock.calls.filter(([table]) => table === "leads")).toHaveLength(1);
+  });
+
+  it("still rejects a direct target of won, before touching the database", async () => {
+    const { stub, from } = createFakeSupabase({});
+    fakeSupabase = stub;
+
+    const result = await setLeadStatus("lead-1", "won");
+
+    expect(result).toEqual({ error: "Use Mark as Won or Mark as Lost to set this status." });
+    expect(from).not.toHaveBeenCalled();
+  });
+
+  it("still rejects a direct target of lost, before touching the database", async () => {
+    const { stub, from } = createFakeSupabase({});
+    fakeSupabase = stub;
+
+    const result = await setLeadStatus("lead-1", "lost");
+
+    expect(result).toEqual({ error: "Use Mark as Won or Mark as Lost to set this status." });
+    expect(from).not.toHaveBeenCalled();
+  });
+
+  it("preserves existing authorization: staff cannot change a lead not assigned to them", async () => {
+    getCurrentProfileMock.mockResolvedValue(STAFF_PROFILE);
+    const { stub, from } = createFakeSupabase({
+      leads: [{ data: { assigned_to_id: "someone-else" }, error: null }], // checkLeadAccess
+    });
+    fakeSupabase = stub;
+
+    const result = await setLeadStatus("lead-1", "negotiation");
+
+    expect(result).toEqual({ error: "You do not have access to this lead." });
+    // Only the access check ran -- the guard's current-status read and the
+    // update itself must never be reached for an unauthorized caller.
+    expect(from.mock.calls.filter(([table]) => table === "leads")).toHaveLength(1);
+  });
+
+  it("preserves existing authorization: staff CAN change a lead assigned to them", async () => {
+    getCurrentProfileMock.mockResolvedValue(STAFF_PROFILE);
+    const { stub, from } = createFakeSupabase({
+      leads: [
+        { data: { assigned_to_id: "staff-1" }, error: null }, // checkLeadAccess
+        { data: { status: "qualified" }, error: null }, // current-status read
+        { error: null }, // update
+      ],
+    });
+    fakeSupabase = stub;
+
+    const result = await setLeadStatus("lead-1", "site_visit");
+
+    expect(result).toBeNull();
+    expect(from.mock.calls.filter(([table]) => table === "leads")).toHaveLength(3);
   });
 });

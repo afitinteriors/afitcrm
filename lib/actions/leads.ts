@@ -274,6 +274,21 @@ export async function setLeadStatus(leadId: string, status: LeadStatus): Promise
   const accessError = await checkLeadAccess(supabase, leadId);
   if (accessError) return accessError;
 
+  // Won/Lost are terminal through this setter: markLeadWon()/markLeadLost()
+  // are the only writers of those statuses, and neither exposes a path back
+  // into the open pipeline, so this generic setter must not open one either
+  // (a lead once moved won -> quotation this way kept its Won-only job_value,
+  // since this path never touches job_value -- see markLeadWon).
+  const { data: current, error: fetchError } = await supabase
+    .from("leads")
+    .select("status")
+    .eq("id", leadId)
+    .single();
+  if (fetchError || !current) return { error: "Lead not found." };
+  if (current.status === "won" || current.status === "lost") {
+    return { error: "This lead is closed (Won/Lost) and cannot be moved back into the pipeline." };
+  }
+
   // status is never "lost" here (rejected above), so lost_reason is always
   // cleared -- this path can only move a lead between open/invalid stages.
   const update: LeadUpdate = { status, lost_reason: null };
