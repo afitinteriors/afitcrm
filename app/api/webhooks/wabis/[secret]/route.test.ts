@@ -7,7 +7,7 @@ import type { NextRequest } from "next/server";
 // a fake Supabase client. Mocking both modules here avoids any real
 // Supabase/network call and keeps this file targeted at the route's own
 // job: secret check, JSON parsing, payload validation, response codes.
-const ingestInboundMessageMock = vi.fn().mockResolvedValue(undefined);
+const ingestInboundMessageMock = vi.fn().mockResolvedValue({ status: "ingested" });
 vi.mock("@/lib/whatsapp/ingest", () => ({
   ingestInboundMessage: (...args: unknown[]) => ingestInboundMessageMock(...args),
 }));
@@ -58,6 +58,30 @@ describe("POST /api/webhooks/wabis/[secret]", () => {
     });
     expect(response.status).toBe(200);
     expect(ingestInboundMessageMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("scenario: ingestion reports a successful idempotent duplicate -> still returns 200", async () => {
+    ingestInboundMessageMock.mockResolvedValueOnce({ status: "duplicate" });
+
+    const response = await POST(makeRequest(VALID_PAYLOAD), {
+      params: Promise.resolve({ secret: TEST_SECRET }),
+    });
+
+    expect(response.status).toBe(200);
+  });
+
+  it("scenario: ingestion reports a genuine failure -> 500, never ACKed as success", async () => {
+    // Reproduces the real production incident (findOrCreateConversation
+    // erroring on a transient Supabase failure) at the route level: a
+    // failed ingestion must not be answered with a 2xx, or WABIS's own
+    // confirmed retry behavior has no reason to redeliver the message.
+    ingestInboundMessageMock.mockResolvedValueOnce({ status: "failed", reason: "JWT issued at future" });
+
+    const response = await POST(makeRequest(VALID_PAYLOAD), {
+      params: Promise.resolve({ secret: TEST_SECRET }),
+    });
+
+    expect(response.status).toBe(500);
   });
 
   it("scenario: invalid secret -> 404, never ingests", async () => {

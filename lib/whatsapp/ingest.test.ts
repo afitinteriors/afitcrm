@@ -163,7 +163,9 @@ describe("ingestInboundMessage", () => {
       messages: [{ data: { id: "msg-1" }, error: null }],
     });
 
-    await ingestInboundMessage(stub, BASE_MESSAGE);
+    const result = await ingestInboundMessage(stub, BASE_MESSAGE);
+
+    expect(result).toEqual({ status: "ingested" });
 
     // Global from() call order: 0 conversations.select (miss), 1 leads.select
     // (findLeadByExactPhone), 2 conversations.insert (create), 3 messages.insert,
@@ -222,15 +224,16 @@ describe("ingestInboundMessage", () => {
     );
   });
 
-  it("treats a duplicate wa_message_id as a no-op, not an error", async () => {
+  it("treats a duplicate wa_message_id as a no-op, not an error -- and reports it as a successful (duplicate) outcome", async () => {
     const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const { stub, from } = createFakeSupabase({
       conversations: [{ data: { id: "conv-4" }, error: null }],
       messages: [{ data: null, error: { code: "23505", message: "duplicate key" } }],
     });
 
-    await ingestInboundMessage(stub, BASE_MESSAGE);
+    const result = await ingestInboundMessage(stub, BASE_MESSAGE);
 
+    expect(result).toEqual({ status: "duplicate" });
     // No conversations.update (touch) call after a duplicate -- ingestion
     // stops right after the failed insert, exactly as the existing Meta
     // path already behaves.
@@ -239,6 +242,37 @@ describe("ingestInboundMessage", () => {
       expect.stringContaining("Failed to persist"),
       expect.anything()
     );
+    consoleErrorSpy.mockRestore();
+  });
+
+  it("returns a failed outcome (not silently swallowed) when the conversation lookup fails", async () => {
+    // Reproduces the real production incident: findOrCreateConversation's
+    // own Supabase call errors (e.g. a transient auth/JWT failure), and the
+    // caller (the webhook route) must be able to tell this apart from a
+    // genuinely successful/duplicate delivery so it can respond non-2xx
+    // instead of ACKing a message that was never persisted.
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { stub } = createFakeSupabase({
+      conversations: [{ data: null, error: { message: "JWT issued at future" } }],
+    });
+
+    const result = await ingestInboundMessage(stub, BASE_MESSAGE);
+
+    expect(result).toEqual({ status: "failed", reason: expect.stringContaining("conversation") });
+    consoleErrorSpy.mockRestore();
+  });
+
+  it("returns a failed outcome when message persistence fails for a reason other than a duplicate", async () => {
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { stub } = createFakeSupabase({
+      conversations: [{ data: { id: "conv-fail" }, error: null }],
+      messages: [{ data: null, error: { code: "23503", message: "foreign key violation" } }],
+    });
+
+    const result = await ingestInboundMessage(stub, BASE_MESSAGE);
+
+    expect(result).toEqual({ status: "failed", reason: "foreign key violation" });
+    expect(consoleErrorSpy).toHaveBeenCalledWith("Failed to persist WhatsApp message:", "foreign key violation");
     consoleErrorSpy.mockRestore();
   });
 

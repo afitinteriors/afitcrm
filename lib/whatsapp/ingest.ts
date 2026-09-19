@@ -154,12 +154,24 @@ async function applyServiceHintToLead(supabase: SupabaseClient<Database>, leadId
   }
 }
 
+// Lets the webhook route distinguish a genuine ingestion failure (must not
+// be ACKed as success -- the source should be allowed to retry) from a
+// successful outcome, duplicate deliveries included ("duplicate" is a
+// successful idempotent no-op, not a failure). Best-effort side effects
+// (service-hint lead linking, automation triggering) never surface as
+// "failed" here -- same convention as before this type existed, since a
+// message that's durably persisted must never be treated as un-ingested
+// just because an add-on side effect broke.
+export type IngestOutcome = { status: "ingested" } | { status: "duplicate" } | { status: "failed"; reason: string };
+
 export async function ingestInboundMessage(
   supabase: SupabaseClient<Database>,
   message: InboundWhatsAppMessage
-): Promise<void> {
+): Promise<IngestOutcome> {
   const conversationResult = await findOrCreateConversation(supabase, message);
-  if (!conversationResult) return;
+  if (!conversationResult) {
+    return { status: "failed", reason: "Failed to find or create the WhatsApp conversation." };
+  }
   const { conversationId, leadId } = conversationResult;
 
   if (leadId) {
@@ -205,14 +217,14 @@ export async function ingestInboundMessage(
     .single();
 
   if (error || !inserted) {
-    if (error?.code !== "23505") {
-      // 23505 = unique_violation on wa_message_id -> already recorded (retry), not an error.
-      console.error("Failed to persist WhatsApp message:", error?.message);
+    // 23505 = unique_violation on wa_message_id -> already recorded (retry):
+    // a successful idempotent no-op, not a failure. Anything else is a
+    // genuine persistence failure the caller must not ACK as success.
+    if (error?.code === "23505") {
+      return { status: "duplicate" };
     }
-    // Either way, no new row was inserted this call -- don't touch the
-    // conversation's updated_at for a retry/duplicate delivery, and don't
-    // evaluate automations for a message that was already processed.
-    return;
+    console.error("Failed to persist WhatsApp message:", error?.message);
+    return { status: "failed", reason: error?.message ?? "Failed to persist the inbound WhatsApp message." };
   }
 
   // Bumps the conversation to the top of the list / refreshes its "time
@@ -244,4 +256,6 @@ export async function ingestInboundMessage(
   } catch (err) {
     console.error("Automation trigger failed unexpectedly:", err instanceof Error ? err.message : err);
   }
+
+  return { status: "ingested" };
 }

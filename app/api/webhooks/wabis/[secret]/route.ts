@@ -39,7 +39,16 @@ export async function POST(request: NextRequest, context: { params: Promise<{ se
   }
 
   const supabase = createAdminClient();
-  await ingestInboundMessage(supabase, message);
+  const result = await ingestInboundMessage(supabase, message);
+
+  // A genuine ingestion failure (e.g. the Supabase lookup/insert itself
+  // erroring) must not be ACKed as success -- WABIS's own confirmed
+  // duplicate-delivery/retry behavior only gives this message another
+  // chance to be ingested if it sees a non-2xx response. A successful
+  // idempotent no-op (an already-recorded duplicate) is still a 200.
+  if (result.status === "failed") {
+    return new NextResponse("Ingestion failed", { status: 500 });
+  }
 
   return NextResponse.json({ received: true });
 }
