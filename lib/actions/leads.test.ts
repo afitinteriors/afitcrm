@@ -17,6 +17,7 @@ function makeBuilder(result: QueryResult) {
   builder.is = vi.fn(chain);
   builder.insert = vi.fn(chain);
   builder.update = vi.fn(chain);
+  builder.delete = vi.fn(chain);
   builder.limit = vi.fn(() => Promise.resolve(result));
   builder.single = vi.fn(() => Promise.resolve(result));
   builder.then = (resolve: (value: QueryResult) => unknown) => Promise.resolve(result).then(resolve);
@@ -65,7 +66,7 @@ vi.mock("next/cache", () => ({
   revalidatePath: vi.fn(),
 }));
 
-import { createLead, updateLead, setLeadStatus, markLeadWon, markLeadLost } from "./leads";
+import { createLead, updateLead, setLeadStatus, markLeadWon, markLeadLost, deleteLead } from "./leads";
 
 function formDataWith(fields: Record<string, string>): FormData {
   const fd = new FormData();
@@ -521,5 +522,100 @@ describe("markLeadLost", () => {
 
     expect(result).toEqual({ error: "You do not have access to this lead." });
     expect(from.mock.calls.filter(([table]) => table === "leads")).toHaveLength(1);
+  });
+});
+
+describe("deleteLead", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("admin deletes a lead: fetches it for the audit snapshot, deletes it, records lead_deleted, redirects", async () => {
+    getCurrentProfileMock.mockResolvedValue(ADMIN_PROFILE);
+    const { stub, from } = createFakeSupabase({
+      leads: [
+        { data: { customer_name: "Test Lead", phone: "+919000000000" }, error: null }, // fetch for audit snapshot
+        { error: null }, // delete
+      ],
+    });
+    fakeSupabase = stub;
+
+    await deleteLead(null, formDataWith({ lead_id: "lead-1" }));
+
+    const deleteBuilder = from.mock.results[1].value as { delete: ReturnType<typeof vi.fn>; eq: ReturnType<typeof vi.fn> };
+    expect(deleteBuilder.delete).toHaveBeenCalled();
+    expect(deleteBuilder.eq).toHaveBeenCalledWith("id", "lead-1");
+
+    expect(recordAuditEventMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorId: "admin-1",
+        action: "lead_deleted",
+        targetType: "lead",
+        targetId: "lead-1",
+        metadata: { customer_name: "Test Lead", phone: "+919000000000" },
+      })
+    );
+    expect(redirectMock).toHaveBeenCalledWith("/leads");
+  });
+
+  it("rejects a staff caller without ever attempting the delete -- server-side, not just a hidden button", async () => {
+    getCurrentProfileMock.mockResolvedValue(STAFF_PROFILE);
+    const { stub, from } = createFakeSupabase({});
+    fakeSupabase = stub;
+
+    const result = await deleteLead(null, formDataWith({ lead_id: "lead-1" }));
+
+    expect(result).toEqual({ error: "Only an admin can delete leads." });
+    expect(from).not.toHaveBeenCalled();
+    expect(recordAuditEventMock).not.toHaveBeenCalled();
+    expect(redirectMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects when not signed in", async () => {
+    getCurrentProfileMock.mockResolvedValue(null);
+    const { stub, from } = createFakeSupabase({});
+    fakeSupabase = stub;
+
+    const result = await deleteLead(null, formDataWith({ lead_id: "lead-1" }));
+
+    expect(result).toEqual({ error: "Not signed in." });
+    expect(from).not.toHaveBeenCalled();
+  });
+
+  it("reports a clear error when the lead is a merge target (FK RESTRICT), instead of a raw DB error", async () => {
+    getCurrentProfileMock.mockResolvedValue(ADMIN_PROFILE);
+    const { stub } = createFakeSupabase({
+      leads: [
+        { data: { customer_name: "Survivor Lead", phone: "+919000000000" }, error: null },
+        { error: { code: "23503", message: "update or delete on table \"leads\" violates foreign key constraint" } },
+      ],
+    });
+    fakeSupabase = stub;
+
+    const result = await deleteLead(null, formDataWith({ lead_id: "lead-1" }));
+
+    expect(result).toEqual({ error: "This lead cannot be deleted because other leads have been merged into it." });
+    expect(recordAuditEventMock).not.toHaveBeenCalled();
+    expect(redirectMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 'Lead not found' when the lead no longer exists, without attempting delete", async () => {
+    getCurrentProfileMock.mockResolvedValue(ADMIN_PROFILE);
+    const { stub, from } = createFakeSupabase({
+      leads: [{ data: null, error: { message: "no rows" } }],
+    });
+    fakeSupabase = stub;
+
+    const result = await deleteLead(null, formDataWith({ lead_id: "lead-missing" }));
+
+    expect(result).toEqual({ error: "Lead not found." });
+    expect(from.mock.calls.filter(([table]) => table === "leads")).toHaveLength(1);
+    expect(redirectMock).not.toHaveBeenCalled();
+  });
+
+  it("requires lead_id", async () => {
+    getCurrentProfileMock.mockResolvedValue(ADMIN_PROFILE);
+    const result = await deleteLead(null, formDataWith({}));
+    expect(result).toEqual({ error: "Missing lead." });
   });
 });

@@ -475,6 +475,60 @@ export async function setQuotationAmount(
   return null;
 }
 
+// Admin-only, hard delete -- no soft-delete/archive concept exists in this
+// schema (unlike the merge system's merged_into_id soft-retirement), so
+// this is a real, irreversible row removal. leads_delete_admin_only (RLS)
+// is the actual enforced boundary; this check is defense-in-depth, same
+// convention as assignLead. conversations.lead_id and follow_ups.lead_id
+// both already have ON DELETE CASCADE to leads.id (verified against live
+// FK constraints, not assumed), so their rows -- and, transitively,
+// messages/automation_sessions/automation_runs cascading from
+// conversations -- are removed by Postgres itself, not by this function.
+// audit_logs has no FK to leads (target_id is polymorphic), so this lead's
+// audit history is intentionally preserved after deletion.
+export async function deleteLead(_prevState: ActionState, formData: FormData): Promise<ActionState> {
+  const leadId = str(formData, "lead_id");
+  if (!leadId) return { error: "Missing lead." };
+
+  const profile = await getCurrentProfile();
+  if (!profile) return { error: "Not signed in." };
+  if (profile.role !== "admin") return { error: "Only an admin can delete leads." };
+
+  const supabase = await createClient();
+
+  const { data: lead, error: fetchError } = await supabase
+    .from("leads")
+    .select("customer_name, phone")
+    .eq("id", leadId)
+    .single();
+  if (fetchError || !lead) return { error: "Lead not found." };
+
+  const { error } = await supabase.from("leads").delete().eq("id", leadId);
+
+  if (error) {
+    // 23503 = foreign_key_violation -- specifically the merge system's
+    // leads.merged_into_id -> leads.id (ON DELETE RESTRICT): this lead
+    // cannot be removed while another lead is recorded as merged into it.
+    // Surfaced as a clear error rather than worked around.
+    if (error.code === "23503") {
+      return { error: "This lead cannot be deleted because other leads have been merged into it." };
+    }
+    return { error: error.message };
+  }
+
+  await recordAuditEvent({
+    actorId: profile.id,
+    action: "lead_deleted",
+    targetType: "lead",
+    targetId: leadId,
+    metadata: { customer_name: lead.customer_name, phone: lead.phone },
+  });
+
+  revalidatePath("/leads");
+  revalidatePath("/dashboard");
+  redirect("/leads");
+}
+
 export async function setJobValue(_prevState: ActionState, formData: FormData): Promise<ActionState> {
   const leadId = str(formData, "lead_id");
   const jobValue = optionalNumber(formData, "job_value");

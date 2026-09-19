@@ -141,6 +141,7 @@ export type AuditAction =
   | "lead_viewed"
   | "lead_created"
   | "lead_updated"
+  | "lead_deleted"
   | "conversation_viewed"
   | "message_sent"
   | "audit_log_viewed"

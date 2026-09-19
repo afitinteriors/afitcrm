@@ -15,6 +15,7 @@ import { QuotationForm } from "@/components/lead-actions/QuotationForm";
 import { MarkLostForm, MarkWonForm } from "@/components/lead-actions/WonLostForms";
 import { FollowUpsCard } from "@/components/lead-actions/FollowUpsCard";
 import { LeadActivity } from "@/components/lead-actions/LeadActivity";
+import { DeleteLeadSection } from "@/components/lead-actions/DeleteLeadSection";
 import { formatCurrency, formatDate, formatDateTime, telLink, whatsappLink } from "@/lib/format";
 import { LEAD_SOURCE_LABELS } from "@/lib/constants";
 import { getStageSections, canMarkWon } from "@/lib/lead-stage-sections";
@@ -287,6 +288,8 @@ export default async function LeadDetailPage({ params }: PageProps<"/leads/[id]"
           </details>
         )}
       </div>
+
+      <DeleteLeadSection leadId={lead.id} customerName={lead.customer_name} phone={lead.phone} />
     </div>
   );
 }
