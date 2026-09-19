@@ -12,14 +12,15 @@ export function MarkWonForm({ leadId, jobValue }: { leadId: string; jobValue: nu
       <input type="hidden" name="lead_id" value={leadId} />
       <div>
         <label htmlFor="won_job_value" className="block text-xs font-medium text-muted-foreground">
-          Job value (₹, optional)
+          Job value (₹)
         </label>
         <input
           id="won_job_value"
           name="job_value"
           type="number"
-          min="0"
+          min="1"
           step="1"
+          required
           defaultValue={jobValue ?? ""}
           className="mt-1 block h-11 w-full rounded-md border border-border px-3 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
         />

@@ -65,7 +65,7 @@ vi.mock("next/cache", () => ({
   revalidatePath: vi.fn(),
 }));
 
-import { createLead, updateLead, setLeadStatus } from "./leads";
+import { createLead, updateLead, setLeadStatus, markLeadWon, markLeadLost } from "./leads";
 
 function formDataWith(fields: Record<string, string>): FormData {
   const fd = new FormData();
@@ -385,5 +385,141 @@ describe("setLeadStatus", () => {
 
     expect(result).toBeNull();
     expect(from.mock.calls.filter(([table]) => table === "leads")).toHaveLength(3);
+  });
+});
+
+describe("markLeadWon", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getCurrentProfileMock.mockResolvedValue(ADMIN_PROFILE);
+  });
+
+  // Data-integrity guard: a lead must not become Won without a real
+  // job_value -- previously job_value was accepted as fully optional here
+  // (unlike markLeadLost's lost_reason, which was always required), letting
+  // Won leads silently carry a null job_value and understate every report
+  // that sums/averages job_value for won leads (Dashboard Revenue,
+  // Reports' Won/Lost and Sales Performance sections).
+
+  it("rejects marking Won with no job_value at all -- no database access whatsoever", async () => {
+    const { stub, from } = createFakeSupabase({});
+    fakeSupabase = stub;
+
+    const result = await markLeadWon(null, formDataWith({ lead_id: "lead-1" }));
+
+    expect(result).toEqual({ error: "A valid job value is required to mark a lead as Won." });
+    expect(from).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["empty string", ""],
+    ["non-numeric", "not-a-number"],
+    ["zero", "0"],
+    ["negative", "-500"],
+  ])("rejects marking Won with an invalid job_value (%s) -- no database access whatsoever", async (_label, value) => {
+    const { stub, from } = createFakeSupabase({});
+    fakeSupabase = stub;
+
+    const result = await markLeadWon(null, formDataWith({ lead_id: "lead-1", job_value: value }));
+
+    expect(result).toEqual({ error: "A valid job value is required to mark a lead as Won." });
+    expect(from).not.toHaveBeenCalled();
+  });
+
+  it("succeeds with a valid positive job_value, sets status won and clears lost_reason", async () => {
+    const { stub, from } = createFakeSupabase({
+      leads: [{ error: null }], // update
+    });
+    fakeSupabase = stub;
+
+    const result = await markLeadWon(null, formDataWith({ lead_id: "lead-1", job_value: "50000" }));
+
+    expect(result).toBeNull();
+    const updateBuilder = from.mock.results[0].value as { update: ReturnType<typeof vi.fn> };
+    expect(updateBuilder.update).toHaveBeenCalledWith({ status: "won", job_value: 50000, lost_reason: null });
+  });
+
+  it("preserves existing authorization: staff cannot mark Won a lead not assigned to them, even with a valid job_value", async () => {
+    getCurrentProfileMock.mockResolvedValue(STAFF_PROFILE);
+    const { stub, from } = createFakeSupabase({
+      leads: [{ data: { assigned_to_id: "someone-else" }, error: null }], // checkLeadAccess
+    });
+    fakeSupabase = stub;
+
+    const result = await markLeadWon(null, formDataWith({ lead_id: "lead-1", job_value: "50000" }));
+
+    expect(result).toEqual({ error: "You do not have access to this lead." });
+    // The job_value guard runs first and passes; only the access check
+    // should have touched the database after that.
+    expect(from.mock.calls.filter(([table]) => table === "leads")).toHaveLength(1);
+  });
+
+  it("preserves existing authorization: staff CAN mark Won a lead assigned to them", async () => {
+    getCurrentProfileMock.mockResolvedValue(STAFF_PROFILE);
+    const { stub, from } = createFakeSupabase({
+      leads: [
+        { data: { assigned_to_id: "staff-1" }, error: null }, // checkLeadAccess
+        { error: null }, // update
+      ],
+    });
+    fakeSupabase = stub;
+
+    const result = await markLeadWon(null, formDataWith({ lead_id: "lead-1", job_value: "25000" }));
+
+    expect(result).toBeNull();
+    expect(from.mock.calls.filter(([table]) => table === "leads")).toHaveLength(2);
+  });
+});
+
+describe("markLeadLost", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getCurrentProfileMock.mockResolvedValue(ADMIN_PROFILE);
+  });
+
+  // Confirms markLeadLost's pre-existing behavior is unchanged by the
+  // markLeadWon fix above -- same validate-before-access-check shape, but
+  // its own required field (lost_reason) and success path are untouched.
+
+  it("still rejects marking Lost with no lost_reason -- no database access whatsoever", async () => {
+    const { stub, from } = createFakeSupabase({});
+    fakeSupabase = stub;
+
+    const result = await markLeadLost(null, formDataWith({ lead_id: "lead-1" }));
+
+    expect(result).toEqual({ error: "A lost reason is required." });
+    expect(from).not.toHaveBeenCalled();
+  });
+
+  it("still succeeds with a valid lost_reason, setting status lost", async () => {
+    const { stub, from } = createFakeSupabase({
+      leads: [{ error: null }], // update
+    });
+    fakeSupabase = stub;
+
+    const result = await markLeadLost(
+      null,
+      formDataWith({ lead_id: "lead-1", lost_reason: "Went with a competitor" })
+    );
+
+    expect(result).toBeNull();
+    const updateBuilder = from.mock.results[0].value as { update: ReturnType<typeof vi.fn> };
+    expect(updateBuilder.update).toHaveBeenCalledWith({
+      status: "lost",
+      lost_reason: "Went with a competitor",
+    });
+  });
+
+  it("preserves existing authorization: staff cannot mark Lost a lead not assigned to them", async () => {
+    getCurrentProfileMock.mockResolvedValue(STAFF_PROFILE);
+    const { stub, from } = createFakeSupabase({
+      leads: [{ data: { assigned_to_id: "someone-else" }, error: null }], // checkLeadAccess
+    });
+    fakeSupabase = stub;
+
+    const result = await markLeadLost(null, formDataWith({ lead_id: "lead-1", lost_reason: "Budget" }));
+
+    expect(result).toEqual({ error: "You do not have access to this lead." });
+    expect(from.mock.calls.filter(([table]) => table === "leads")).toHaveLength(1);
   });
 });

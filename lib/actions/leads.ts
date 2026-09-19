@@ -313,6 +313,9 @@ export async function setLeadStatus(leadId: string, status: LeadStatus): Promise
 export async function markLeadWon(_prevState: ActionState, formData: FormData): Promise<ActionState> {
   const leadId = str(formData, "lead_id");
   const jobValue = optionalNumber(formData, "job_value");
+  if (jobValue === null || jobValue <= 0) {
+    return { error: "A valid job value is required to mark a lead as Won." };
+  }
 
   const supabase = await createClient();
   const accessError = await checkLeadAccess(supabase, leadId);
