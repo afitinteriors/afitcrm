@@ -139,6 +139,39 @@ describe("createOrLinkLeadForConversation", () => {
     expect(updateBuilder.insert).not.toHaveBeenCalled();
   });
 
+  it("excludes retired/merged leads from the phone lookup (merged_into_id filter)", async () => {
+    const { stub, from } = createFakeSupabase({
+      leads: [
+        { data: [{ id: "lead-existing" }], error: null },
+        { data: null, error: null },
+      ],
+      conversations: [{ error: null }],
+    });
+
+    await createOrLinkLeadForConversation(stub, BASE_CONTEXT);
+
+    const lookupBuilder = from.mock.results[0].value as { is: ReturnType<typeof vi.fn> };
+    expect(lookupBuilder.is).toHaveBeenCalledWith("merged_into_id", null);
+  });
+
+  it("creates a new lead rather than reviving one when the only phone match is a merged/retired lead", async () => {
+    // The fake builder doesn't apply real Postgres filtering -- this
+    // simulates the DB-side effect of the merged_into_id filter above (a
+    // merged lead's row is excluded, so the query returns 0 matches even
+    // though a lead with this phone exists).
+    const { stub } = createFakeSupabase({
+      leads: [
+        { data: [], error: null }, // merged lead filtered out -> no active match
+        { data: { id: "lead-new" }, error: null }, // insert
+      ],
+      conversations: [{ error: null }],
+    });
+
+    const result = await createOrLinkLeadForConversation(stub, BASE_CONTEXT);
+
+    expect(result).toEqual({ leadId: "lead-new", created: true });
+  });
+
   it("fails closed (throws) on an ambiguous phone match (2+ matches), creating nothing", async () => {
     const { stub, from } = createFakeSupabase({
       leads: [{ data: [{ id: "lead-a" }, { id: "lead-b" }], error: null }],

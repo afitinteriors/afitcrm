@@ -30,8 +30,16 @@ async function findLeadsByPhoneExact(
 ): Promise<{ id: string }[]> {
   // Exact phone match only, mirroring the webhook's own
   // findLeadByExactPhone -- 0 or 2+ matches are handled explicitly by the
-  // caller rather than guessing which lead (if any) this is.
-  const { data, error } = await supabase.from("leads").select("id").eq("phone", phone).limit(2);
+  // caller rather than guessing which lead (if any) this is. Excludes
+  // retired/merged leads (merged_into_id set), same "active leads only"
+  // convention as lib/leads.ts's getLeads() -- a phone that only matches a
+  // merged lead is treated as no match rather than reviving a retired record.
+  const { data, error } = await supabase
+    .from("leads")
+    .select("id")
+    .eq("phone", phone)
+    .is("merged_into_id", null)
+    .limit(2);
   if (error) {
     throw new Error(`Failed to look up lead by phone: ${error.message}`);
   }

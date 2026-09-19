@@ -34,7 +34,11 @@ export type InboundWhatsAppMessage = {
 };
 
 async function findLeadIdByPhoneExact(supabase: SupabaseClient<Database>, phone: string): Promise<string | null> {
-  const { data, error } = await supabase.from("leads").select("id").eq("phone", phone).limit(2);
+  // Excludes retired/merged leads (merged_into_id set) -- same "active
+  // leads only" convention as lib/leads.ts's getLeads(). A phone that only
+  // matches a merged lead is treated as no match, same as if it matched
+  // nothing at all, rather than reviving a retired record.
+  const { data, error } = await supabase.from("leads").select("id").eq("phone", phone).is("merged_into_id", null).limit(2);
   // 0 matches (no lead yet) or 2+ matches (ambiguous) both fail closed to "unlinked".
   if (error || !data || data.length !== 1) return null;
   return data[0].id;

@@ -87,6 +87,13 @@ describe("findLeadByExactPhone", () => {
     await expect(findLeadByExactPhone(stub, "+919000000000")).resolves.toBeNull();
   });
 
+  it("excludes retired/merged leads from the phone lookup (merged_into_id filter)", async () => {
+    const { stub, from } = createFakeSupabase({ leads: [{ data: [{ id: "lead-1" }], error: null }] });
+    await findLeadByExactPhone(stub, "+919000000000");
+    const lookupBuilder = from.mock.results[0].value as { is: ReturnType<typeof vi.fn> };
+    expect(lookupBuilder.is).toHaveBeenCalledWith("merged_into_id", null);
+  });
+
   it("returns null (fails closed) on an ambiguous match", async () => {
     const { stub } = createFakeSupabase({
       leads: [{ data: [{ id: "lead-1" }, { id: "lead-2" }], error: null }],
