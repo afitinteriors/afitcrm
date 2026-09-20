@@ -1,55 +1,16 @@
 import Link from "next/link";
 import { StatCard } from "@/components/StatCard";
 import { DutyList } from "@/components/dashboard/DutyList";
+import { UnassignedLeadsList } from "@/components/dashboard/UnassignedLeadsList";
+import { StalledPipelineList } from "@/components/dashboard/StalledPipelineList";
 import type { DutyQueue, RecentLead, StalledPipelineLead, StaffWorkloadRow, UnassignedLead } from "@/lib/dashboard-brain";
-import { formatCurrency, formatDate, formatRelative } from "@/lib/format";
+import { formatCurrency, formatDate } from "@/lib/format";
 import { LEAD_STATUS_LABELS } from "@/lib/constants";
 
 const OVERDUE_ICON = <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M12 6v6l4 2m6-2a10 10 0 11-20 0 10 10 0 0120 0z" />;
 const UNASSIGNED_ICON = <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.5 20.25a7.5 7.5 0 0115 0" />;
 const RISK_ICON = <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.947-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007" />;
 const NO_ACTION_ICON = <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />;
-
-function UnassignedList({ items }: { items: UnassignedLead[] }) {
-  if (items.length === 0) return <p className="px-4 py-6 text-center text-sm text-muted-foreground">Every active lead is assigned.</p>;
-  return (
-    <ul className="divide-y divide-border">
-      {items.map((lead) => (
-        <li key={lead.id}>
-          <Link href={`/leads/${lead.id}`} className="flex min-h-11 items-center justify-between gap-3 px-4 py-3 hover:bg-secondary">
-            <div className="min-w-0">
-              <p className="truncate text-sm font-medium text-foreground">{lead.customer_name || "Unnamed lead"}</p>
-              <p className="truncate text-xs text-muted-foreground">
-                {LEAD_STATUS_LABELS[lead.status]} · Created {formatRelative(lead.created_at)}
-              </p>
-            </div>
-          </Link>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function StalledPipelineList({ items }: { items: StalledPipelineLead[] }) {
-  if (items.length === 0) return <p className="px-4 py-6 text-center text-sm text-muted-foreground">No quotation/negotiation lead is stalled.</p>;
-  return (
-    <ul className="divide-y divide-border">
-      {items.map((lead) => (
-        <li key={lead.id}>
-          <Link href={`/leads/${lead.id}`} className="flex min-h-11 items-center justify-between gap-3 px-4 py-3 hover:bg-secondary">
-            <div className="min-w-0">
-              <p className="truncate text-sm font-medium text-foreground">{lead.customer_name || "Unnamed lead"}</p>
-              <p className="truncate text-xs text-muted-foreground">
-                {LEAD_STATUS_LABELS[lead.status]} · {lead.assigned?.display_name || "Unassigned"} · no follow-up scheduled
-              </p>
-            </div>
-            <span className="shrink-0 text-sm font-semibold text-foreground">{formatCurrency(lead.quotation_amount ?? lead.job_value)}</span>
-          </Link>
-        </li>
-      ))}
-    </ul>
-  );
-}
 
 function StaffWorkloadTable({ rows }: { rows: StaffWorkloadRow[] }) {
   if (rows.length === 0) return <p className="px-4 py-6 text-center text-sm text-muted-foreground">No staff accounts yet.</p>;
@@ -144,7 +105,7 @@ export function AdminHome({
             <div className="border-b border-border px-4 py-3">
               <h2 className="text-sm font-semibold text-foreground">Unassigned Leads</h2>
             </div>
-            <UnassignedList items={unassigned} />
+            <UnassignedLeadsList items={unassigned} />
           </div>
           <div className="rounded-xl border border-border bg-card shadow-sm">
             <div className="border-b border-border px-4 py-3">

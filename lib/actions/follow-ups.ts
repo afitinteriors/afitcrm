@@ -80,6 +80,7 @@ export async function createFollowUp(_prevState: ActionState, formData: FormData
   });
 
   revalidatePath(`/leads/${leadId}`);
+  revalidatePath("/follow-ups");
   return null;
 }
 
@@ -113,9 +114,10 @@ export async function completeFollowUp(_prevState: ActionState, formData: FormDa
   });
 
   revalidatePath(`/leads/${leadId}`);
-  // Also revalidated so completing from the dashboard's cross-lead list
-  // (B10) removes the item there too -- that page is a different route,
-  // so the revalidatePath above alone doesn't cover it.
+  // Also revalidated so completing from the dashboard's or follow-ups
+  // page's own cross-lead list removes the item there too -- those are
+  // different routes, so the revalidatePath above alone doesn't cover them.
   revalidatePath("/dashboard");
+  revalidatePath("/follow-ups");
   return null;
 }

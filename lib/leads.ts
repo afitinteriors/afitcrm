@@ -154,6 +154,9 @@ export type UncontactedLead = LeadRow & { assigned: { display_name: string | nul
 // (LEAD_STATUSES / setLeadStatus already model contact as the new->contacted
 // transition) -- not a separately invented signal. Same staff filter as the
 // rest of this file, defense-in-depth alongside leads_select_admin_or_owner.
+// Excludes retired/merged leads (merged_into_id set) -- same "active leads
+// only" convention as every other query in this file; a merged lead is a
+// dead record and must never surface as needing first contact.
 export async function getUncontactedLeads(): Promise<UncontactedLead[]> {
   const profile = await getCurrentProfile();
   if (!profile) return [];
@@ -163,6 +166,7 @@ export async function getUncontactedLeads(): Promise<UncontactedLead[]> {
     .from("leads")
     .select("*, assigned:profiles(display_name)")
     .eq("status", "new")
+    .is("merged_into_id", null)
     .order("created_at", { ascending: true });
 
   if (profile.role === "staff") {
