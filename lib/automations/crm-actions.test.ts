@@ -70,6 +70,69 @@ describe("createOrLinkLeadForConversation", () => {
     expect(linkBuilder.is).toHaveBeenCalledWith("lead_id", null);
   });
 
+  describe("losing a concurrent-create race (database partial unique index, SQLSTATE 23505)", () => {
+    const UNIQUE_VIOLATION = {
+      code: "23505",
+      message: 'duplicate key value violates unique constraint "leads_active_phone_unique_idx"',
+    };
+
+    it("reuses the lead the concurrent request created instead of failing, and creates nothing extra", async () => {
+      const { stub, from } = createFakeSupabase({
+        leads: [
+          { data: [], error: null }, // lookup: nothing yet
+          { data: null, error: UNIQUE_VIOLATION }, // our insert lost the race
+          { data: [{ id: "lead-winner" }], error: null }, // re-lookup finds the winner
+          { data: null, error: null }, // fill-if-empty service_required (existing lead path)
+        ],
+        conversations: [{ error: null }], // link
+      });
+
+      const result = await createOrLinkLeadForConversation(stub, BASE_CONTEXT);
+
+      expect(result).toEqual({ leadId: "lead-winner", created: false });
+
+      // Exactly one insert attempt was made (the losing one) -- never a retry-insert.
+      const leadBuilders = from.mock.results
+        .map((r, i) => ({ table: from.mock.calls[i][0], builder: r.value as { insert: ReturnType<typeof vi.fn> } }))
+        .filter((x) => x.table === "leads");
+      expect(leadBuilders.filter((x) => x.builder.insert.mock.calls.length > 0)).toHaveLength(1);
+
+      // The winner's data is never overwritten: only a fill-if-empty write.
+      const fillBuilder = from.mock.results[3].value as {
+        update: ReturnType<typeof vi.fn>;
+        is: ReturnType<typeof vi.fn>;
+      };
+      expect(fillBuilder.update).toHaveBeenCalledWith({ service_required: "Gypsum Plaster" });
+      expect(fillBuilder.is).toHaveBeenCalledWith("service_required", null);
+
+      const linkBuilder = from.mock.results[4].value as { update: ReturnType<typeof vi.fn> };
+      expect(linkBuilder.update).toHaveBeenCalledWith({ lead_id: "lead-winner" });
+    });
+
+    it("still fails (does not silently succeed) if the conflict cannot be resolved to exactly one active lead", async () => {
+      const { stub } = createFakeSupabase({
+        leads: [
+          { data: [], error: null },
+          { data: null, error: UNIQUE_VIOLATION },
+          { data: [], error: null }, // re-lookup finds nothing (e.g. the winner was retired in between)
+        ],
+      });
+
+      await expect(createOrLinkLeadForConversation(stub, BASE_CONTEXT)).rejects.toThrow(/Failed to create lead/);
+    });
+
+    it("does not treat a non-unique-violation insert error as a lost race", async () => {
+      const { stub } = createFakeSupabase({
+        leads: [
+          { data: [], error: null },
+          { data: null, error: { code: "42501", message: "permission denied" } },
+        ],
+      });
+
+      await expect(createOrLinkLeadForConversation(stub, BASE_CONTEXT)).rejects.toThrow(/permission denied/);
+    });
+  });
+
   it("creates a lead with a null customer_name when none is present -- never invents a name", async () => {
     const { stub, from } = createFakeSupabase({
       leads: [

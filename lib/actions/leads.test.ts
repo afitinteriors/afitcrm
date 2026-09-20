@@ -104,6 +104,25 @@ describe("createLead", () => {
     expect(redirectMock).toHaveBeenCalledWith("/leads/lead-new");
   });
 
+  it("reports a database unique violation (a concurrent create won the race) as the normal duplicate message, not a raw DB error", async () => {
+    const { stub } = createFakeSupabase({
+      leads: [
+        { data: [], error: null }, // duplicate check (canonical form): no match yet
+        { data: [], error: null }, // duplicate check (raw fallback): no match yet
+        {
+          data: null,
+          error: { code: "23505", message: 'duplicate key value violates unique constraint "leads_active_phone_unique_idx"' },
+        }, // insert lost the race
+      ],
+    });
+    fakeSupabase = stub;
+
+    const result = await createLead(null, formDataWith({ phone: "9876543210", customer_name: "Test" }));
+
+    expect(result).toEqual({ error: "A lead with this phone number already exists." });
+    expect(redirectMock).not.toHaveBeenCalled();
+  });
+
   it("rejects an unparseable phone number without touching the database at all", async () => {
     const { stub, from } = createFakeSupabase({});
     fakeSupabase = stub;

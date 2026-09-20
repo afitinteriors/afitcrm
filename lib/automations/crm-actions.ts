@@ -24,6 +24,9 @@ export type CreateOrLinkLeadResult = {
   created: boolean;
 };
 
+// PostgreSQL SQLSTATE for unique_violation, as surfaced by PostgREST.
+const UNIQUE_VIOLATION = "23505";
+
 async function findLeadsByPhoneExact(
   supabase: SupabaseClient<Database>,
   phone: string
@@ -81,24 +84,10 @@ export async function createOrLinkLeadForConversation(
     throw new Error(`Ambiguous phone match: ${existingLeads.length} leads found for this phone number.`);
   }
 
-  let leadId: string;
+  let leadId: string | null = existingLeads.length === 1 ? existingLeads[0].id : null;
   let created = false;
 
-  if (existingLeads.length === 1) {
-    leadId = existingLeads[0].id;
-    // Never overwrite an existing service_required -- same "don't clobber
-    // a value that's already there" convention as the webhook's own
-    // applyReferralToLead (.is("ad_id", null)).
-    const { error: updateError } = await supabase
-      .from("leads")
-      .update({ service_required: context.serviceName })
-      .eq("id", leadId)
-      .is("service_required", null);
-
-    if (updateError) {
-      throw new Error(`Failed to update existing lead's service_required: ${updateError.message}`);
-    }
-  } else {
+  if (!leadId) {
     const { data: newLead, error: insertError } = await supabase
       .from("leads")
       .insert({
@@ -110,12 +99,40 @@ export async function createOrLinkLeadForConversation(
       .select("id")
       .single();
 
-    if (insertError || !newLead) {
+    if (insertError?.code === UNIQUE_VIOLATION) {
+      // Lost a race: a concurrent request inserted the active lead for this
+      // phone between our lookup and our insert, and the database's partial
+      // unique index (leads_active_phone_unique_idx) rejected ours. That is a
+      // normal, expected outcome, not a failure -- reuse the winner. The
+      // index is what makes this safe; the lookup alone could not.
+      const winners = await findLeadsByPhoneExact(supabase, canonicalPhone);
+      if (winners.length !== 1) {
+        throw new Error(`Failed to create lead: ${insertError.message}`);
+      }
+      leadId = winners[0].id;
+    } else if (insertError || !newLead) {
       throw new Error(`Failed to create lead: ${insertError?.message ?? "unknown error"}`);
+    } else {
+      leadId = newLead.id;
+      created = true;
     }
+  }
 
-    leadId = newLead.id;
-    created = true;
+  if (!created) {
+    // Existing lead (found up front, or the concurrent winner above). Never
+    // overwrite an existing service_required -- same "don't clobber a value
+    // that's already there" convention as the webhook's own
+    // applyReferralToLead (.is("ad_id", null)). Nothing else on the existing
+    // lead (name, assignee, status, job data) is touched.
+    const { error: updateError } = await supabase
+      .from("leads")
+      .update({ service_required: context.serviceName })
+      .eq("id", leadId)
+      .is("service_required", null);
+
+    if (updateError) {
+      throw new Error(`Failed to update existing lead's service_required: ${updateError.message}`);
+    }
   }
 
   // Link the conversation to the lead if it isn't already linked -- same

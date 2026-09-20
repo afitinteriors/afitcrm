@@ -137,6 +137,9 @@ export async function createLead(_prevState: ActionState, formData: FormData): P
     .select("id")
     .single();
 
+  // leads_active_phone_unique_idx (a concurrent create of the same phone won
+  // the race): report it exactly like the up-front duplicate check above.
+  if (error?.code === "23505") return { error: "A lead with this phone number already exists." };
   if (error) return { error: error.message };
 
   await recordAuditEvent({
@@ -188,6 +191,7 @@ export async function updateLead(_prevState: ActionState, formData: FormData): P
 
   const { error } = await supabase.from("leads").update(update).eq("id", leadId);
 
+  if (error?.code === "23505") return { error: "Another lead already uses this phone number." };
   if (error) return { error: error.message };
 
   const profile = await getCurrentProfile();
