@@ -28,6 +28,16 @@ export async function GET(request: NextRequest) {
 // --- POST: incoming WhatsApp message/status events ----------------------
 
 export async function POST(request: NextRequest) {
+  // TEMPORARY isolation switch for the duplicate-event investigation. When
+  // WHATSAPP_LEGACY_WEBHOOK_DISABLED === "true", this legacy direct-Meta
+  // receiver acknowledges nothing and processes nothing: the body is never
+  // read and no Supabase/ingest call is made. Only this POST handler is
+  // affected -- the GET verification handshake and the WABIS route are
+  // untouched. Remove the env var (and redeploy) to restore behavior.
+  if (process.env.WHATSAPP_LEGACY_WEBHOOK_DISABLED === "true") {
+    return new NextResponse("Legacy webhook disabled", { status: 503 });
+  }
+
   const appSecret = process.env.WHATSAPP_APP_SECRET;
   if (!appSecret) {
     console.error("WHATSAPP_APP_SECRET is not set; rejecting webhook delivery.");
