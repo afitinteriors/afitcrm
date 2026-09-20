@@ -4,6 +4,7 @@ import { FollowUpsFilterBar } from "@/components/follow-ups/FollowUpsFilterBar";
 import { FollowUpsSection } from "@/components/follow-ups/FollowUpsSection";
 import { FollowUpListItem } from "@/components/follow-ups/FollowUpListItem";
 import type { DutyQueue } from "@/lib/dashboard-brain";
+import { excludeDutyNow } from "@/lib/follow-up-queues";
 import type { FollowUpGroups } from "@/lib/follow-up-status";
 import type { FollowUpListItem as FollowUpListItemData } from "@/lib/follow-ups";
 import type { StaffOption } from "@/lib/staff";
@@ -35,10 +36,14 @@ export function StaffFollowUpsView({
   assignedTo: string;
   staffOptions: StaffOption[];
 }) {
-  const needsNextStep = queue.items.filter(
-    (i) => i.reasonKind === "unanswered_conversation" || i.reasonKind === "uncontacted_lead" || i.reasonKind === "no_follow_up",
-  );
   const topItem = queue.items[0] ?? null;
+  // The Duty Now lead lives only in the Duty Now card, never also in this list.
+  const needsNextStep = excludeDutyNow(
+    queue.items.filter(
+      (i) => i.reasonKind === "unanswered_conversation" || i.reasonKind === "uncontacted_lead" || i.reasonKind === "no_follow_up",
+    ),
+    topItem,
+  );
 
   return (
     <div>
@@ -90,9 +95,11 @@ export function StaffFollowUpsView({
         <DoThisNowCard item={topItem} />
 
         {groups.overdue.length === 0 && groups.today.length === 0 && needsNextStep.length === 0 ? (
+          topItem ? null : (
           <div className="rounded-lg border border-border bg-card p-8 text-center text-sm text-muted-foreground shadow-sm">
             All caught up for today.
           </div>
+          )
         ) : (
           <>
             <FollowUpsSection title="Overdue" items={groups.overdue} showAssignee={false} />

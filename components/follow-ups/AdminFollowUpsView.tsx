@@ -7,6 +7,7 @@ import { FollowUpsSection } from "@/components/follow-ups/FollowUpsSection";
 import { FollowUpListItem } from "@/components/follow-ups/FollowUpListItem";
 import type { DutyQueue, StalledPipelineLead, UnassignedLead } from "@/lib/dashboard-brain";
 import type { FollowUpGroups } from "@/lib/follow-up-status";
+import { excludeLeadIds } from "@/lib/follow-up-queues";
 import type { FollowUpListItem as FollowUpListItemData } from "@/lib/follow-ups";
 import type { StaffOption } from "@/lib/staff";
 import { formatCurrency } from "@/lib/format";
@@ -60,7 +61,12 @@ export function AdminFollowUpsView({
   const noFollowUpAssigned = queue.items.filter(
     (i) => (i.reasonKind === "uncontacted_lead" || i.reasonKind === "no_follow_up") && !isAlreadyUnassigned(i.leadId),
   );
-  const stalledValue = stalled.reduce((sum, l) => sum + (l.quotation_amount ?? l.job_value ?? 0), 0);
+  // Pipeline Attention yields to every lead already listed above (one lead,
+  // one queue): Unassigned, Unanswered, and Leads Without a Follow-up.
+  const claimedLeadIds = new Set<string>(unassigned.map((l) => l.id));
+  for (const i of [...unansweredAssigned, ...noFollowUpAssigned]) if (i.leadId) claimedLeadIds.add(i.leadId);
+  const stalledOnly = excludeLeadIds(stalled, claimedLeadIds);
+  const stalledValue = stalledOnly.reduce((sum, l) => sum + (l.quotation_amount ?? l.job_value ?? 0), 0);
 
   return (
     <div>
@@ -99,7 +105,7 @@ export function AdminFollowUpsView({
             <div className="border-b border-border px-4 py-3">
               <h2 className="text-sm font-semibold text-foreground">Pipeline Attention (Quotation/Negotiation)</h2>
             </div>
-            <StalledPipelineList items={stalled} />
+            <StalledPipelineList items={stalledOnly} />
           </div>
         </div>
 
