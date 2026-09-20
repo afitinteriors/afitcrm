@@ -35,6 +35,10 @@ vi.mock("web-push", () => ({ default: { sendNotification: (...a: unknown[]) => s
 
 import { sendPushToUser } from "./send";
 
+// Synthetic, correctly-shaped keys (87 / 43 base64url chars) -- not real keys.
+const PUBLIC_KEY = "B".padEnd(87, "A");
+const PRIVATE_KEY = "P".padEnd(43, "Q");
+
 const SUBS = [
   { id: "sub-1", endpoint: "https://push.example.net/1", p256dh: "k1", auth: "a1" },
   { id: "sub-2", endpoint: "https://push.example.net/2", p256dh: "k2", auth: "a2" },
@@ -51,8 +55,8 @@ const updates = (table: string) => log.filter((c) => c.table === table && c.meth
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.stubEnv("NEXT_PUBLIC_VAPID_PUBLIC_KEY", "PUBLIC_KEY_VALUE");
-  vi.stubEnv("VAPID_PRIVATE_KEY", "PRIVATE_KEY_VALUE");
+  vi.stubEnv("NEXT_PUBLIC_VAPID_PUBLIC_KEY", PUBLIC_KEY);
+  vi.stubEnv("VAPID_PRIVATE_KEY", PRIVATE_KEY);
   vi.stubEnv("VAPID_SUBJECT", "mailto:ops@afitbuilders.in");
   sendNotification.mockResolvedValue({ statusCode: 201 });
   setScript({});
@@ -77,9 +81,9 @@ describe("sendPushToUser -- guards", () => {
   });
 
   it.each([
-    ["mailto:admin@afit.example", "placeholder_subject"],
-    ["not-a-contact", "invalid_subject"],
-    ["", "missing"],
+    ["mailto:admin@afit.example", "VAPID_SUBJECT_PLACEHOLDER"],
+    ["not-a-contact", "VAPID_SUBJECT_INVALID_FORMAT"],
+    ["", "VAPID_SUBJECT_MISSING"],
   ])("refuses to send with VAPID_SUBJECT %j (%s)", async (subject, reason) => {
     vi.stubEnv("VAPID_SUBJECT", subject);
     expect(await sendPushToUser("u1", PAYLOAD)).toEqual({ status: "vapid_not_configured", reason });
@@ -89,7 +93,7 @@ describe("sendPushToUser -- guards", () => {
 
   it("refuses when a VAPID key is missing", async () => {
     vi.stubEnv("VAPID_PRIVATE_KEY", "");
-    expect(await sendPushToUser("u1", PAYLOAD)).toEqual({ status: "vapid_not_configured", reason: "missing" });
+    expect(await sendPushToUser("u1", PAYLOAD)).toEqual({ status: "vapid_not_configured", reason: "VAPID_PRIVATE_KEY_MISSING" });
   });
 
   it("returns no_subscriptions and sends nothing, writing no history", async () => {
@@ -243,6 +247,6 @@ describe("sendPushToUser -- delivery", () => {
 
     const result = JSON.stringify(await sendPushToUser("u1", PAYLOAD));
 
-    for (const secret of ["push.example.net", '"k1"', '"a1"', "PRIVATE_KEY_VALUE"]) expect(result).not.toContain(secret);
+    for (const secret of ["push.example.net", '"k1"', '"a1"', PRIVATE_KEY]) expect(result).not.toContain(secret);
   });
 });

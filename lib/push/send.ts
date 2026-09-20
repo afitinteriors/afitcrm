@@ -1,7 +1,7 @@
 import "server-only";
 import webpush from "web-push";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getVapidConfig } from "@/lib/push/config";
+import { getVapidConfig, type VapidConfigError } from "@/lib/push/config";
 import { validatePushPayload, type PushPayload } from "@/lib/push/payload";
 
 // Server-side Web Push delivery. Phase B: this only *delivers* a push to one
@@ -17,7 +17,7 @@ export type DeviceOutcome = "sent" | "expired" | "failed";
 
 export type SendPushResult =
   | { status: "invalid_payload" }
-  | { status: "vapid_not_configured"; reason: "missing" | "invalid_subject" | "placeholder_subject" }
+  | { status: "vapid_not_configured"; reason: VapidConfigError }
   | { status: "no_subscriptions" }
   | { status: "duplicate"; notificationId: string }
   | {

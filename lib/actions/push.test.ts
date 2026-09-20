@@ -221,7 +221,8 @@ describe("sendTestNotification", () => {
 
   it.each([
     [{ status: "no_subscriptions" }, "No device is enabled yet. Turn notifications on first."],
-    [{ status: "vapid_not_configured", reason: "placeholder_subject" }, "Push delivery isn't fully configured on the server yet."],
+    [{ status: "vapid_not_configured", reason: "VAPID_SUBJECT_INVALID_FORMAT" }, "Push delivery configuration error: VAPID_SUBJECT_INVALID_FORMAT"],
+    [{ status: "vapid_not_configured", reason: "VAPID_SUBJECT_PLACEHOLDER" }, "Push delivery configuration error: VAPID_SUBJECT_PLACEHOLDER"],
     [{ status: "failed", sent: 0, expired: 1, failed: 0, notificationId: "n", devices: [] }, "This device's subscription has expired. Turn notifications off and on again."],
     [{ status: "failed", sent: 0, expired: 0, failed: 1, notificationId: "n", devices: [] }, "The push service didn't accept the message. Try again shortly."],
     [{ status: "invalid_payload" }, "Could not send the test notification."],

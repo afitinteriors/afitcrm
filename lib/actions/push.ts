@@ -128,7 +128,8 @@ export async function sendTestNotification(): Promise<TestPushState> {
     case "no_subscriptions":
       return { error: "No device is enabled yet. Turn notifications on first." };
     case "vapid_not_configured":
-      return { error: "Push delivery isn't fully configured on the server yet." };
+      // Symbolic code only (see lib/push/config.ts) -- never a configured value.
+      return { error: `Push delivery configuration error: ${result.reason}` };
     case "failed":
       return {
         error:
