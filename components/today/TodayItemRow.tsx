@@ -185,8 +185,8 @@ function reasonIcon(item: TodayItem, variant: "default" | "deal"): string {
 // targets on mobile, compact 36px on desktop.
 const ICON_BUTTON =
   "inline-flex h-11 w-11 items-center justify-center rounded-full ring-1 ring-inset transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:h-9 lg:w-9";
-const CALL_BUTTON = `${ICON_BUTTON} bg-blue-50 text-blue-600 ring-blue-100 hover:bg-blue-100`;
-const WHATSAPP_BUTTON = `${ICON_BUTTON} bg-emerald-50 text-emerald-600 ring-emerald-100 hover:bg-emerald-100`;
+const CALL_BUTTON = `${ICON_BUTTON} bg-blue-100 text-blue-700 ring-blue-200 hover:bg-blue-200 lg:bg-blue-50 lg:text-blue-600 lg:ring-blue-100 lg:hover:bg-blue-100`;
+const WHATSAPP_BUTTON = `${ICON_BUTTON} bg-emerald-100 text-emerald-700 ring-emerald-200 hover:bg-emerald-200 lg:bg-emerald-50 lg:text-emerald-600 lg:ring-emerald-100 lg:hover:bg-emerald-100`;
 
 function PhoneIcon() {
   return <Glyph d={ICON.phone} className="h-[18px] w-[18px]" />;
@@ -237,33 +237,35 @@ export function TodayItemRow({
 
   return (
     <li
-      className={`group relative mx-2 my-2 grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 rounded-2xl border border-l-4 border-border bg-card p-3.5 shadow-sm lg:p-3 transition-all duration-150 hover:-translate-y-px hover:shadow-md motion-reduce:transition-none motion-reduce:hover:translate-y-0 lg:mx-3 lg:grid-cols-[auto_minmax(0,1fr)_auto_auto] ${accent.bar} ${accent.hover}`}
+      className={`group relative mx-2 my-2.5 grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 rounded-2xl border border-l-4 border-border bg-card p-3.5 shadow-sm lg:p-3 transition-all duration-150 hover:-translate-y-px hover:shadow-md motion-reduce:transition-none motion-reduce:hover:translate-y-0 lg:mx-3 lg:my-2 lg:grid-cols-[auto_minmax(0,1fr)_auto_auto] ${accent.bar} ${accent.hover}`}
       data-testid="today-item"
       data-lead-id={item.leadId}
     >
       <span
-        className={`[grid-area:1/1/2/2] flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold lg:[grid-area:1/1/4/2] ${avatarTint}`}
+        className={`[grid-area:1/1/2/2] flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-sm font-semibold lg:h-10 lg:w-10 lg:[grid-area:1/1/4/2] ${avatarTint}`}
         aria-hidden="true"
       >
         {initials ?? <Glyph d={ICON.user} className="h-5 w-5" />}
       </span>
 
       <div className="[grid-area:1/2/2/3] min-w-0">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <div className="flex flex-col items-start gap-1 lg:flex-row lg:flex-wrap lg:items-center lg:gap-x-2">
           <Link
             href={`/leads/${item.leadId}`}
             className="min-w-0 max-w-full break-words text-base font-semibold leading-snug text-foreground after:absolute after:inset-0 after:rounded-2xl after:content-[''] focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-ring"
           >
             {item.customerName}
           </Link>
-          <StageBadge stage={item.stage} />
-          {badge && (
-            <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${badge.className}`}>{badge.label}</span>
-          )}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <StageBadge stage={item.stage} />
+            {badge && (
+              <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${badge.className}`}>{badge.label}</span>
+            )}
+          </div>
         </div>
       </div>
 
-      <div className="relative z-10 [grid-area:1/3/2/4] flex items-center gap-1.5 lg:[grid-area:1/3/4/4] lg:gap-2">
+      <div className="relative z-10 flex items-center gap-2 self-end [grid-area:3/3/4/4] lg:gap-2 lg:self-center lg:[grid-area:1/3/4/4]">
         {item.phone && (
           <a href={telLink(item.phone)} aria-label="Call customer" title="Call customer" className={CALL_BUTTON}>
             <PhoneIcon />
@@ -284,18 +286,18 @@ export function TodayItemRow({
       </div>
 
       <span
-        className="flex h-6 w-6 items-center justify-center justify-self-end text-muted-foreground/70 transition-all [grid-area:2/3/4/4] group-hover:translate-x-0.5 group-hover:text-foreground lg:h-8 lg:w-8 lg:justify-self-auto lg:rounded-full lg:bg-muted/60 lg:text-muted-foreground lg:[grid-area:1/4/4/5] lg:group-hover:bg-muted"
+        className="pointer-events-none flex h-6 w-6 items-center justify-center justify-self-end text-muted-foreground/70 transition-all [grid-area:1/3/2/4] group-hover:translate-x-0.5 group-hover:text-foreground lg:h-8 lg:w-8 lg:justify-self-auto lg:rounded-full lg:bg-muted/60 lg:text-muted-foreground lg:[grid-area:1/4/4/5] lg:group-hover:bg-muted"
         aria-hidden="true"
       >
         <ChevronIcon />
       </span>
 
-      <p className="[grid-area:2/2/3/4] flex items-start pr-6 lg:pr-0 gap-1.5 text-xs leading-snug text-foreground/80 lg:[grid-area:2/2/3/3]">
+      <p className="mt-1 flex items-start gap-1.5 text-xs leading-snug text-foreground/80 [grid-area:2/1/3/4] lg:mt-0 lg:[grid-area:2/2/3/3]">
         <Glyph d={reasonIcon(item, variant)} className="mt-px h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         <span>{context}</span>
       </p>
 
-      <p className="[grid-area:3/2/4/4] flex flex-wrap pr-6 lg:pr-0 items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground lg:[grid-area:3/2/4/3]">
+      <p className="flex flex-wrap items-center gap-x-3 gap-y-1 self-end text-xs text-muted-foreground [grid-area:3/1/4/3] lg:self-center lg:[grid-area:3/2/4/3]">
         <span className="inline-flex items-center gap-1">
           <Glyph d={ICON.phone} className="h-3 w-3 shrink-0" />
           {item.phone}
