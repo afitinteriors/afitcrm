@@ -104,6 +104,38 @@ describe("createLead", () => {
     expect(redirectMock).toHaveBeenCalledWith("/leads/lead-new");
   });
 
+  it("checks only ACTIVE leads for a duplicate, so a merged/retired lead never blocks creating a new active lead", async () => {
+    const { stub, from } = createFakeSupabase({
+      leads: [
+        { data: [], error: null }, // active-only duplicate check (canonical form): only a merged lead has it -> no match
+        { data: [], error: null }, // raw fallback
+        { data: { id: "lead-new" }, error: null }, // insert
+      ],
+    });
+    fakeSupabase = stub;
+
+    await createLead(null, formDataWith({ phone: "9876543210", customer_name: "Test" }));
+
+    const duplicateCheckBuilder = from.mock.results[0].value as { is: ReturnType<typeof vi.fn> };
+    expect(duplicateCheckBuilder.is).toHaveBeenCalledWith("merged_into_id", null);
+    expect(redirectMock).toHaveBeenCalledWith("/leads/lead-new");
+  });
+
+  it("an existing active lead blocks creation: exact message, stays on the form (no redirect), nothing inserted or audited", async () => {
+    const { stub, from } = createFakeSupabase({
+      leads: [{ data: [{ id: "lead-existing" }], error: null }],
+    });
+    fakeSupabase = stub;
+
+    const result = await createLead(null, formDataWith({ phone: "098765 43210", customer_name: "Somebody Else" }));
+
+    expect(result).toEqual({ error: "A lead with this phone number already exists." });
+    expect(redirectMock).not.toHaveBeenCalled(); // the form's useActionState renders `error` in place
+    expect(recordAuditEventMock).not.toHaveBeenCalled();
+    const insertCalls = from.mock.results.filter((r) => (r.value as { insert: ReturnType<typeof vi.fn> }).insert.mock.calls.length > 0);
+    expect(insertCalls).toHaveLength(0);
+  });
+
   it("reports a database unique violation (a concurrent create won the race) as the normal duplicate message, not a raw DB error", async () => {
     const { stub } = createFakeSupabase({
       leads: [
@@ -234,9 +266,47 @@ describe("updateLead", () => {
 
     const result = await updateLead(null, formDataWith({ lead_id: "lead-1", phone: "9876543210" }));
 
-    expect(result).toEqual({ error: "Another lead already uses this phone number." });
+    // Same exact message as manual create -- one rule, one wording.
+    expect(result).toEqual({ error: "A lead with this phone number already exists." });
     expect(from.mock.calls.filter(([table]) => table === "leads")).toHaveLength(1);
     expect(redirectMock).not.toHaveBeenCalled();
+    expect(recordAuditEventMock).not.toHaveBeenCalled();
+  });
+
+  it("reports a database unique violation on a phone change (a concurrent change/create won) with the same exact message", async () => {
+    const { stub } = createFakeSupabase({
+      leads: [
+        { data: [], error: null }, // duplicate check (canonical form): no match yet
+        { data: [], error: null }, // duplicate check (raw fallback): no match yet
+        {
+          error: { code: "23505", message: 'duplicate key value violates unique constraint "leads_active_phone_unique_idx"' },
+        }, // update lost the race
+      ],
+    });
+    fakeSupabase = stub;
+
+    const result = await updateLead(null, formDataWith({ lead_id: "lead-1", phone: "9876543210" }));
+
+    expect(result).toEqual({ error: "A lead with this phone number already exists." });
+    expect(redirectMock).not.toHaveBeenCalled();
+    expect(recordAuditEventMock).not.toHaveBeenCalled();
+  });
+
+  it("does not let a merged/retired lead block changing a lead to that phone (active leads only)", async () => {
+    const { stub, from } = createFakeSupabase({
+      leads: [
+        { data: [], error: null }, // active-only duplicate check finds nothing (only a merged lead has it)
+        { data: [], error: null },
+        { error: null }, // update
+      ],
+    });
+    fakeSupabase = stub;
+
+    await updateLead(null, formDataWith({ lead_id: "lead-1", phone: "9876543210" }));
+
+    const duplicateCheckBuilder = from.mock.results[0].value as { is: ReturnType<typeof vi.fn> };
+    expect(duplicateCheckBuilder.is).toHaveBeenCalledWith("merged_into_id", null);
+    expect(redirectMock).toHaveBeenCalledWith("/leads/lead-1");
   });
 
   it("rejects an unparseable phone number on update without touching the database", async () => {

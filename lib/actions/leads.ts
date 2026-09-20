@@ -59,6 +59,11 @@ async function checkLeadAccess(
   return null;
 }
 
+// One exact, user-facing message for every duplicate-phone rejection: manual
+// create, phone edit, and a lost concurrent-create race (database unique
+// violation). Kept as a single constant so the wording can never drift.
+const DUPLICATE_PHONE_ERROR = "A lead with this phone number already exists.";
+
 // Returns the id of a conflicting lead, if any -- checked against the
 // canonical (E.164) phone first (lib/phone.ts), then against the raw,
 // as-typed input as a fallback. The fallback exists because this project
@@ -76,7 +81,11 @@ async function findDuplicateLeadId(
   excludeLeadId?: string
 ): Promise<string | null> {
   const tryPhone = async (phone: string): Promise<string | null> => {
-    let query = supabase.from("leads").select("id").eq("phone", phone);
+    // Active leads only (merged_into_id IS NULL): a merged/retired lead must
+    // not block creating, or changing a lead to, that phone -- the same
+    // "active leads only" rule the webhook path and the database's partial
+    // unique index (leads_active_phone_unique_idx) already use.
+    let query = supabase.from("leads").select("id").eq("phone", phone).is("merged_into_id", null);
     if (excludeLeadId) query = query.neq("id", excludeLeadId);
     const { data } = await query.limit(2);
     return data && data.length > 0 ? data[0].id : null;
@@ -114,7 +123,7 @@ export async function createLead(_prevState: ActionState, formData: FormData): P
 
   const duplicateLeadId = await findDuplicateLeadId(supabase, phone, rawPhone);
   if (duplicateLeadId) {
-    return { error: "A lead with this phone number already exists." };
+    return { error: DUPLICATE_PHONE_ERROR };
   }
 
   const { data, error } = await supabase
@@ -139,7 +148,7 @@ export async function createLead(_prevState: ActionState, formData: FormData): P
 
   // leads_active_phone_unique_idx (a concurrent create of the same phone won
   // the race): report it exactly like the up-front duplicate check above.
-  if (error?.code === "23505") return { error: "A lead with this phone number already exists." };
+  if (error?.code === "23505") return { error: DUPLICATE_PHONE_ERROR };
   if (error) return { error: error.message };
 
   await recordAuditEvent({
@@ -172,7 +181,7 @@ export async function updateLead(_prevState: ActionState, formData: FormData): P
 
   const duplicateLeadId = await findDuplicateLeadId(supabase, phone, rawPhone, leadId);
   if (duplicateLeadId) {
-    return { error: "Another lead already uses this phone number." };
+    return { error: DUPLICATE_PHONE_ERROR };
   }
 
   const update = {
@@ -191,7 +200,7 @@ export async function updateLead(_prevState: ActionState, formData: FormData): P
 
   const { error } = await supabase.from("leads").update(update).eq("id", leadId);
 
-  if (error?.code === "23505") return { error: "Another lead already uses this phone number." };
+  if (error?.code === "23505") return { error: DUPLICATE_PHONE_ERROR };
   if (error) return { error: error.message };
 
   const profile = await getCurrentProfile();

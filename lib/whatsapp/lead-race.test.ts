@@ -25,7 +25,18 @@ vi.mock("@/lib/automations/trigger", () => ({
   triggerAutomationForMessage: vi.fn().mockResolvedValue({ runId: null, status: "no_match" }),
 }));
 
+// Manual create (lib/actions/leads.ts createLead) runs against the same fake
+// database, with its session/audit/navigation collaborators stubbed.
+let managedClient: SupabaseClient<Database>;
+vi.mock("@/lib/supabase/server", () => ({ createClient: async () => managedClient }));
+vi.mock("@/lib/auth", () => ({ getCurrentProfile: async () => ({ id: "admin-1", role: "admin" }) }));
+vi.mock("@/lib/audit", () => ({ recordAuditEvent: vi.fn().mockResolvedValue(undefined) }));
+const redirectMock = vi.fn();
+vi.mock("next/navigation", () => ({ redirect: (...args: unknown[]) => redirectMock(...args) }));
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+
 import { createOrLinkLeadForConversation, type CreateOrLinkLeadContext } from "@/lib/automations/crm-actions";
+import { createLead } from "@/lib/actions/leads";
 import { ingestInboundMessage } from "./ingest";
 import { parseWabisMessage } from "./parse-wabis";
 
@@ -123,12 +134,13 @@ class MemoryDb {
   }
 
   private builder(table: Table) {
-    const state: { op: "select" | "insert" | "update"; payload: Row; filters: Array<{ col: string; val: unknown }> } = {
+    const state: { op: "select" | "insert" | "update"; payload: Row; filters: Array<{ col: string; val: unknown; negate?: boolean }> } = {
       op: "select",
       payload: {},
       filters: [],
     };
-    const matches = (row: Row) => state.filters.every((f) => (row[f.col] ?? null) === f.val);
+    const matches = (row: Row) =>
+      state.filters.every((f) => (f.negate ? (row[f.col] ?? null) !== f.val : (row[f.col] ?? null) === f.val));
     const builder: Record<string, unknown> = {};
 
     const run = async (opts: { limit?: number; single?: boolean; maybe?: boolean }): Promise<DbResult> => {
@@ -166,6 +178,10 @@ class MemoryDb {
     };
     builder.eq = (col: string, val: unknown) => {
       state.filters.push({ col, val });
+      return builder;
+    };
+    builder.neq = (col: string, val: unknown) => {
+      state.filters.push({ col, val, negate: true });
       return builder;
     };
     builder.is = (col: string, val: unknown) => {
@@ -331,6 +347,9 @@ describe("WABIS ingestion under duplicate concurrent deliveries", () => {
       assigned_to_id: "user-azhar",
       status: "quotation",
       job_value: 500000,
+      quotation_amount: 750000,
+      site_visit_date: "2026-10-01",
+      lost_reason: "Price too high",
     });
     const before = { ...rich };
     db.barriers.conversations = new Barrier(2);
@@ -338,8 +357,60 @@ describe("WABIS ingestion under duplicate concurrent deliveries", () => {
     await Promise.all([ingestInboundMessage(db.client(), message()), ingestInboundMessage(db.client(), message())]);
 
     expect(db.activeLeads()).toHaveLength(1); // no new lead at all
-    expect(db.leads[0]).toEqual(before); // customer_name, service_required, assignee, status, job_value untouched
+    expect(db.leads[0]).toEqual(before); // name, service, assignee, status, job value, quotation, site visit, lost reason: all untouched
     expect(db.messages).toHaveLength(1);
     expect(db.conversations.every((c) => c.lead_id === rich.id)).toBe(true);
+  });
+});
+
+describe("manual lead creation (createLead) against the same database rules", () => {
+  let db: MemoryDb;
+  beforeEach(() => {
+    db = new MemoryDb();
+    managedClient = db.client();
+    redirectMock.mockClear();
+  });
+
+  function form(fields: Record<string, string>): FormData {
+    const data = new FormData();
+    Object.entries(fields).forEach(([key, value]) => data.set(key, value));
+    return data;
+  }
+
+  it("two simultaneous submissions of the same number (different formatting) create ONE lead; the other gets the exact duplicate message", async () => {
+    db.barriers.leads = new Barrier(2); // both pass the duplicate check before either inserts
+
+    const [a, b] = await Promise.all([
+      createLead(null, form({ phone: "9000000001", customer_name: "First" })),
+      createLead(null, form({ phone: "+91 90000 00001", customer_name: "Second" })),
+    ]);
+
+    const errors = [a, b].filter((r) => r && "error" in r);
+    expect(errors).toEqual([{ error: "A lead with this phone number already exists." }]);
+    expect(redirectMock).toHaveBeenCalledTimes(1); // exactly one submission succeeded and redirected
+    expect(db.activeLeads()).toHaveLength(1);
+  });
+
+  it("an existing active lead blocks a manual create in any formatting and is left untouched", async () => {
+    const existing = db.seedLead({ phone: "+919000000001", customer_name: "Established", status: "quotation", job_value: 90000 });
+    const before = { ...existing };
+
+    const result = await createLead(null, form({ phone: "(0) 90000 00001", customer_name: "Newcomer" }));
+
+    expect(result).toEqual({ error: "A lead with this phone number already exists." });
+    expect(redirectMock).not.toHaveBeenCalled();
+    expect(db.leads).toHaveLength(1);
+    expect(db.leads[0]).toEqual(before);
+  });
+
+  it("a merged/retired lead does not block creating an active lead for that phone", async () => {
+    db.seedLead({ phone: "+919000000001", merged_into_id: "lead-elsewhere", customer_name: "Retired" });
+
+    const result = await createLead(null, form({ phone: "9000000001", customer_name: "Fresh" }));
+
+    expect(result).toBeUndefined(); // success path ends in redirect()
+    expect(redirectMock).toHaveBeenCalledTimes(1);
+    expect(db.activeLeads()).toHaveLength(1);
+    expect(db.leads).toHaveLength(2);
   });
 });
