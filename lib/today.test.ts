@@ -17,6 +17,7 @@ function lead(overrides: Partial<TodayLead> = {}): TodayLead {
     created_at: `2026-09-1${seq % 10}T08:00:00Z`,
     updated_at: `2026-09-1${seq % 10}T09:00:00Z`,
     whatsapp_message: null,
+    service_required: null,
     location: null,
     site_visit_date: null,
     quotation_amount: null,
@@ -192,6 +193,16 @@ describe("buildTodayBoard -- exclusions and visibility", () => {
       negotiations: [],
       total: 0,
     });
+  });
+
+  it("passes the lead's service_required through to the item unchanged (display only)", () => {
+    const withService = lead({ status: "new", service_required: "Gypsum Plaster" });
+    const without = lead({ status: "new", service_required: null });
+    const board = buildTodayBoard({ leads: [withService, without], followUps: [], today: TODAY });
+
+    const byId = Object.fromEntries(board.newLeads.map((i) => [i.leadId, i.serviceRequired]));
+    expect(byId[withService.id]).toBe("Gypsum Plaster");
+    expect(byId[without.id]).toBeNull();
   });
 
   it("carries the assignee name (null when unassigned) and falls back to a placeholder name", () => {

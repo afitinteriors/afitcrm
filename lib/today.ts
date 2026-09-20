@@ -40,6 +40,7 @@ export type TodayLead = Pick<
   | "created_at"
   | "updated_at"
   | "whatsapp_message"
+  | "service_required"
   | "location"
   | "site_visit_date"
   | "quotation_amount"
@@ -65,6 +66,7 @@ export type TodayItem = {
   location: string | null;
   quotationAmount: number | null;
   jobValue: number | null;
+  serviceRequired: string | null;
   firstMessage: string | null;
   createdAt: string;
   updatedAt: string;
@@ -148,6 +150,7 @@ export function buildTodayBoard(input: { leads: TodayLead[]; followUps: TodayFol
       location: lead.location,
       quotationAmount: lead.quotation_amount,
       jobValue: lead.job_value,
+      serviceRequired: lead.service_required,
       firstMessage: lead.whatsapp_message,
       createdAt: lead.created_at,
       updatedAt: lead.updated_at,
