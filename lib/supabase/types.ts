@@ -303,6 +303,65 @@ export type AutomationMediaInsert = Partial<Omit<AutomationMediaRow, "created_at
 
 export type AutomationMediaUpdate = Partial<Omit<AutomationMediaRow, "id" | "created_at">>;
 
+export type PushSubscriptionRow = {
+  id: string;
+  user_id: string;
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+  user_agent: string | null;
+  created_at: string;
+  last_success_at: string | null;
+  revoked_at: string | null;
+};
+export type PushSubscriptionInsert = {
+  id?: string;
+  user_id: string;
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+  user_agent?: string | null;
+  created_at?: string;
+  last_success_at?: string | null;
+  revoked_at?: string | null;
+};
+export type PushSubscriptionUpdate = Partial<PushSubscriptionInsert>;
+
+export type NotificationRow = {
+  id: string;
+  user_id: string;
+  type: string;
+  entity_type: string | null;
+  entity_id: string | null;
+  title: string;
+  body: string;
+  route: string | null;
+  scheduled_for: string | null;
+  sent_at: string | null;
+  delivered_at: string | null;
+  read_at: string | null;
+  dedupe_key: string;
+  created_at: string;
+};
+export type NotificationInsert = {
+  id?: string;
+  user_id: string;
+  type: string;
+  entity_type?: string | null;
+  entity_id?: string | null;
+  title: string;
+  body?: string;
+  route?: string | null;
+  scheduled_for?: string | null;
+  sent_at?: string | null;
+  delivered_at?: string | null;
+  read_at?: string | null;
+  dedupe_key: string;
+  created_at?: string;
+};
+// Owners may only mark their own notifications read (column grant).
+export type NotificationUpdate = Partial<NotificationInsert>;
+
 export type Database = {
   public: {
     Tables: {
@@ -376,6 +435,18 @@ export type Database = {
         Row: AutomationMediaRow;
         Insert: AutomationMediaInsert;
         Update: AutomationMediaUpdate;
+        Relationships: [];
+      };
+      push_subscriptions: {
+        Row: PushSubscriptionRow;
+        Insert: PushSubscriptionInsert;
+        Update: PushSubscriptionUpdate;
+        Relationships: [];
+      };
+      notifications: {
+        Row: NotificationRow;
+        Insert: NotificationInsert;
+        Update: NotificationUpdate;
         Relationships: [];
       };
     };

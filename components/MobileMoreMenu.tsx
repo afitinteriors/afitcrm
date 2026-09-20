@@ -53,6 +53,21 @@ const WORK_ITEMS: MenuItem[] = [
   },
 ];
 
+const ACCOUNT_ITEMS: MenuItem[] = [
+  {
+    href: "/notifications",
+    label: "Notifications",
+    icon: (
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={1.75}
+        d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0"
+      />
+    ),
+  },
+];
+
 const MANAGEMENT_ITEMS: MenuItem[] = [
   {
     href: "/automation",
@@ -113,10 +128,14 @@ export function MobileMoreMenu({ isAdmin }: { isAdmin: boolean }) {
   const groups: MenuGroup[] = isAdmin
     ? [
         { label: "Work", items: WORK_ITEMS },
+        { label: "Account", items: ACCOUNT_ITEMS },
         { label: "Management", items: MANAGEMENT_ITEMS },
         { label: "System", items: SYSTEM_ITEMS },
       ]
-    : [{ label: "Work", items: WORK_ITEMS }];
+    : [
+        { label: "Work", items: WORK_ITEMS },
+        { label: "Account", items: ACCOUNT_ITEMS },
+      ];
 
   const allItems = groups.flatMap((group) => group.items);
   const active = allItems.some((item) => pathname === item.href || pathname.startsWith(`${item.href}/`));

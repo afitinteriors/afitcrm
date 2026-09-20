@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { getCurrentProfile } from "@/lib/auth";
 import { SignOutButton } from "@/components/SignOutButton";
 
@@ -27,7 +28,13 @@ export async function SidebarProfileFooter() {
           </p>
         </div>
       </div>
-      <div className="mt-1 px-2">
+      <div className="mt-1 flex items-center gap-4 px-2">
+        <Link
+          href="/notifications"
+          className="text-xs font-medium text-sidebar-muted transition-colors hover:text-sidebar-foreground"
+        >
+          Notifications
+        </Link>
         <SignOutButton className="text-xs font-medium text-sidebar-muted transition-colors hover:text-sidebar-foreground disabled:opacity-60" />
       </div>
     </>
