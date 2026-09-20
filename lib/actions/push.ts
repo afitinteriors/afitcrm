@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentProfile } from "@/lib/auth";
 import { cleanUserAgent, parsePushSubscription } from "@/lib/push/subscription";
+import { sendPushToUser } from "@/lib/push/send";
 
 export type PushActionState = { error: string } | { ok: true };
 
@@ -83,4 +84,59 @@ export async function unsubscribePush(endpoint: unknown): Promise<PushActionStat
     .eq("endpoint", endpoint);
   if (error) return { error: "Could not turn off this device. Try again." };
   return { ok: true };
+}
+
+export type TestPushState = { error: string } | { ok: true; sent: number };
+
+const TEST_RATE_LIMIT = 3;
+const TEST_RATE_WINDOW_MS = 60_000;
+
+// Manual "Send test notification". Deliberately takes NO arguments: the
+// recipient is always the signed-in user (from the session), so neither a
+// client nor a staff account can aim a push at anyone else's device. There is
+// no HTTP route for this -- it is a server action, callable only from an
+// authenticated page.
+export async function sendTestNotification(): Promise<TestPushState> {
+  const profile = await getCurrentProfile();
+  if (!profile) return { error: NOT_SIGNED_IN };
+
+  // Cheap abuse guard, read through the user's own RLS-scoped session.
+  const supabase = await createClient();
+  const { count } = await supabase
+    .from("notifications")
+    .select("id", { count: "exact", head: true })
+    .eq("type", "test")
+    .gte("created_at", new Date(Date.now() - TEST_RATE_WINDOW_MS).toISOString());
+  if ((count ?? 0) >= TEST_RATE_LIMIT) return { error: "Please wait a minute before sending another test." };
+
+  const result = await sendPushToUser(
+    profile.id,
+    {
+      title: "AFIT CRM test notification",
+      body: "Push notifications are working on this device.",
+      type: "test",
+      route: "/notifications",
+    },
+    // Unique per click, so every click really sends (and gets a history row).
+    { dedupeKey: `test:${crypto.randomUUID()}`, ttlSeconds: 300 },
+  );
+
+  switch (result.status) {
+    case "sent":
+    case "partial":
+      return { ok: true, sent: result.sent };
+    case "no_subscriptions":
+      return { error: "No device is enabled yet. Turn notifications on first." };
+    case "vapid_not_configured":
+      return { error: "Push delivery isn't fully configured on the server yet." };
+    case "failed":
+      return {
+        error:
+          result.expired > 0 && result.failed === 0
+            ? "This device's subscription has expired. Turn notifications off and on again."
+            : "The push service didn't accept the message. Try again shortly.",
+      };
+    default:
+      return { error: "Could not send the test notification." };
+  }
 }

@@ -2,24 +2,29 @@
 
 import { useEffect, useState } from "react";
 import { currentSubscription, disablePush, enablePush, pushSupport } from "@/lib/push/client";
+import { sendTestNotification } from "@/lib/actions/push";
 
-type Status =
-  | "checking"
-  | "unsupported"
-  | "not-configured"
-  | "disabled"
-  | "enabling"
-  | "enabled"
-  | "denied"
-  | "error";
+type Status = "checking" | "unsupported" | "not-configured" | "disabled" | "enabling" | "enabled" | "denied" | "error";
 
 const STATUS_TEXT: Record<Status, { label: string; tone: string }> = {
   checking: { label: "Checking this device…", tone: "text-muted-foreground" },
-  unsupported: { label: "Not supported on this browser", tone: "text-muted-foreground" },
-  "not-configured": { label: "Not available yet", tone: "text-muted-foreground" },
-  disabled: { label: "Notifications are off on this device", tone: "text-muted-foreground" },
+  unsupported: {
+    label: "Not supported on this browser",
+    tone: "text-muted-foreground",
+  },
+  "not-configured": {
+    label: "Not available yet",
+    tone: "text-muted-foreground",
+  },
+  disabled: {
+    label: "Notifications are off on this device",
+    tone: "text-muted-foreground",
+  },
   enabling: { label: "Enabling…", tone: "text-muted-foreground" },
-  enabled: { label: "Notifications are on for this device", tone: "text-success" },
+  enabled: {
+    label: "Notifications are on for this device",
+    tone: "text-success",
+  },
   denied: { label: "Permission denied", tone: "text-danger" },
   error: { label: "Something went wrong", tone: "text-danger" },
 };
@@ -29,6 +34,10 @@ const STATUS_TEXT: Record<Status, { label: string; tone: string }> = {
 export function NotificationsControl({ publicKey }: { publicKey: string | null }) {
   const [status, setStatus] = useState<Status>("checking");
   const [detail, setDetail] = useState<string | null>(null);
+  const [test, setTest] = useState<{
+    state: "idle" | "sending" | "sent" | "error";
+    message?: string;
+  }>({ state: "idle" });
 
   useEffect(() => {
     let cancelled = false;
@@ -59,8 +68,24 @@ export function NotificationsControl({ publicKey }: { publicKey: string | null }
     );
   }
 
+  // Explicit click only -- never sent automatically. The server sends to the
+  // signed-in user's own devices; nothing about the recipient comes from here.
+  async function onSendTest() {
+    setTest({ state: "sending" });
+    const result = await sendTestNotification();
+    setTest(
+      "ok" in result
+        ? {
+            state: "sent",
+            message: "Test sent. It should appear on this device in a moment.",
+          }
+        : { state: "error", message: result.error },
+    );
+  }
+
   async function onDisable() {
     setDetail(null);
+    setTest({ state: "idle" });
     const result = await disablePush();
     if (result.ok) return setStatus("disabled");
     setStatus("error");
@@ -81,7 +106,12 @@ export function NotificationsControl({ publicKey }: { publicKey: string | null }
         Turn this on to allow AFIT CRM to alert this browser or phone. Each device is enabled separately.
       </p>
 
-      <p className={`mt-3 text-sm font-medium ${text.tone}`} role="status" data-testid="push-status" data-status={status}>
+      <p
+        className={`mt-3 text-sm font-medium ${text.tone}`}
+        role="status"
+        data-testid="push-status"
+        data-status={status}
+      >
         {text.label}
       </p>
       {detail && <p className="mt-1 text-xs text-danger">{detail}</p>}
@@ -98,13 +128,35 @@ export function NotificationsControl({ publicKey }: { publicKey: string | null }
 
       <div className="mt-3">
         {status === "enabled" ? (
-          <button
-            type="button"
-            onClick={onDisable}
-            className="min-h-11 rounded-lg border border-border bg-card px-4 text-sm font-medium text-foreground hover:bg-secondary lg:min-h-9"
-          >
-            Turn off on this device
-          </button>
+          <>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={onSendTest}
+                disabled={test.state === "sending"}
+                className="min-h-11 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50 lg:min-h-9"
+              >
+                {test.state === "sending" ? "Sending…" : "Send test notification"}
+              </button>
+              <button
+                type="button"
+                onClick={onDisable}
+                className="min-h-11 rounded-lg border border-border bg-card px-4 text-sm font-medium text-foreground hover:bg-secondary lg:min-h-9"
+              >
+                Turn off on this device
+              </button>
+            </div>
+            {test.state === "sent" && (
+              <p className="mt-2 text-xs text-success" data-testid="push-test-result" role="status">
+                {test.message}
+              </p>
+            )}
+            {test.state === "error" && (
+              <p className="mt-2 text-xs text-danger" data-testid="push-test-result" role="alert">
+                {test.message}
+              </p>
+            )}
+          </>
         ) : (
           <button
             type="button"

@@ -8,7 +8,7 @@ type QueryResult = { data?: unknown; count?: number | null; error?: { code?: str
 function makeBuilder(result: QueryResult) {
   const calls: Array<[string, unknown[]]> = [];
   const builder: Record<string, unknown> = { calls };
-  for (const method of ["select", "eq", "is", "insert", "update", "delete"]) {
+  for (const method of ["select", "eq", "gte", "is", "insert", "update", "delete"]) {
     builder[method] = vi.fn((...args: unknown[]) => {
       calls.push([method, args]);
       return builder;
@@ -164,5 +164,70 @@ describe("unsubscribePush", () => {
     expect(await unsubscribePush("")).toEqual({ error: "Invalid push subscription." });
     expect(await unsubscribePush("x".repeat(3000))).toEqual({ error: "Invalid push subscription." });
     expect(userClient.from).not.toHaveBeenCalled();
+  });
+});
+
+// ---- sendTestNotification ---------------------------------------------------
+const sendPushToUserMock = vi.fn();
+vi.mock("@/lib/push/send", () => ({ sendPushToUser: (...args: unknown[]) => sendPushToUserMock(...args) }));
+
+import { sendTestNotification } from "./push";
+
+describe("sendTestNotification", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getCurrentProfileMock.mockResolvedValue(USER);
+    userClient = createFake([{ count: 0, error: null }]);
+    sendPushToUserMock.mockResolvedValue({ status: "sent", sent: 1, expired: 0, failed: 0, notificationId: "n1", devices: [] });
+  });
+
+  it("rejects an unauthenticated caller and sends nothing", async () => {
+    getCurrentProfileMock.mockResolvedValue(null);
+
+    expect(await sendTestNotification()).toEqual({ error: "Not signed in." });
+    expect(sendPushToUserMock).not.toHaveBeenCalled();
+  });
+
+  it("sends ONLY to the session user, with a fixed test payload and a unique dedupe key", async () => {
+    // The action takes no arguments at all, so no recipient can be supplied.
+    expect(sendTestNotification.length).toBe(0);
+
+    expect(await sendTestNotification()).toEqual({ ok: true, sent: 1 });
+
+    const [userId, payload, options] = sendPushToUserMock.mock.calls[0];
+    expect(userId).toBe("user-1");
+    expect(payload).toMatchObject({ type: "test", route: "/notifications" });
+    expect(options.dedupeKey).toMatch(/^test:[0-9a-f-]{36}$/);
+
+    await sendTestNotification();
+    expect(sendPushToUserMock.mock.calls[1][2].dedupeKey).not.toBe(options.dedupeKey);
+  });
+
+  it("cannot be pointed at another user even when a different staff member is signed in", async () => {
+    getCurrentProfileMock.mockResolvedValue({ id: "staff-9", role: "staff" as const });
+    userClient = createFake([{ count: 0, error: null }]);
+
+    await sendTestNotification();
+
+    expect(sendPushToUserMock.mock.calls[0][0]).toBe("staff-9");
+  });
+
+  it("is rate limited", async () => {
+    userClient = createFake([{ count: 3, error: null }]);
+
+    expect(await sendTestNotification()).toEqual({ error: "Please wait a minute before sending another test." });
+    expect(sendPushToUserMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [{ status: "no_subscriptions" }, "No device is enabled yet. Turn notifications on first."],
+    [{ status: "vapid_not_configured", reason: "placeholder_subject" }, "Push delivery isn't fully configured on the server yet."],
+    [{ status: "failed", sent: 0, expired: 1, failed: 0, notificationId: "n", devices: [] }, "This device's subscription has expired. Turn notifications off and on again."],
+    [{ status: "failed", sent: 0, expired: 0, failed: 1, notificationId: "n", devices: [] }, "The push service didn't accept the message. Try again shortly."],
+    [{ status: "invalid_payload" }, "Could not send the test notification."],
+  ])("maps %j to a safe message", async (result, message) => {
+    sendPushToUserMock.mockResolvedValue(result);
+
+    expect(await sendTestNotification()).toEqual({ error: message });
   });
 });
