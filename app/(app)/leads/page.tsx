@@ -70,9 +70,9 @@ export default async function LeadsPage({
             </table>
           </div>
 
-          <ul className="mt-2 space-y-3 lg:hidden">
+          <ul className="-mx-2 mt-1 lg:hidden">
             {leads.map((lead) => (
-              <LeadCard key={lead.id} lead={lead} />
+              <LeadCard key={lead.id} lead={lead} showAssignee={profile?.role === "admin"} />
             ))}
           </ul>
         </>

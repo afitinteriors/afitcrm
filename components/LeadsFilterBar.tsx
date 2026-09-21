@@ -41,13 +41,18 @@ export function LeadsFilterBar({
   const hasFilters = Boolean(search || status || campaign);
 
   return (
-    <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
-      <form method="get" className="flex flex-col gap-3 sm:flex-row sm:items-end">
-        <div className="flex-1">
-          <label htmlFor="search" className="block text-xs font-medium text-muted-foreground">
+    <div className="rounded-lg border border-border bg-card p-2.5 shadow-sm sm:p-4">
+      {/* Mobile: search + Filter on one row, Status + Campaign on the next
+          (labels are screen-reader-only). From sm up this is the original
+          single-row toolbar. */}
+      <form method="get" className="flex flex-wrap items-end gap-2 sm:flex-nowrap sm:gap-3">
+        <div
+          className={`order-1 min-w-0 ${hasFilters ? "basis-[calc(100%-10.25rem)]" : "basis-[calc(100%-5.25rem)]"} sm:order-none sm:flex-1 sm:basis-auto`}
+        >
+          <label htmlFor="search" className="sr-only text-xs font-medium text-muted-foreground sm:not-sr-only sm:block">
             Search
           </label>
-          <div className="relative mt-1">
+          <div className="relative mt-0 sm:mt-1">
             <svg
               xmlns="http://www.w3.org/2000/svg"
               fill="none"
@@ -69,15 +74,15 @@ export function LeadsFilterBar({
           </div>
         </div>
 
-        <div className="sm:w-48">
-          <label htmlFor="status" className="block text-xs font-medium text-muted-foreground">
+        <div className="order-3 min-w-0 grow basis-[calc(50%-0.25rem)] sm:order-none sm:w-48 sm:grow-0 sm:basis-auto">
+          <label htmlFor="status" className="sr-only text-xs font-medium text-muted-foreground sm:not-sr-only sm:block">
             Status
           </label>
           <select
             id="status"
             name="status"
             defaultValue={status}
-            className="mt-1 block h-11 w-full rounded-md border border-border bg-card px-3 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+            className="mt-0 sm:mt-1 block h-11 w-full rounded-md border border-border bg-card px-3 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
           >
             <option value="">All statuses</option>
             {PIPELINE_STATUSES.map((value) => (
@@ -88,15 +93,15 @@ export function LeadsFilterBar({
           </select>
         </div>
 
-        <div className="sm:w-48">
-          <label htmlFor="campaign" className="block text-xs font-medium text-muted-foreground">
+        <div className="order-4 min-w-0 grow basis-[calc(50%-0.25rem)] sm:order-none sm:w-48 sm:grow-0 sm:basis-auto">
+          <label htmlFor="campaign" className="sr-only text-xs font-medium text-muted-foreground sm:not-sr-only sm:block">
             Campaign
           </label>
           <select
             id="campaign"
             name="campaign"
             defaultValue={campaign}
-            className="mt-1 block h-11 w-full rounded-md border border-border bg-card px-3 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+            className="mt-0 sm:mt-1 block h-11 w-full rounded-md border border-border bg-card px-3 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
           >
             <option value="">All campaigns</option>
             {campaignOptions.map((value) => (
@@ -107,7 +112,7 @@ export function LeadsFilterBar({
           </select>
         </div>
 
-        <div className="flex gap-2">
+        <div className="order-2 flex shrink-0 gap-2 sm:order-none">
           <button
             type="submit"
             className="flex h-11 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
@@ -117,7 +122,7 @@ export function LeadsFilterBar({
           {hasFilters && (
             <Link
               href="/leads"
-              className="flex h-11 items-center rounded-md border border-border px-4 text-sm font-medium text-muted-foreground hover:bg-secondary"
+              className="flex h-11 items-center rounded-md border border-border px-3 text-sm font-medium text-muted-foreground sm:px-4 hover:bg-secondary"
             >
               Clear all
             </Link>
