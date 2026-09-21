@@ -1,4 +1,5 @@
 import type { FollowUpRow } from "@/lib/supabase/types";
+import { businessDate } from "@/lib/business-time";
 
 // Overdue is derived, not stored, so it can never drift out of sync with
 // due_date/status. Kept in its own module with no server-only imports so
@@ -6,7 +7,7 @@ import type { FollowUpRow } from "@/lib/supabase/types";
 // lib/follow-ups.ts's Supabase/next-headers chain into the client bundle.
 export function isFollowUpOverdue(followUp: Pick<FollowUpRow, "status" | "due_date">): boolean {
   if (followUp.status !== "pending") return false;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = businessDate();
   return followUp.due_date < today;
 }
 
@@ -26,7 +27,7 @@ export type FollowUpGroups<T> = {
 export function groupFollowUpsByDueDate<T extends Pick<FollowUpRow, "status" | "due_date">>(
   items: T[]
 ): FollowUpGroups<T> {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = businessDate();
   const groups: FollowUpGroups<T> = { overdue: [], today: [], upcoming: [], completed: [] };
 
   for (const item of items) {

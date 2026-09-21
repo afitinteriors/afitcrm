@@ -5,6 +5,7 @@ import { getUncontactedLeads } from "@/lib/leads";
 import { getUnansweredConversations } from "@/lib/conversations";
 import { OPEN_LEAD_STATUSES, FOLLOW_UP_TYPE_LABELS } from "@/lib/constants";
 import { formatDate } from "@/lib/format";
+import { businessDate } from "@/lib/business-time";
 import type { LeadStatus } from "@/lib/supabase/types";
 
 // AFIT Follow-Up Brain -- Phase A (UI-only).
@@ -55,8 +56,10 @@ const TIER = {
   NO_FOLLOW_UP: 5,
 } as const;
 
+// "Today" for due-date comparisons is the business-zone (IST) calendar day --
+// the same rule /today, /follow-ups and /site-visits use (lib/business-time.ts).
 function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+  return businessDate();
 }
 
 type FollowUpWithLead = {

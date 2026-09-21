@@ -66,7 +66,7 @@ vi.mock("next/cache", () => ({
   revalidatePath: vi.fn(),
 }));
 
-import { createLead, updateLead, setLeadStatus, markLeadWon, markLeadLost, deleteLead } from "./leads";
+import { createLead, updateLead, setLeadStatus, markLeadWon, markLeadLost, setSiteVisitDate, deleteLead } from "./leads";
 
 function formDataWith(fields: Record<string, string>): FormData {
   const fd = new FormData();
@@ -611,6 +611,63 @@ describe("markLeadLost", () => {
 
     expect(result).toEqual({ error: "You do not have access to this lead." });
     expect(from.mock.calls.filter(([table]) => table === "leads")).toHaveLength(1);
+  });
+});
+
+describe("setSiteVisitDate -- entered time is IST wall-clock (A/B/C)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getCurrentProfileMock.mockResolvedValue(ADMIN_PROFILE);
+  });
+
+  it("stores 11:00 entered as the instant 11:00 Asia/Kolkata (05:30Z), whatever the server zone", async () => {
+    const { stub, from } = createFakeSupabase({ leads: [{ error: null }] });
+    fakeSupabase = stub;
+
+    const result = await setSiteVisitDate(null, formDataWith({ lead_id: "lead-1", site_visit_date: "2026-10-05T11:00" }));
+
+    expect(result).toBeNull();
+    const builder = from.mock.results[0].value as { update: ReturnType<typeof vi.fn> };
+    expect(builder.update).toHaveBeenCalledWith({ site_visit_date: "2026-10-05T05:30:00.000Z" });
+  });
+
+  it("re-saving the value the form prefilled stores the identical instant (no +5:30 drift)", async () => {
+    const first = createFakeSupabase({ leads: [{ error: null }] });
+    fakeSupabase = first.stub;
+    await setSiteVisitDate(null, formDataWith({ lead_id: "lead-1", site_visit_date: "2026-10-05T11:00" }));
+    const stored = (first.from.mock.results[0].value as { update: { mock: { calls: [{ site_visit_date: string }][] } } }).update.mock.calls[0][0].site_visit_date;
+
+    const { toBusinessDateTimeLocal } = await import("@/lib/business-time");
+    const prefill = toBusinessDateTimeLocal(stored);
+    expect(prefill).toBe("2026-10-05T11:00");
+
+    const second = createFakeSupabase({ leads: [{ error: null }] });
+    fakeSupabase = second.stub;
+    await setSiteVisitDate(null, formDataWith({ lead_id: "lead-1", site_visit_date: prefill }));
+    const storedAgain = (second.from.mock.results[0].value as { update: { mock: { calls: [{ site_visit_date: string }][] } } }).update.mock.calls[0][0].site_visit_date;
+    expect(storedAgain).toBe(stored);
+  });
+
+  it("rejects a missing or invalid date without touching the database", async () => {
+    const { stub, from } = createFakeSupabase({});
+    fakeSupabase = stub;
+
+    expect(await setSiteVisitDate(null, formDataWith({ lead_id: "lead-1" }))).toEqual({ error: "Pick a date and time for the visit." });
+    expect(await setSiteVisitDate(null, formDataWith({ lead_id: "lead-1", site_visit_date: "not a date" }))).toEqual({
+      error: "Enter a valid date and time for the visit.",
+    });
+    expect(from).not.toHaveBeenCalled();
+  });
+
+  it("preserves authorization: staff cannot set a visit on a lead not assigned to them", async () => {
+    getCurrentProfileMock.mockResolvedValue(STAFF_PROFILE);
+    const { stub, from } = createFakeSupabase({ leads: [{ data: { assigned_to_id: "someone-else" } }] });
+    fakeSupabase = stub;
+
+    const result = await setSiteVisitDate(null, formDataWith({ lead_id: "lead-1", site_visit_date: "2026-10-05T11:00" }));
+
+    expect(result).toEqual({ error: "You do not have access to this lead." });
+    expect(from).toHaveBeenCalledTimes(1); // the access check only, never an update
   });
 });
 

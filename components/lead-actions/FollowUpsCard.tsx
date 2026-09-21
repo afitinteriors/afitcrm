@@ -1,6 +1,7 @@
 import { Card } from "@/components/Card";
 import { isFollowUpOverdue } from "@/lib/follow-up-status";
 import { formatDate } from "@/lib/format";
+import { businessDate } from "@/lib/business-time";
 import { FOLLOW_UP_TYPE_LABELS } from "@/lib/constants";
 import type { FollowUpRow } from "@/lib/supabase/types";
 import { CreateFollowUpForm } from "@/components/lead-actions/CreateFollowUpForm";
@@ -12,7 +13,7 @@ function formatDueTime(dueTime: string | null): string {
 }
 
 function isDueToday(dueDate: string): boolean {
-  return dueDate === new Date().toISOString().slice(0, 10);
+  return dueDate === businessDate();
 }
 
 export function FollowUpsCard({ leadId, followUps }: { leadId: string; followUps: FollowUpRow[] }) {

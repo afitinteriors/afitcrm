@@ -1,5 +1,6 @@
 import { getLeads } from "@/lib/leads";
 import type { LeadListRow } from "@/lib/leads";
+import { businessDate, businessDateOf } from "@/lib/business-time";
 import { SiteVisitRow } from "@/components/site-visits/SiteVisitRow";
 import { SiteVisitCard } from "@/components/site-visits/SiteVisitCard";
 
@@ -16,11 +17,11 @@ type SiteVisitGroups = {
 // groupFollowUpsByDueDate -- but a past visit isn't a failure the way an
 // overdue follow-up is, so the bucket is "Past", not "Overdue".
 function groupBySiteVisitDate(leads: SiteVisitLead[]): SiteVisitGroups {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = businessDate();
   const groups: SiteVisitGroups = { today: [], upcoming: [], past: [] };
 
   for (const lead of leads) {
-    const day = lead.site_visit_date.slice(0, 10);
+    const day = businessDateOf(lead.site_visit_date) ?? "";
     if (day === today) groups.today.push(lead);
     else if (day > today) groups.upcoming.push(lead);
     else groups.past.push(lead);

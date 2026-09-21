@@ -34,6 +34,13 @@ export const OPEN_LEAD_STATUSES: LeadStatus[] = [
 // pipeline stage.
 export const PIPELINE_STATUSES: LeadStatus[] = [...OPEN_LEAD_STATUSES, "won", "lost"];
 
+// Won and Lost are terminal for the generic stage setter (setLeadStatus
+// rejects any move out of them server-side). The UI mirrors that by not
+// offering the stage selector for a closed lead.
+export function isClosedLeadStatus(status: LeadStatus): boolean {
+  return status === "won" || status === "lost";
+}
+
 export const LEAD_STATUS_LABELS: Record<LeadStatus, string> = {
   new: "New",
   contacted: "Contacted",

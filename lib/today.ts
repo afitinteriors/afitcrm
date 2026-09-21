@@ -1,6 +1,7 @@
 import type { LeadListRow } from "@/lib/leads";
 import type { FollowUpRow, LeadStatus } from "@/lib/supabase/types";
 import { OPEN_LEAD_STATUSES } from "@/lib/constants";
+import { businessDateOf } from "@/lib/business-time";
 
 // The "Today" sales command center's classification -- a pure function over
 // data the app already fetches (getLeads({}) and getFollowUps({status:
@@ -156,7 +157,7 @@ export function buildTodayBoard(input: { leads: TodayLead[]; followUps: TodayFol
       updatedAt: lead.updated_at,
     });
 
-    const visitToday = lead.site_visit_date !== null && lead.site_visit_date.slice(0, 10) === today;
+    const visitToday = lead.site_visit_date !== null && businessDateOf(lead.site_visit_date) === today;
     const dealNeedsAttention = (lead.status === "quotation" || lead.status === "negotiation") && (actionable !== null || !hasPending);
 
     if (visitToday) {

@@ -3,7 +3,7 @@
 import { useActionState } from "react";
 import { setSiteVisitDate } from "@/lib/actions/leads";
 import { SubmitButton } from "@/components/SubmitButton";
-import { toDateTimeLocal } from "@/lib/format";
+import { toBusinessDateTimeLocal } from "@/lib/business-time";
 
 export function SiteVisitForm({ leadId, siteVisitDate }: { leadId: string; siteVisitDate: string | null }) {
   const [state, formAction] = useActionState(setSiteVisitDate, null);
@@ -13,13 +13,13 @@ export function SiteVisitForm({ leadId, siteVisitDate }: { leadId: string; siteV
       <input type="hidden" name="lead_id" value={leadId} />
       <div>
         <label htmlFor="site_visit_date" className="block text-xs font-medium text-muted-foreground">
-          Site visit date &amp; time
+          Site visit date &amp; time (IST)
         </label>
         <input
           id="site_visit_date"
           name="site_visit_date"
           type="datetime-local"
-          defaultValue={toDateTimeLocal(siteVisitDate)}
+          defaultValue={toBusinessDateTimeLocal(siteVisitDate)}
           className="mt-1 block h-11 w-full rounded-md border border-border px-3 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
         />
       </div>

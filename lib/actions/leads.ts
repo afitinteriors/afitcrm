@@ -9,6 +9,7 @@ import { recordAuditEvent } from "@/lib/audit";
 import type { Database, LeadStatus, LeadUpdate } from "@/lib/supabase/types";
 import { LEAD_STATUSES } from "@/lib/constants";
 import { toCanonicalPhone } from "@/lib/phone";
+import { parseBusinessDateTime } from "@/lib/business-time";
 
 export type ActionState = { error: string } | null;
 
@@ -424,6 +425,10 @@ export async function setSiteVisitDate(_prevState: ActionState, formData: FormDa
   const leadId = str(formData, "lead_id");
   const siteVisitDate = str(formData, "site_visit_date");
   if (!siteVisitDate) return { error: "Pick a date and time for the visit." };
+  // The input is wall-clock time in the business zone (IST), not server or
+  // browser local time -- see lib/business-time.ts.
+  const siteVisitAt = parseBusinessDateTime(siteVisitDate);
+  if (!siteVisitAt) return { error: "Enter a valid date and time for the visit." };
 
   const supabase = await createClient();
   const accessError = await checkLeadAccess(supabase, leadId);
@@ -433,7 +438,7 @@ export async function setSiteVisitDate(_prevState: ActionState, formData: FormDa
   // the live stage (leads.status) only changes via an explicit StatusSelect
   // choice or Mark Won/Lost. See setQuotationAmount for the same rule.
   const siteVisitUpdate: LeadUpdate = {
-    site_visit_date: new Date(siteVisitDate).toISOString(),
+    site_visit_date: siteVisitAt.toISOString(),
   };
   const { error } = await supabase.from("leads").update(siteVisitUpdate).eq("id", leadId);
 

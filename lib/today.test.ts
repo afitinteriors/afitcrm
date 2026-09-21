@@ -34,6 +34,24 @@ function followUp(leadId: string, dueDate: string, overrides: Partial<TodayFollo
 
 const ids = (items: { leadId: string }[]) => items.map((i) => i.leadId);
 
+describe("buildTodayBoard -- site visits use the IST business day (E)", () => {
+  it("a visit at 00:30 IST today (previous UTC day) IS today", () => {
+    const l = lead({ status: "site_visit", site_visit_date: "2026-09-19T19:00:00Z" }); // 2026-09-20 00:30 IST
+    expect(ids(buildTodayBoard({ leads: [l], followUps: [], today: TODAY }).siteVisits)).toEqual([l.id]);
+  });
+
+  it("a visit at 00:30 IST tomorrow (still today in UTC) is NOT today", () => {
+    const l = lead({ status: "site_visit", site_visit_date: "2026-09-20T19:00:00Z" }); // 2026-09-21 00:30 IST
+    expect(ids(buildTodayBoard({ leads: [l], followUps: [], today: TODAY }).siteVisits)).toEqual([]);
+  });
+
+  it("H: follow-up due_date matching is unchanged (plain date strings)", () => {
+    const l = lead({ status: "contacted" });
+    const board = buildTodayBoard({ leads: [l], followUps: [followUp(l.id, TODAY, { due_time: "10:30:00" })], today: TODAY });
+    expect(ids(board.dueToday)).toEqual([l.id]);
+  });
+});
+
 describe("buildTodayBoard -- each section", () => {
   it("Overdue: an open lead with a pending follow-up before today", () => {
     const l = lead({ status: "contacted" });

@@ -5,6 +5,7 @@ import { StatCard } from "@/components/StatCard";
 import type { DutyQueue } from "@/lib/dashboard-brain";
 import type { UpcomingFollowUp } from "@/lib/follow-ups";
 import { formatDate } from "@/lib/format";
+import { businessDate } from "@/lib/business-time";
 import { FOLLOW_UP_TYPE_LABELS } from "@/lib/constants";
 
 const CLOCK_ICON = <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M12 6v6l4 2m6-2a10 10 0 11-20 0 10 10 0 0120 0z" />;
@@ -51,7 +52,7 @@ export function StaffHome({
   const otherItems = queue.items.filter(
     (i) => i.reasonKind === "unanswered_conversation" || i.reasonKind === "uncontacted_lead" || i.reasonKind === "no_follow_up",
   );
-  const dueSoon = upcoming.filter((f) => f.due_date > new Date().toISOString().slice(0, 10));
+  const dueSoon = upcoming.filter((f) => f.due_date > businessDate());
   const topItem = queue.items[0] ?? null;
   const restItems = queue.items.slice(1);
 

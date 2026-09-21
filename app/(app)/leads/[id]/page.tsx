@@ -5,6 +5,7 @@ import { getFollowUpsForLead } from "@/lib/follow-ups";
 import { getLeadEngagement } from "@/lib/conversations";
 import { Card } from "@/components/Card";
 import { StatusSelect } from "@/components/lead-actions/StatusSelect";
+import { LostLeadNotice } from "@/components/lead-actions/ClosedLeadNotice";
 import { NextActionCard } from "@/components/lead-actions/NextActionCard";
 import { ConversationCard } from "@/components/lead-actions/ConversationCard";
 import { AssignmentCard } from "@/components/lead-actions/AssignmentCard";
@@ -270,9 +271,7 @@ export default async function LeadDetailPage({ params }: PageProps<"/leads/[id]"
         )}
 
         {lead.status === "lost" ? (
-          <p className="mt-3 text-xs text-muted-foreground">
-            To reconsider this lead, move it to an earlier pipeline stage using the stage selector above.
-          </p>
+          <LostLeadNotice />
         ) : (
           <details id="close-lead" className={`group ${lead.status === "won" ? "mt-3" : ""}`}>
             <summary className="flex min-h-11 w-fit cursor-pointer list-none items-center gap-1.5 text-sm font-semibold text-foreground marker:hidden">

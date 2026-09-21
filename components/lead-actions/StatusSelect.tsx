@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { setLeadStatus } from "@/lib/actions/leads";
-import { PIPELINE_STATUSES, LEAD_STATUS_LABELS, LEAD_STATUS_BADGE_CLASSES } from "@/lib/constants";
+import { PIPELINE_STATUSES, LEAD_STATUS_LABELS, LEAD_STATUS_BADGE_CLASSES, isClosedLeadStatus } from "@/lib/constants";
 import type { LeadStatus } from "@/lib/supabase/types";
 
 function isPipelineStatus(s: LeadStatus): boolean {
@@ -40,6 +40,21 @@ export function StatusSelect({ leadId, status }: { leadId: string; status: LeadS
   // move it into the pipeline, rather than silently defaulting the select
   // to whichever stage happens to be listed first.
   const [reclassifying, setReclassifying] = useState(false);
+
+  // A closed (Won/Lost) lead is terminal: setLeadStatus() rejects every move
+  // out of it, so don't offer a control that predictably fails. Show the
+  // stage as a plain read-only badge instead. (Won -> Lost correction still
+  // lives in the Close Lead section below; this is not a reopening path.)
+  if (isClosedLeadStatus(value)) {
+    return (
+      <span
+        data-testid="closed-stage-badge"
+        className={`inline-flex h-11 items-center rounded-full px-4 text-sm font-semibold ring-1 ring-inset ${LEAD_STATUS_BADGE_CLASSES[value]}`}
+      >
+        {LEAD_STATUS_LABELS[value]}
+      </span>
+    );
+  }
 
   if (!isPipelineStatus(value) && !reclassifying) {
     return (

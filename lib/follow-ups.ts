@@ -2,6 +2,7 @@ import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import type { FollowUpRow, FollowUpStatus, FollowUpType } from "@/lib/supabase/types";
 import { FOLLOW_UP_TYPES } from "@/lib/constants";
+import { businessDatePlusDays } from "@/lib/business-time";
 
 export type UpcomingFollowUp = FollowUpRow & {
   lead: { customer_name: string | null } | null;
@@ -36,9 +37,8 @@ export async function getFollowUpsForLead(leadId: string): Promise<FollowUpRow[]
 export async function getUpcomingFollowUps(): Promise<UpcomingFollowUp[]> {
   const supabase = await createClient();
 
-  const windowEnd = new Date();
-  windowEnd.setDate(windowEnd.getDate() + UPCOMING_WINDOW_DAYS);
-  const windowEndDate = windowEnd.toISOString().slice(0, 10);
+  // Seven business-zone (IST) calendar days from today, not from the UTC date.
+  const windowEndDate = businessDatePlusDays(UPCOMING_WINDOW_DAYS);
 
   const { data, error } = await supabase
     .from("follow_ups")
