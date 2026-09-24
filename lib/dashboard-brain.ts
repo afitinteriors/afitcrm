@@ -243,11 +243,11 @@ export async function getMyDutyQueue(): Promise<DutyQueue> {
   items.sort((a, b) => (a.tier !== b.tier ? a.tier - b.tier : new Date(a.sortAt).getTime() - new Date(b.sortAt).getTime()));
 
   // The same lead can legitimately trigger more than one signal at once
-  // (e.g. an unanswered conversation AND no follow-up scheduled). Each
-  // signal is still counted correctly below, but the *displayed* queue
-  // should show that lead once, under its highest-tier (most urgent)
-  // reason -- items are already tier-sorted above, so keeping the first
-  // occurrence per lead id is sufficient.
+  // (e.g. an unanswered conversation AND no follow-up scheduled -- this is
+  // the everyday shape of a brand-new WhatsApp enquiry, not an edge case).
+  // The *displayed* queue shows that lead once, under its highest-tier
+  // (most urgent) reason -- items are already tier-sorted above, so keeping
+  // the first occurrence per lead id is sufficient.
   const seenLeadIds = new Set<string>();
   const dedupedItems = items.filter((item) => {
     if (!item.leadId) return true;
@@ -256,16 +256,27 @@ export async function getMyDutyQueue(): Promise<DutyQueue> {
     return true;
   });
 
-  const stalledPipeline = noFollowUpElsewhere.filter((l) => l.status === "quotation" || l.status === "negotiation").length;
+  // Counts MUST be derived from dedupedItems, not the raw per-signal source
+  // arrays (unanswered/uncontactedLeads/noFollowUpElsewhere/items) -- a lead
+  // that trips two signals at once is shown once in the list (above), and a
+  // stat tile built from the raw arrays would silently count it twice,
+  // disagreeing with what's actually visible when you click through. This
+  // was a real bug (2026-09 Duty Architecture Audit, finding C(i)): e.g. a
+  // fresh WhatsApp lead is simultaneously "unanswered" and "uncontacted",
+  // so the old raw counts double-counted every such lead into both tiles.
+  const countByReason = (reasonKind: DutyReasonKind) => dedupedItems.filter((i) => i.reasonKind === reasonKind).length;
+  const stalledPipeline = dedupedItems.filter(
+    (i) => i.reasonKind === "no_follow_up" && (i.stage === "quotation" || i.stage === "negotiation"),
+  ).length;
 
   return {
     items: dedupedItems,
     counts: {
-      overdue: items.filter((i) => i.reasonKind === "overdue_follow_up").length,
-      dueToday: items.filter((i) => i.reasonKind === "due_today_follow_up").length,
-      unanswered: unanswered.length,
-      uncontacted: uncontactedLeads.length,
-      noFollowUp: noFollowUpElsewhere.length,
+      overdue: countByReason("overdue_follow_up"),
+      dueToday: countByReason("due_today_follow_up"),
+      unanswered: countByReason("unanswered_conversation"),
+      uncontacted: countByReason("uncontacted_lead"),
+      noFollowUp: countByReason("no_follow_up"),
       stalledPipeline,
     },
   };
