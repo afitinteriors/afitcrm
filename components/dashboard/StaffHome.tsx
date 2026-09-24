@@ -7,6 +7,7 @@ import type { UpcomingFollowUp } from "@/lib/follow-ups";
 import { formatDate } from "@/lib/format";
 import { businessDate } from "@/lib/business-time";
 import { FOLLOW_UP_TYPE_LABELS } from "@/lib/constants";
+import { excludeDutyNow } from "@/lib/follow-up-queues";
 
 const CLOCK_ICON = <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M12 6v6l4 2m6-2a10 10 0 11-20 0 10 10 0 0120 0z" />;
 const CHECK_ICON = <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />;
@@ -47,13 +48,18 @@ export function StaffHome({
   queue: DutyQueue;
   upcoming: UpcomingFollowUp[];
 }) {
-  const overdueItems = queue.items.filter((i) => i.reasonKind === "overdue_follow_up");
-  const dueTodayItems = queue.items.filter((i) => i.reasonKind === "due_today_follow_up");
-  const otherItems = queue.items.filter(
-    (i) => i.reasonKind === "unanswered_conversation" || i.reasonKind === "uncontacted_lead" || i.reasonKind === "no_follow_up",
+  const topItem = queue.items[0] ?? null;
+  // The Duty Now lead lives only in the Duty Now card, never also in one of
+  // these derived buckets -- same rule as StaffFollowUpsView.tsx.
+  const overdueItems = excludeDutyNow(queue.items.filter((i) => i.reasonKind === "overdue_follow_up"), topItem);
+  const dueTodayItems = excludeDutyNow(queue.items.filter((i) => i.reasonKind === "due_today_follow_up"), topItem);
+  const otherItems = excludeDutyNow(
+    queue.items.filter(
+      (i) => i.reasonKind === "unanswered_conversation" || i.reasonKind === "uncontacted_lead" || i.reasonKind === "no_follow_up",
+    ),
+    topItem,
   );
   const dueSoon = upcoming.filter((f) => f.due_date > businessDate());
-  const topItem = queue.items[0] ?? null;
   const restItems = queue.items.slice(1);
 
   return (
