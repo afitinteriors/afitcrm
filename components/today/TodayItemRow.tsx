@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { FOLLOW_UP_TYPE_LABELS } from "@/lib/constants";
 import { formatCurrency, formatDate, formatDateTime, formatRelative } from "@/lib/format";
 import {
@@ -17,6 +18,7 @@ import type { TodayItem, TodayItemKind } from "@/lib/today";
 const KIND_BADGE: Record<TodayItemKind, { label: string; className: string } | null> = {
   overdue: { label: "Overdue", className: "bg-danger-soft text-danger" },
   due_today: { label: "Due today", className: "bg-warning-soft text-warning" },
+  unanswered: { label: "Unanswered", className: "bg-warning-soft text-warning" },
   new: null,
   site_visit: { label: "Site visit today", className: "bg-accent/15 text-accent-foreground" },
   no_follow_up: { label: "No follow-up", className: "bg-muted text-muted-foreground" },
@@ -42,7 +44,11 @@ function contextLine(item: TodayItem): string {
   switch (item.kind) {
     case "overdue":
     case "due_today":
-      return `${item.followUp ? followUpText(item.followUp) : "Follow-up"}${notes}`;
+      // The matched follow-up row is display enrichment; if it isn't in the
+      // secondary follow-ups fetch, the canonical duty's own text still says why.
+      return `${item.followUp ? followUpText(item.followUp) : (item.dutyReasonText ?? "Follow-up")}${notes}`;
+    case "unanswered":
+      return "Customer messaged on WhatsApp and hasn't had a reply yet";
     case "new": {
       const first = item.firstMessage ? ` — “${truncate(item.firstMessage, 90)}”` : "";
       return `New enquiry, received ${formatRelative(item.createdAt)}${first}`;
@@ -73,7 +79,7 @@ function dealContextLine(item: TodayItem): string {
       ? "No follow-up scheduled"
       : item.followUp
         ? `${followUpText(item.followUp)}${item.followUp.notes ? ` — ${truncate(item.followUp.notes, 80)}` : ""}`
-        : "Follow-up";
+        : (item.dutyReasonText ?? "Follow-up");
   return [money, state, `updated ${formatRelative(item.updatedAt)}`].filter(Boolean).join(" · ");
 }
 
@@ -87,6 +93,7 @@ function reasonIcon(item: TodayItem, variant: "default" | "deal"): string {
       return ICON.pin;
     case "no_follow_up":
       return ICON.doc;
+    case "unanswered":
     case "new":
       return ICON.chat;
   }
@@ -117,14 +124,27 @@ export function TodayItemRow({
   const context = variant === "deal" ? dealContextLine(item) : contextLine(item);
 
   return (
-    <li className={leadCardClass(item.stage)} data-testid="today-item" data-lead-id={item.leadId}>
-      <LeadAvatar leadId={item.leadId} name={item.customerName} />
+    // A lead-less item (an unanswered conversation not yet linked to a lead)
+    // has no stage: it takes the neutral slate accent and shows no stage badge.
+    <li className={leadCardClass(item.stage ?? "invalid")} data-testid="today-item" data-lead-id={item.leadId ?? undefined}>
+      <LeadAvatar leadId={item.leadId ?? item.key} name={item.customerName} />
 
       <div className="[grid-area:1/2/2/3] min-w-0">
         <div className="flex flex-col items-start gap-1 lg:flex-row lg:flex-wrap lg:items-center lg:gap-x-2">
-          <LeadNameLink leadId={item.leadId} name={item.customerName} />
+          {item.leadId ? (
+            <LeadNameLink leadId={item.leadId} name={item.customerName} />
+          ) : (
+            // Same stretched-link treatment as LeadNameLink, pointed at the
+            // conversation -- the same destination the Dashboard's DutyList uses.
+            <Link
+              href={`/conversations/${item.conversationId}`}
+              className="min-w-0 max-w-full break-words text-base font-semibold leading-snug text-foreground after:absolute after:inset-0 after:rounded-2xl after:content-[''] focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-ring"
+            >
+              {item.customerName}
+            </Link>
+          )}
           <div className="flex flex-wrap items-center gap-1.5">
-            <StageBadge stage={item.stage} />
+            {item.stage && <StageBadge stage={item.stage} />}
             {badge && (
               <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${badge.className}`}>{badge.label}</span>
             )}
@@ -141,10 +161,12 @@ export function TodayItemRow({
       </p>
 
       <p className="flex flex-wrap items-center gap-x-3 gap-y-1 self-end text-xs text-muted-foreground [grid-area:3/1/4/3] lg:self-center lg:[grid-area:3/2/4/3]">
-        <span className="inline-flex items-center gap-1">
-          <Glyph d={ICON.phone} className="h-3 w-3 shrink-0" />
-          {item.phone}
-        </span>
+        {item.phone && (
+          <span className="inline-flex items-center gap-1">
+            <Glyph d={ICON.phone} className="h-3 w-3 shrink-0" />
+            {item.phone}
+          </span>
+        )}
         {item.serviceRequired && (
           <span className="inline-flex items-center gap-1 font-medium text-foreground/70">
             <Glyph d={ICON.tag} className="h-3 w-3 shrink-0" />

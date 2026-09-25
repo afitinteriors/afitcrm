@@ -14,6 +14,22 @@ const ICON = {
     />
   ),
   newLeads: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M12 4.5v15m7.5-7.5h-15" />,
+  unanswered: (
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={1.75}
+      d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm3.75 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm3.75 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zM21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z"
+    />
+  ),
+  noFollowUp: (
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={1.75}
+      d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+    />
+  ),
   siteVisits: (
     <path
       strokeLinecap="round"
@@ -75,6 +91,16 @@ function buildSections(board: TodayBoard): SectionConfig[] {
       tileLabel: "Due today",
     },
     {
+      id: "unanswered",
+      title: "Unanswered",
+      hint: "Customers who messaged on WhatsApp and haven't had a reply yet.",
+      empty: "No unanswered messages right now.",
+      items: board.unanswered,
+      tone: board.unanswered.length > 0 ? "warning" : "neutral",
+      icon: ICON.unanswered,
+      tileLabel: "Unanswered",
+    },
+    {
       id: "new-leads",
       title: "New / uncontacted",
       hint: "New leads with no follow-up yet — they still need a first contact.",
@@ -83,6 +109,16 @@ function buildSections(board: TodayBoard): SectionConfig[] {
       tone: board.newLeads.length > 0 ? "accent" : "neutral",
       icon: ICON.newLeads,
       tileLabel: "New leads",
+    },
+    {
+      id: "no-follow-up",
+      title: "No follow-up scheduled",
+      hint: "Open leads with nothing scheduled — not new, not a deal in progress.",
+      empty: "Every other open lead has a next step scheduled.",
+      items: board.noFollowUp,
+      tone: board.noFollowUp.length > 0 ? "warning" : "neutral",
+      icon: ICON.noFollowUp,
+      tileLabel: "No follow-up",
     },
     {
       id: "site-visits",
@@ -170,7 +206,7 @@ export function TodayBoardView({
 }) {
   const sections = buildSections(board);
   const bySection = Object.fromEntries(sections.map((s) => [s.id, s]));
-  const left = ["overdue", "due-today", "new-leads"].map((id) => bySection[id]);
+  const left = ["overdue", "due-today", "unanswered", "new-leads", "no-follow-up"].map((id) => bySection[id]);
   const right = ["site-visits", "quotations", "negotiations"].map((id) => bySection[id]);
 
   return (
@@ -180,7 +216,7 @@ export function TodayBoardView({
         What needs attention across your pipeline today · {dateLabel}
       </p>
 
-      <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-6" data-testid="today-tiles">
+      <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4" data-testid="today-tiles">
         {sections.map((section) => (
           <StatCard
             key={section.id}
@@ -200,8 +236,8 @@ export function TodayBoardView({
         >
           <p className="text-sm font-medium text-foreground">You&apos;re all caught up for today.</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            No overdue or due follow-ups, no new leads waiting, no site visits today, and no quotation or negotiation
-            needs a nudge.
+            No overdue or due follow-ups, no unanswered messages, no new leads waiting, no site visits today, and no
+            quotation, negotiation, or stale open lead needs a nudge.
           </p>
         </div>
       )}

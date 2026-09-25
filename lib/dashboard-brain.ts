@@ -3,10 +3,10 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentProfile } from "@/lib/auth";
 import { getUncontactedLeads } from "@/lib/leads";
 import { getUnansweredConversations } from "@/lib/conversations";
-import { OPEN_LEAD_STATUSES, FOLLOW_UP_TYPE_LABELS } from "@/lib/constants";
-import { formatDate } from "@/lib/format";
+import { OPEN_LEAD_STATUSES } from "@/lib/constants";
 import { businessDate } from "@/lib/business-time";
 import type { LeadStatus } from "@/lib/supabase/types";
+import { buildDutyItems, type DutyFollowUpWithLead, type DutyLeadWithoutFollowUp, type DutyItem, type DutyReasonKind } from "@/lib/duty";
 
 // AFIT Follow-Up Brain -- Phase A (UI-only).
 //
@@ -18,43 +18,15 @@ import type { LeadStatus } from "@/lib/supabase/types";
 // introduced. See docs/strategy/follow-up-brain/ for the strategy this
 // implements (04_PRIORITY_AND_DUE_DATE_RULES.md in particular -- the tier
 // order below is that document's MUST-HAVE signal list, made concrete).
-
-export type DutyReasonKind =
-  | "overdue_follow_up"
-  | "due_today_follow_up"
-  | "unanswered_conversation"
-  | "uncontacted_lead"
-  | "no_follow_up";
-
-export type DutyItem = {
-  key: string;
-  tier: number;
-  leadId: string | null;
-  conversationId: string | null;
-  followUpId: string | null;
-  customerName: string;
-  phone: string | null;
-  stage: LeadStatus | null;
-  assignedToName: string | null;
-  reasonKind: DutyReasonKind;
-  reasonText: string;
-  actionLabel: string;
-  sortAt: string; // ISO timestamp/date used to order items within a tier
-};
-
-// Tier order is the one deterministic rule this phase defines (per
-// 04_PRIORITY_AND_DUE_DATE_RULES.md section A): overdue first, then due
-// today, then the other MUST-HAVE attention signals in a fixed order so the
-// result is always reproducible from the same data. This is an ordering
-// rule over existing facts, not a score -- no numeric weight is assigned to
-// any signal.
-const TIER = {
-  OVERDUE_FOLLOW_UP: 1,
-  DUE_TODAY_FOLLOW_UP: 2,
-  UNANSWERED_CONVERSATION: 3,
-  UNCONTACTED_LEAD: 4,
-  NO_FOLLOW_UP: 5,
-} as const;
+//
+// Duty Architecture Audit (2026-09) Phase 2: the actual signal-building/
+// priority/dedup logic now lives in lib/duty.ts (buildDutyItems), the ONE
+// canonical Duty derivation shared with lib/today.ts -- this file is only
+// responsible for fetching the raw, RLS-scoped signals and handing them to
+// it. DutyItem/DutyReasonKind are re-exported here unchanged so every
+// existing `import { DutyItem, ... } from "@/lib/dashboard-brain"` (Staff/
+// AdminHome, DutyList, the Follow-ups views) keeps working without change.
+export type { DutyItem, DutyReasonKind };
 
 // "Today" for due-date comparisons is the business-zone (IST) calendar day --
 // the same rule /today, /follow-ups and /site-visits use (lib/business-time.ts).
@@ -62,21 +34,11 @@ function todayIso(): string {
   return businessDate();
 }
 
-type FollowUpWithLead = {
-  id: string;
-  lead_id: string;
-  type: string;
-  due_date: string;
-  due_time: string | null;
-  notes: string | null;
-  lead: { customer_name: string | null; phone: string; status: LeadStatus; assigned: { display_name: string | null } | null } | null;
-};
-
-// Pending follow-ups only, split into overdue / due-today by the caller.
+// Pending follow-ups only, split into overdue / due-today by buildDutyItems.
 // Excludes rows whose lead is missing or already closed (Won/Lost/Invalid)
 // -- a closed lead should never generate a duty item, even if a stale
 // follow-up row exists against it.
-async function getPendingFollowUpsWithLead(): Promise<FollowUpWithLead[]> {
+async function getPendingFollowUpsWithLead(): Promise<DutyFollowUpWithLead[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("follow_ups")
@@ -86,19 +48,10 @@ async function getPendingFollowUpsWithLead(): Promise<FollowUpWithLead[]> {
     .order("due_time", { ascending: true, nullsFirst: false });
 
   if (error) throw new Error(error.message);
-  return ((data ?? []) as unknown as FollowUpWithLead[]).filter(
+  return ((data ?? []) as unknown as DutyFollowUpWithLead[]).filter(
     (f) => f.lead && OPEN_LEAD_STATUSES.includes(f.lead.status),
   );
 }
-
-type LeadForDuty = {
-  id: string;
-  customer_name: string | null;
-  phone: string;
-  status: LeadStatus;
-  created_at: string;
-  assigned: { display_name: string | null } | null;
-};
 
 // The set of lead ids that currently have at least one pending follow-up --
 // computed once and reused by both the "uncontacted" and "no follow-up
@@ -110,7 +63,7 @@ async function getLeadIdsWithPendingFollowUp(): Promise<Set<string>> {
   return new Set((data ?? []).map((f) => f.lead_id));
 }
 
-async function getOpenLeadsWithoutPendingFollowUp(statuses: LeadStatus[], excludeIds: Set<string>): Promise<LeadForDuty[]> {
+async function getOpenLeadsWithoutPendingFollowUp(statuses: LeadStatus[], excludeIds: Set<string>): Promise<DutyLeadWithoutFollowUp[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("leads")
@@ -120,7 +73,7 @@ async function getOpenLeadsWithoutPendingFollowUp(statuses: LeadStatus[], exclud
     .order("created_at", { ascending: true });
 
   if (error) throw new Error(error.message);
-  return ((data ?? []) as unknown as LeadForDuty[]).filter((lead) => !excludeIds.has(lead.id));
+  return ((data ?? []) as unknown as DutyLeadWithoutFollowUp[]).filter((lead) => !excludeIds.has(lead.id));
 }
 
 export type DutyQueue = {
@@ -160,106 +113,22 @@ export async function getMyDutyQueue(): Promise<DutyQueue> {
     leadIdsWithFollowUp,
   );
 
-  const items: DutyItem[] = [];
-
-  for (const f of pendingFollowUps) {
-    if (!f.lead) continue;
-    const overdue = f.due_date < today;
-    const dueToday = f.due_date === today;
-    if (!overdue && !dueToday) continue; // upcoming follow-ups aren't part of the attention queue itself
-    items.push({
-      key: `follow_up:${f.id}`,
-      tier: overdue ? TIER.OVERDUE_FOLLOW_UP : TIER.DUE_TODAY_FOLLOW_UP,
-      leadId: f.lead_id,
-      conversationId: null,
-      followUpId: f.id,
-      customerName: f.lead.customer_name || "Unnamed lead",
-      phone: f.lead.phone,
-      stage: f.lead.status,
-      assignedToName: f.lead.assigned?.display_name ?? null,
-      reasonKind: overdue ? "overdue_follow_up" : "due_today_follow_up",
-      reasonText: overdue
-        ? `${FOLLOW_UP_TYPE_LABELS[f.type as keyof typeof FOLLOW_UP_TYPE_LABELS] ?? "Follow-up"} overdue since ${formatDate(f.due_date)}`
-        : `${FOLLOW_UP_TYPE_LABELS[f.type as keyof typeof FOLLOW_UP_TYPE_LABELS] ?? "Follow-up"} due today`,
-      actionLabel: "Complete follow-up",
-      sortAt: f.due_date,
-    });
-  }
-
-  for (const c of unanswered) {
-    items.push({
-      key: `conversation:${c.id}`,
-      tier: TIER.UNANSWERED_CONVERSATION,
-      leadId: c.lead?.id ?? null,
-      conversationId: c.id,
-      followUpId: null,
-      customerName: c.lead?.customer_name || c.wa_id,
-      phone: c.wa_id,
-      stage: null,
-      assignedToName: c.lead?.assigned?.display_name ?? null,
-      reasonKind: "unanswered_conversation",
-      reasonText: "Customer messaged on WhatsApp and hasn't had a reply yet",
-      actionLabel: "Open conversation",
-      sortAt: c.lastInboundAt,
-    });
-  }
-
-  for (const lead of uncontactedLeads) {
-    items.push({
-      key: `uncontacted:${lead.id}`,
-      tier: TIER.UNCONTACTED_LEAD,
-      leadId: lead.id,
-      conversationId: null,
-      followUpId: null,
-      customerName: lead.customer_name || "Unnamed lead",
-      phone: lead.phone,
-      stage: lead.status,
-      assignedToName: lead.assigned?.display_name ?? null,
-      reasonKind: "uncontacted_lead",
-      reasonText: "New enquiry -- needs first contact",
-      actionLabel: "Call customer",
-      sortAt: lead.created_at,
-    });
-  }
-
-  for (const lead of noFollowUpElsewhere) {
-    items.push({
-      key: `no_follow_up:${lead.id}`,
-      tier: TIER.NO_FOLLOW_UP,
-      leadId: lead.id,
-      conversationId: null,
-      followUpId: null,
-      customerName: lead.customer_name || "Unnamed lead",
-      phone: lead.phone,
-      stage: lead.status,
-      assignedToName: lead.assigned?.display_name ?? null,
-      reasonKind: "no_follow_up",
-      reasonText: "No follow-up has been scheduled for this lead",
-      actionLabel: "Open lead",
-      sortAt: lead.created_at,
-    });
-  }
-
-  items.sort((a, b) => (a.tier !== b.tier ? a.tier - b.tier : new Date(a.sortAt).getTime() - new Date(b.sortAt).getTime()));
-
-  // The same lead can legitimately trigger more than one signal at once
-  // (e.g. an unanswered conversation AND no follow-up scheduled -- this is
-  // the everyday shape of a brand-new WhatsApp enquiry, not an edge case).
-  // The *displayed* queue shows that lead once, under its highest-tier
-  // (most urgent) reason -- items are already tier-sorted above, so keeping
-  // the first occurrence per lead id is sufficient.
-  const seenLeadIds = new Set<string>();
-  const dedupedItems = items.filter((item) => {
-    if (!item.leadId) return true;
-    if (seenLeadIds.has(item.leadId)) return false;
-    seenLeadIds.add(item.leadId);
-    return true;
+  // The one canonical derivation (lib/duty.ts) -- already tier-sorted and
+  // deduped to one winning DutyItem per lead. lib/today.ts consumes the
+  // exact same function's output for /today; there is no second definition
+  // of "needs attention" anywhere in the app.
+  const dedupedItems = buildDutyItems({
+    pendingFollowUps,
+    unanswered,
+    uncontactedLeads,
+    noFollowUpLeads: noFollowUpElsewhere,
+    today,
   });
 
   // Counts MUST be derived from dedupedItems, not the raw per-signal source
-  // arrays (unanswered/uncontactedLeads/noFollowUpElsewhere/items) -- a lead
-  // that trips two signals at once is shown once in the list (above), and a
-  // stat tile built from the raw arrays would silently count it twice,
+  // arrays (unanswered/uncontactedLeads/noFollowUpElsewhere) -- a lead that
+  // trips two signals at once is shown once in the list (above), and a stat
+  // tile built from the raw arrays would silently count it twice,
   // disagreeing with what's actually visible when you click through. This
   // was a real bug (2026-09 Duty Architecture Audit, finding C(i)): e.g. a
   // fresh WhatsApp lead is simultaneously "unanswered" and "uncontacted",
