@@ -587,6 +587,26 @@ of the whole-card Lead Detail link), chevron. Verified in LIVE production at
 sections, bottom nav unchanged. The service worker caches nothing, so it did not
 cause stale UI. Tests 257/257, typecheck/lint/build clean at implementation.
 
+**Today lead-card mobile refinement** — 2026-09-20, COMPLETED, committed
+`c800fb8030e56eb069f152f5b4646b1678addd2e`, Vercel production
+`dpl_DmwZ9isDug5CQjFNzzDfP7NEcVd8` (Ready, active Production at
+afit-lead-crm.vercel.app, deployed source SHA exactly matches c800fb8).
+UI-only (`components/today/TodayItemRow.tsx`), responsive Tailwind, desktop
+layout preserved. Mobile: white rounded elevated cards with stage-based left
+accent, 44px initials avatar, customer name with natural wrapping, stage pill
+underneath, top-right Lead Detail chevron, activity/phone/service rows, 44×44
+blue Call and 44×44 green WhatsApp buttons (bottom right), responsive spacing.
+Call and WhatsApp stay independent of the whole-card Lead Detail link; the
+chevron is pointer-events-none so a tap on it reaches the card link (a hover
+transform had lifted it above the overlay and swallowed the click). Verified
+LIVE: 390×844 and 360×800 with no clipping, overlaps or horizontal overflow;
+1440×900 desktop unchanged; Today still 6 sections; bottom nav unchanged; card
+body and chevron open Lead Detail; Call/WhatsApp fire only their own action; no
+console/page errors; service worker has 0 caches and did not cause stale UI.
+Tests 257/257, typecheck/lint/build clean. Known minor limitation (not a
+functional failure): at 360px a long name such as `sumeshsachus` wraps
+mid-word; it stays readable and functional, and can be refined later.
+
 **Push notifications, Phase A (PWA + subscription foundation)** — 2026-09-20,
 commits `4ec76ef` (PWA installability) and `a6bbc7a`, completed and
 production-verified. Manifest/icons/root-scope service worker (caches nothing),
@@ -617,6 +637,31 @@ to the placeholder/example value during the latest diagnostic attempts, so the
 server rejects sends. Fix is a Vercel Production config change followed by a
 redeploy and one explicit test send. Never record VAPID keys, the subject
 value, subscription endpoints or tokens in this file.
+
+**Duty Phase 2 (unified canonical Duty architecture)** — 2026-09-25, committed
+`d7e2b4dd39d0de3805a2d4bc641e276f0007fd56`. `buildDutyItems()` in `lib/duty.ts`
+is the one Duty derivation; Dashboard (`getMyDutyQueue()`) and `/today`
+(`buildTodayBoard()`, now built from the canonical `DutyItem[]`, lead records
+are display enrichment only) both consume it. Priority: overdue > due today >
+unanswered > uncontacted > no follow-up; one winning item per lead, no-lead
+items (unanswered conversation without a lead) stay visible. Site visits remain
+a separate Today spotlight, not a Duty signal (the lead's duty is carried on
+the item). Staff ownership/RLS unchanged. 371/371 tests, typecheck/lint/build
+clean. In production via `a95d120`. Live browser verification of `/today`
+(incl. the new lead-less Duty card paths) still pending.
+
+**WABIS auto-assignment** — 2026-09-25, committed
+`a95d12023ec3164b6fd50c0c68bf1d3a604e9b29`. New WABIS leads are assigned to
+Azhar at creation: optional `defaultAssigneeId` (set only by
+`parseWabisMessage`) used only in the new-lead INSERT of
+`createOrLinkLeadForConversation()`; existing leads (incl. unassigned) and
+race losers are never touched; automation/Meta paths unchanged. Profile is
+validated (existing `staff`) before use; any failure leaves the new lead
+unassigned, never lost. No audit event (webhook has no actor). No schema/RLS
+change; dedupe/race behavior unchanged. 389/389 tests, typecheck/lint/build
+clean. Production `dpl_EUiZhEUtcbb9XhNkj2TLkR3TZpai` Ready, SHA exactly matches
+`a95d120`. A real production WABIS message exercising the assignment is still
+pending.
 
 **2026-09-05** — This file restructured from 215k+ to under the 100k
 limit per explicit instruction: verbose per-session narratives compacted
