@@ -17,6 +17,12 @@ export type CreateOrLinkLeadContext = {
   phone: string;
   customerName: string | null;
   serviceName: string;
+  // Owner for a lead this call genuinely INSERTS -- never applied to an
+  // existing lead, a concurrent-race winner reused by the loser, or anything
+  // else. Only the WABIS ingestion path supplies it (see
+  // lib/whatsapp/parse-wabis.ts); the automation executor never does, so
+  // automation-created leads keep their existing unassigned behavior.
+  defaultAssigneeId?: string;
 };
 
 export type CreateOrLinkLeadResult = {
@@ -26,6 +32,34 @@ export type CreateOrLinkLeadResult = {
 
 // PostgreSQL SQLSTATE for unique_violation, as surfaced by PostgREST.
 const UNIQUE_VIOLATION = "23505";
+
+// Resolves a requested default assignee to a usable leads.assigned_to_id, or
+// null. The id must belong to an existing `staff` profile -- the same target
+// rule assignLead() enforces for a manual assignment. Anything else (not
+// found, wrong role, lookup error) yields null so the lead is still created,
+// unassigned, exactly as before this option existed: an invalid id reaching
+// the insert would fail leads_assigned_to_id_fkey, and that throw would be
+// swallowed by ingest.ts's best-effort try/catch -- silently losing the lead.
+// Never throws. Logs no identifiers.
+async function resolveDefaultAssignee(
+  supabase: SupabaseClient<Database>,
+  assigneeId: string | undefined
+): Promise<string | null> {
+  if (!assigneeId) return null;
+  try {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id")
+      .eq("id", assigneeId)
+      .eq("role", "staff")
+      .limit(1);
+    if (!error && data && data.length === 1) return assigneeId;
+  } catch {
+    // fall through -- a thrown lookup must not cost us the lead either
+  }
+  console.error("Default lead assignee could not be validated; creating the lead unassigned.");
+  return null;
+}
 
 async function findLeadsByPhoneExact(
   supabase: SupabaseClient<Database>,
@@ -88,6 +122,10 @@ export async function createOrLinkLeadForConversation(
   let created = false;
 
   if (!leadId) {
+    // Only reached when no active lead exists for this phone -- the one
+    // branch that can insert. Validated before the insert so a bad id can
+    // never cost us the lead itself.
+    const assigneeId = await resolveDefaultAssignee(supabase, context.defaultAssigneeId);
     const { data: newLead, error: insertError } = await supabase
       .from("leads")
       .insert({
@@ -95,6 +133,9 @@ export async function createOrLinkLeadForConversation(
         customer_name: context.customerName,
         service_required: context.serviceName,
         source: "whatsapp",
+        // Omitted entirely (not null) when there's no assignee, so an insert
+        // without one is byte-for-byte what it was before this option.
+        ...(assigneeId ? { assigned_to_id: assigneeId } : {}),
       })
       .select("id")
       .single();

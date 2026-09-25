@@ -34,6 +34,15 @@ import type { InboundWhatsAppMessage } from "./ingest";
 
 export type ParsedWabisMessage = InboundWhatsAppMessage;
 
+// Owner for every NEW lead this endpoint creates: Azhar Vahab's profile id
+// (the only matching profile; role `staff`). A routing fact about this
+// endpoint, like serviceHint -- not read from the payload. Applied only when
+// a lead is genuinely inserted (lib/automations/crm-actions.ts); existing
+// leads, including unassigned ones, are never touched. Validated against
+// profiles before use -- if it ever stops resolving to a staff profile, new
+// leads are created unassigned rather than lost.
+export const WABIS_NEW_LEAD_ASSIGNEE_ID = "243a2241-848e-4209-8712-8636de4835dd";
+
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
 }
@@ -130,6 +139,7 @@ export function parseWabisMessage(payload: unknown): ParsedWabisMessage | null {
     // fact, not anything read from the payload, is the entire basis for
     // this hint; it is never derived from message text.
     serviceHint: "Gypsum Plaster",
+    defaultAssigneeId: WABIS_NEW_LEAD_ASSIGNEE_ID,
     raw: payload,
   };
 }

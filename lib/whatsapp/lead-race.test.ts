@@ -43,7 +43,7 @@ import { parseWabisMessage } from "./parse-wabis";
 type Row = Record<string, unknown>;
 type DbError = { code?: string; message: string };
 type DbResult = { data: unknown; error: DbError | null };
-type Table = "leads" | "conversations" | "messages";
+type Table = "leads" | "conversations" | "messages" | "profiles";
 
 class Barrier {
   private arrived = 0;
@@ -64,6 +64,9 @@ class MemoryDb {
   leads: Row[] = [];
   conversations: Row[] = [];
   messages: Row[] = [];
+  profiles: Row[] = [];
+  // Every UPDATE payload, per table -- lets tests prove what was (not) written.
+  updates: Array<{ table: Table; payload: Row }> = [];
   barriers: Partial<Record<Table, Barrier>> = {};
   private seq = 0;
 
@@ -146,6 +149,7 @@ class MemoryDb {
     const run = async (opts: { limit?: number; single?: boolean; maybe?: boolean }): Promise<DbResult> => {
       if (state.op === "insert") return this.insert(table, state.payload);
       if (state.op === "update") {
+        this.updates.push({ table, payload: state.payload });
         this.rows(table)
           .filter(matches)
           .forEach((row) => Object.assign(row, state.payload));
@@ -412,5 +416,113 @@ describe("manual lead creation (createLead) against the same database rules", ()
     expect(redirectMock).toHaveBeenCalledTimes(1);
     expect(db.activeLeads()).toHaveLength(1);
     expect(db.leads).toHaveLength(2);
+  });
+});
+
+describe("WABIS new-lead auto-assignment (Azhar) against the same database rules", () => {
+  const AZHAR = "243a2241-848e-4209-8712-8636de4835dd";
+  const wabisPayload = {
+    first_name: "Test",
+    chat_id: "919000000001",
+    postbackid: "",
+    user_input_data: [] as unknown[],
+    user_message: "Hello! Can I get more info about Gypsum plastering?",
+    whatsapp_bot_username: "+91 7356877322",
+  };
+
+  let db: MemoryDb;
+  beforeEach(() => {
+    db = new MemoryDb();
+    db.profiles.push({ id: AZHAR, role: "staff" });
+  });
+
+  function wabis(body = wabisPayload.user_message) {
+    const parsed = parseWabisMessage({ ...wabisPayload, user_message: body });
+    if (!parsed) throw new Error("test payload must parse");
+    return parsed;
+  }
+  const assigneeWrites = () => db.updates.filter((u) => u.table === "leads" && "assigned_to_id" in u.payload);
+
+  it("1. a NEW WABIS lead is created owned by Azhar", async () => {
+    const outcome = await ingestInboundMessage(db.client(), wabis());
+
+    expect(outcome.status).toBe("ingested");
+    expect(db.activeLeads()).toHaveLength(1);
+    expect(db.activeLeads()[0]).toMatchObject({ assigned_to_id: AZHAR, service_required: "Gypsum Plaster", source: "whatsapp" });
+  });
+
+  it("2. an EXISTING WABIS lead owned by another staff member keeps its owner", async () => {
+    const existing = db.seedLead({ phone: "+919000000001", assigned_to_id: "user-other-staff", service_required: "Gypsum Plaster" });
+    const before = { ...existing };
+
+    await ingestInboundMessage(db.client(), wabis());
+
+    expect(db.activeLeads()).toHaveLength(1);
+    expect(db.leads[0]).toEqual(before);
+    expect(assigneeWrites()).toEqual([]);
+  });
+
+  it("3. an EXISTING UNASSIGNED WABIS lead stays unassigned", async () => {
+    db.seedLead({ phone: "+919000000001", assigned_to_id: null, service_required: null });
+
+    await ingestInboundMessage(db.client(), wabis());
+
+    expect(db.activeLeads()).toHaveLength(1);
+    expect(db.leads[0].assigned_to_id).toBeNull();
+    expect(db.leads[0].service_required).toBe("Gypsum Plaster"); // existing fill-if-empty still applies
+    expect(assigneeWrites()).toEqual([]);
+  });
+
+  it("4. concurrent duplicate deliveries: ONE lead, owned by Azhar, and the race loser writes no assignee", async () => {
+    db.barriers.conversations = new Barrier(2);
+    db.barriers.leads = new Barrier(2);
+
+    const [a, b] = await Promise.all([ingestInboundMessage(db.client(), wabis()), ingestInboundMessage(db.client(), wabis())]);
+
+    expect([a.status, b.status].sort()).toEqual(["duplicate", "ingested"]);
+    expect(db.activeLeads()).toHaveLength(1);
+    expect(db.activeLeads()[0].assigned_to_id).toBe(AZHAR);
+    expect(assigneeWrites()).toEqual([]); // assigned only by the winning INSERT
+    expect(db.messages).toHaveLength(1);
+  });
+
+  it("5. a later duplicate redelivery never reassigns -- even after an admin moved the lead to someone else", async () => {
+    await ingestInboundMessage(db.client(), wabis());
+    db.activeLeads()[0].assigned_to_id = "user-other-staff"; // manual reassignment in between
+
+    const redelivery = await ingestInboundMessage(db.client(), wabis());
+    const newMessage = await ingestInboundMessage(db.client(), wabis("A different follow-up message"));
+
+    expect(redelivery.status).toBe("duplicate");
+    expect(newMessage.status).toBe("ingested");
+    expect(db.activeLeads()).toHaveLength(1);
+    expect(db.activeLeads()[0].assigned_to_id).toBe("user-other-staff");
+    expect(assigneeWrites()).toEqual([]);
+  });
+
+  it("6. a Meta-shaped message (no serviceHint, no defaultAssigneeId) creates no lead and assigns nobody -- unchanged", async () => {
+    const meta = { ...wabis(), serviceHint: undefined, defaultAssigneeId: undefined, phoneNumberId: "meta-pnid", waMessageId: "wamid.X" };
+
+    await ingestInboundMessage(db.client(), meta);
+
+    expect(db.leads).toHaveLength(0);
+    expect(assigneeWrites()).toEqual([]);
+  });
+
+  it.each([
+    ["Azhar's profile is missing", () => (db.profiles = [])],
+    ["the id resolves to a non-staff (admin) profile", () => (db.profiles = [{ id: AZHAR, role: "admin" }])],
+  ])("7. %s -> the WABIS lead is still created, unassigned (never lost)", async (_label, arrange) => {
+    arrange();
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const outcome = await ingestInboundMessage(db.client(), wabis());
+
+    expect(outcome.status).toBe("ingested");
+    expect(db.activeLeads()).toHaveLength(1);
+    expect(db.activeLeads()[0].assigned_to_id ?? null).toBeNull();
+    expect(db.activeLeads()[0].service_required).toBe("Gypsum Plaster");
+    expect(db.conversations.every((c) => c.lead_id === db.activeLeads()[0].id)).toBe(true);
+    errorSpy.mockRestore();
   });
 });

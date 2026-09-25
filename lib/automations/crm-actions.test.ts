@@ -353,3 +353,133 @@ describe("createOrLinkLeadForConversation", () => {
     });
   });
 });
+
+describe("createOrLinkLeadForConversation -- defaultAssigneeId (WABIS new-lead auto-assignment)", () => {
+  const AZHAR = "243a2241-848e-4209-8712-8636de4835dd";
+  const WITH_ASSIGNEE: CreateOrLinkLeadContext = { ...BASE_CONTEXT, defaultAssigneeId: AZHAR };
+
+  type Spy = ReturnType<typeof vi.fn>;
+  type Builder = { insert: Spy; update: Spy; eq: Spy; is: Spy; select: Spy };
+  function buildersFor(from: Spy, table: string): Builder[] {
+    return from.mock.results.filter((_, i) => from.mock.calls[i][0] === table).map((r) => r.value as Builder);
+  }
+  function writesOf(from: Spy): unknown[] {
+    return buildersFor(from, "leads").flatMap((b) => [...b.insert.mock.calls, ...b.update.mock.calls].map((c) => c[0]));
+  }
+
+  it("a genuinely NEW lead is inserted with the validated staff assignee", async () => {
+    const { stub, from } = createFakeSupabase({
+      leads: [
+        { data: [], error: null }, // phone lookup: no match
+        { data: { id: "lead-new" }, error: null }, // insert
+      ],
+      profiles: [{ data: [{ id: AZHAR }], error: null }], // validation: staff profile exists
+      conversations: [{ error: null }],
+    });
+
+    const result = await createOrLinkLeadForConversation(stub, WITH_ASSIGNEE);
+
+    expect(result).toEqual({ leadId: "lead-new", created: true });
+    const [profileLookup] = buildersFor(from, "profiles");
+    expect(profileLookup.eq).toHaveBeenCalledWith("id", AZHAR);
+    expect(profileLookup.eq).toHaveBeenCalledWith("role", "staff");
+    expect(buildersFor(from, "leads")[1].insert).toHaveBeenCalledWith({
+      phone: "+919000000000",
+      customer_name: "Test Customer",
+      service_required: "Gypsum Plaster",
+      source: "whatsapp",
+      assigned_to_id: AZHAR,
+    });
+  });
+
+  it("an EXISTING lead is never assigned -- no profile lookup, and the only lead write is the service fill-if-empty", async () => {
+    const { stub, from } = createFakeSupabase({
+      leads: [
+        { data: [{ id: "lead-existing" }], error: null }, // 1 match (owned by anyone, or unassigned)
+        { data: null, error: null }, // service_required fill-if-empty
+      ],
+      conversations: [{ error: null }],
+    });
+
+    const result = await createOrLinkLeadForConversation(stub, WITH_ASSIGNEE);
+
+    expect(result).toEqual({ leadId: "lead-existing", created: false });
+    expect(buildersFor(from, "profiles")).toHaveLength(0);
+    expect(writesOf(from)).toEqual([{ service_required: "Gypsum Plaster" }]);
+  });
+
+  it("a concurrent-race LOSER reuses the winner and never writes an assignee onto it", async () => {
+    const { stub, from } = createFakeSupabase({
+      leads: [
+        { data: [], error: null }, // lookup: nothing yet
+        { data: null, error: { code: "23505", message: "leads_active_phone_unique_idx" } }, // lost the race
+        { data: [{ id: "lead-winner" }], error: null }, // re-lookup
+        { data: null, error: null }, // service_required fill-if-empty
+      ],
+      profiles: [{ data: [{ id: AZHAR }], error: null }],
+      conversations: [{ error: null }],
+    });
+
+    const result = await createOrLinkLeadForConversation(stub, WITH_ASSIGNEE);
+
+    expect(result).toEqual({ leadId: "lead-winner", created: false });
+    // The only assignee ever sent is on the rejected insert; nothing after it
+    // (the fill-if-empty update on the winner) carries assigned_to_id.
+    const writes = writesOf(from) as Record<string, unknown>[];
+    expect(writes.filter((w) => "assigned_to_id" in w)).toHaveLength(1);
+    expect(writes[writes.length - 1]).toEqual({ service_required: "Gypsum Plaster" });
+  });
+
+  it("without defaultAssigneeId (automation executor / every non-WABIS caller) the insert is unchanged and no profile lookup happens", async () => {
+    const { stub, from } = createFakeSupabase({
+      leads: [
+        { data: [], error: null },
+        { data: { id: "lead-new" }, error: null },
+      ],
+      conversations: [{ error: null }],
+    });
+
+    await createOrLinkLeadForConversation(stub, BASE_CONTEXT);
+
+    expect(buildersFor(from, "profiles")).toHaveLength(0);
+    const inserted = buildersFor(from, "leads")[1].insert.mock.calls[0][0];
+    expect(inserted).not.toHaveProperty("assigned_to_id");
+  });
+
+  describe("failure safety: an assignee that cannot be validated never costs the lead", () => {
+    const cases: Array<[string, QueryResult | "throw"]> = [
+      ["profile not found (or not staff)", { data: [], error: null }],
+      ["profile lookup returns an error", { data: null, error: { message: "network" } }],
+      ["profile lookup throws", "throw"],
+    ];
+
+    it.each(cases)("%s -> lead still created, unassigned", async (_label, profileResult) => {
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const { stub, from } = createFakeSupabase({
+        leads: [
+          { data: [], error: null },
+          { data: { id: "lead-new" }, error: null },
+        ],
+        profiles: profileResult === "throw" ? [] : [profileResult],
+        conversations: [{ error: null }],
+      });
+      if (profileResult === "throw") {
+        const original = from.getMockImplementation()!;
+        from.mockImplementation((table: string) => {
+          if (table === "profiles") throw new Error("boom");
+          return original(table);
+        });
+      }
+
+      const result = await createOrLinkLeadForConversation(stub, WITH_ASSIGNEE);
+
+      expect(result).toEqual({ leadId: "lead-new", created: true });
+      const inserted = buildersFor(from, "leads")[1].insert.mock.calls[0][0];
+      expect(inserted).not.toHaveProperty("assigned_to_id");
+      expect(inserted).toMatchObject({ service_required: "Gypsum Plaster", source: "whatsapp" });
+      // The log carries no identifier (no UUID, no phone).
+      expect(errorSpy.mock.calls.flat().join(" ")).not.toMatch(/243a2241|\+91/);
+      errorSpy.mockRestore();
+    });
+  });
+});

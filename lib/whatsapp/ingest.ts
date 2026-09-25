@@ -31,6 +31,11 @@ export type InboundWhatsAppMessage = {
   // Gypsum Plaster WABIS endpoint's parseWabisMessage). Meta-sourced
   // messages never set this, so Meta ingestion is unaffected.
   serviceHint?: string | null;
+  // Optional, source-routing-derived owner for a lead that this message
+  // causes to be genuinely CREATED (never applied to an existing lead). Set
+  // only by the Gypsum Plaster WABIS endpoint's parseWabisMessage; Meta
+  // messages never set it.
+  defaultAssigneeId?: string | null;
 };
 
 async function findLeadIdByPhoneExact(supabase: SupabaseClient<Database>, phone: string): Promise<string | null> {
@@ -193,6 +198,7 @@ export async function ingestInboundMessage(
         phone: message.fromPhone,
         customerName: message.customerName,
         serviceName: message.serviceHint,
+        defaultAssigneeId: message.defaultAssigneeId ?? undefined,
       });
     } catch (err) {
       console.error(

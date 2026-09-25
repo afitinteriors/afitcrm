@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseWabisMessage, wabisPhoneNumberId } from "./parse-wabis";
+import { parseWabisMessage, wabisPhoneNumberId, WABIS_NEW_LEAD_ASSIGNEE_ID } from "./parse-wabis";
 
 // Shape verified against ONE real captured delivery (Vercel Preview
 // function logs, 8 Sep 2026) from the Gypsum Plaster "Contact Collection"
@@ -156,6 +156,15 @@ describe("parseWabisMessage", () => {
     // same hint.
     const otherBody = parseWabisMessage({ ...VALID_PAYLOAD, user_message: "asking about something else entirely" });
     expect(otherBody?.serviceHint).toBe("Gypsum Plaster");
+  });
+
+  it("always sets defaultAssigneeId to Azhar Vahab's profile id (routing fact, never read from the payload)", () => {
+    expect(WABIS_NEW_LEAD_ASSIGNEE_ID).toBe("243a2241-848e-4209-8712-8636de4835dd");
+    expect(parseWabisMessage(VALID_PAYLOAD)?.defaultAssigneeId).toBe(WABIS_NEW_LEAD_ASSIGNEE_ID);
+
+    // A payload field with a lookalike name can't override it.
+    const spoofed = parseWabisMessage({ ...VALID_PAYLOAD, defaultAssigneeId: "attacker", assigned_to_id: "attacker" });
+    expect(spoofed?.defaultAssigneeId).toBe(WABIS_NEW_LEAD_ASSIGNEE_ID);
   });
 });
 

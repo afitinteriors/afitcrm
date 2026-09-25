@@ -424,6 +424,48 @@ describe("ingestInboundMessage", () => {
     );
   });
 
+  it("passes the WABIS parser's defaultAssigneeId through to lead creation (applied there only on a genuine insert)", async () => {
+    const { stub } = createFakeSupabase({
+      conversations: [
+        { data: null, error: null },
+        { data: { id: "conv-11" }, error: null },
+        { error: null },
+      ],
+      leads: [{ data: [], error: null }],
+      messages: [{ data: { id: "msg-11" }, error: null }],
+    });
+    const wabis = parseWabisMessage({
+      first_name: "Test",
+      chat_id: "919000000000",
+      postbackid: "",
+      user_input_data: [],
+      user_message: "Hi",
+      whatsapp_bot_username: "+91 7356877322",
+    });
+
+    await ingestInboundMessage(stub, wabis!);
+
+    expect(createOrLinkLeadForConversation).toHaveBeenCalledWith(
+      stub,
+      expect.objectContaining({ conversationId: "conv-11", defaultAssigneeId: "243a2241-848e-4209-8712-8636de4835dd" })
+    );
+  });
+
+  it("never calls lead creation (so never assigns) when the conversation is already linked to a lead, even with defaultAssigneeId set", async () => {
+    const { stub } = createFakeSupabase({
+      conversations: [
+        { data: { id: "conv-12", lead_id: "lead-12" }, error: null },
+        { error: null },
+      ],
+      leads: [{ data: null, error: null }], // service_required fill-if-empty only
+      messages: [{ data: { id: "msg-12" }, error: null }],
+    });
+
+    await ingestInboundMessage(stub, { ...BASE_MESSAGE, serviceHint: "Gypsum Plaster", defaultAssigneeId: "243a2241-848e-4209-8712-8636de4835dd" });
+
+    expect(createOrLinkLeadForConversation).not.toHaveBeenCalled();
+  });
+
   it("does not attempt lead creation when an existing lead already matches by phone", async () => {
     const { stub } = createFakeSupabase({
       conversations: [
