@@ -1,6 +1,7 @@
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
-import type { ConversationRow, LeadRow, MessageRow } from "@/lib/supabase/types";
+import type { ConversationRow, LeadRow, LeadStatus, MessageRow } from "@/lib/supabase/types";
+import { OPEN_LEAD_STATUSES } from "@/lib/constants";
 import { getCurrentProfile } from "@/lib/auth";
 import { recordAuditEvent } from "@/lib/audit";
 
@@ -207,12 +208,20 @@ export async function getUnansweredConversations(): Promise<UnansweredConversati
 
   const { data: conversations, error: conversationsError } = await supabase
     .from("conversations")
-    .select("id, wa_id, lead:leads(id, customer_name, assigned:profiles(display_name))")
+    .select("id, wa_id, lead:leads(id, customer_name, status, assigned:profiles(display_name))")
     .eq("status", "open")
     .in("id", unansweredIds);
   if (conversationsError) throw new Error(conversationsError.message);
 
-  return ((conversations ?? []) as unknown as UnansweredConversation[])
+  // A conversation linked to a closed lead (Won/Lost/Invalid) is not open
+  // work, even if the customer's message is the latest one -- the same rule
+  // lib/dashboard-brain.ts applies to pending follow-ups (OPEN_LEAD_STATUSES).
+  // A conversation not yet linked to any lead is kept: it is a new enquiry.
+  type Row = Omit<UnansweredConversation, "lastInboundAt" | "lead"> & {
+    lead: (NonNullable<UnansweredConversation["lead"]> & { status: LeadStatus }) | null;
+  };
+  return ((conversations ?? []) as unknown as Row[])
+    .filter((c) => c.lead === null || OPEN_LEAD_STATUSES.includes(c.lead.status))
     .map((c) => ({ ...c, lastInboundAt: latestByConversation.get(c.id)!.created_at }))
     .sort((a, b) => new Date(a.lastInboundAt).getTime() - new Date(b.lastInboundAt).getTime());
 }

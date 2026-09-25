@@ -1,6 +1,8 @@
 import { getCurrentProfile } from "@/lib/auth";
 import { getMyDutyQueue, getStalledPipelineLeads, getUnassignedLeads, getStaffWorkload, getRecentLeads } from "@/lib/dashboard-brain";
-import { getUpcomingFollowUps } from "@/lib/follow-ups";
+import { getFollowUps } from "@/lib/follow-ups";
+import { getLeads } from "@/lib/leads";
+import { buildStaffHome } from "@/lib/staff-home";
 import { StaffHome } from "@/components/dashboard/StaffHome";
 import { AdminHome } from "@/components/dashboard/AdminHome";
 
@@ -26,7 +28,14 @@ export default async function DashboardPage() {
     return <AdminHome queue={queue} unassigned={unassigned} stalled={stalled} workload={workload} recent={recent} />;
   }
 
-  const [queue, upcoming] = await Promise.all([getMyDutyQueue(), getUpcomingFollowUps()]);
+  // Staff: the same canonical attention queue, plus the staff member's own
+  // leads/pending follow-ups for display detail only (service, stage, due
+  // time) -- the same trio /today uses, all RLS-scoped to their own leads.
+  const [queue, leads, followUps] = await Promise.all([
+    getMyDutyQueue(),
+    getLeads({}),
+    getFollowUps({ status: "pending" }),
+  ]);
 
-  return <StaffHome firstName={firstName} queue={queue} upcoming={upcoming} />;
+  return <StaffHome firstName={firstName} board={buildStaffHome({ dutyItems: queue.items, leads, followUps })} />;
 }
