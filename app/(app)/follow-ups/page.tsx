@@ -51,7 +51,6 @@ export default async function FollowUpsPage({
 
   return (
     <StaffFollowUpsView
-      queue={queue}
       groups={groups}
       status={status}
       type={type}
