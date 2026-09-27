@@ -3,10 +3,11 @@ import { Suspense } from "react";
 import { Sidebar } from "@/components/Sidebar";
 import { SidebarProfileFooter } from "@/components/SidebarProfileFooter";
 import { SidebarAdminNav } from "@/components/SidebarAdminNav";
-import { SignOutButton } from "@/components/SignOutButton";
 import { MobileBottomNav } from "@/components/MobileBottomNav";
 import { MobileMoreEntry } from "@/components/MobileMoreEntry";
 import { BuildingEmblem } from "@/components/BuildingEmblem";
+import { HeaderNotificationBell } from "@/components/HeaderNotificationBell";
+import { HeaderAccount } from "@/components/HeaderAccount";
 
 function SidebarFooterSkeleton() {
   return (
@@ -50,7 +51,14 @@ export default function AppLayout({ children }: LayoutProps<"/">) {
             <BuildingEmblem className="h-5 w-5 shrink-0" />
             <span className="font-brand text-sm font-semibold text-sidebar-foreground">AFIT CRM</span>
           </span>
-          <SignOutButton className="text-xs font-medium text-sidebar-muted hover:text-sidebar-foreground" />
+          <div className="flex items-center gap-1">
+            <Suspense fallback={null}>
+              <HeaderNotificationBell dark />
+            </Suspense>
+            <Suspense fallback={null}>
+              <HeaderAccount dark />
+            </Suspense>
+          </div>
         </div>
 
         <header className="flex items-center justify-end border-b border-border bg-card px-4 py-3 sm:px-6">

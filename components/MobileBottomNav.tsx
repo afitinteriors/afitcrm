@@ -17,30 +17,6 @@ const NAV_ITEMS = [
     ),
   },
   {
-    href: "/leads",
-    label: "Leads",
-    icon: (
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={1.75}
-        d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.5 20.25a7.5 7.5 0 0115 0"
-      />
-    ),
-  },
-  {
-    href: "/conversations",
-    label: "Chats",
-    icon: (
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={1.75}
-        d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm3.75 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm3.75 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zM21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z"
-      />
-    ),
-  },
-  {
     href: "/follow-ups",
     label: "Tasks",
     icon: (
@@ -52,17 +28,28 @@ const NAV_ITEMS = [
       />
     ),
   },
+  {
+    href: "/leads",
+    label: "Leads",
+    icon: (
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={1.75}
+        d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.5 20.25a7.5 7.5 0 0115 0"
+      />
+    ),
+  },
 ];
 
-// Primary mobile navigation -- the four highest-frequency daily
-// destinations (§1, post-restructure), plus a real "More" slot rendered
-// for every role via MobileMoreEntry/MobileMoreMenu, not an admin-only
-// gate. Site Visits, Deals, and Quotations are still mobile-reachable --
-// they live in More's "Work" section -- but are deliberately not
-// bottom-bar tabs, so this bar doesn't grow into a module directory as
-// future features arrive. Automation/Audit Log/Settings stay entirely out
-// of this primary bar (Management/System sections inside More, admin-only)
-// per §1's rules.
+// Primary mobile navigation -- Home / Tasks / Leads, plus a real "More"
+// slot rendered for every role via MobileMoreEntry/MobileMoreMenu, not an
+// admin-only gate (dashboard reference redesign, 2026-09-27). Chats
+// (Conversations) moved into More's "Work" section alongside Site Visits/
+// Deals/Quotations rather than staying a dedicated tab, so it's still one
+// tap away, just not a 4th bottom slot -- matches the approved reference's
+// bottom-bar composition. Automation/Audit Log/Settings stay entirely out
+// of this primary bar (Management/System sections inside More, admin-only).
 export function MobileBottomNav({ moreSlot }: { moreSlot?: React.ReactNode }) {
   const pathname = usePathname();
 
