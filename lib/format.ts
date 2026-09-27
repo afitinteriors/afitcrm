@@ -9,6 +9,14 @@ export function formatCurrency(value: number | null | undefined): string {
   }).format(value);
 }
 
+// "₹12.8 Lakhs" for the Pipeline Value card -- Indian currency shorthand,
+// distinct from formatCurrency's full ₹ figure used elsewhere.
+export function formatLakhs(value: number): string {
+  const lakhs = value / 100000;
+  const formatted = lakhs >= 100 ? lakhs.toFixed(0) : lakhs.toFixed(1);
+  return `₹${formatted} Lakhs`;
+}
+
 export function formatDate(value: string | null | undefined): string {
   if (!value) return "—";
   return new Intl.DateTimeFormat("en-IN", {

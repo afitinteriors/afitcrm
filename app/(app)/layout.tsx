@@ -6,6 +6,7 @@ import { SidebarAdminNav } from "@/components/SidebarAdminNav";
 import { MobileBottomNav } from "@/components/MobileBottomNav";
 import { MobileMoreEntry } from "@/components/MobileMoreEntry";
 import { BuildingEmblem } from "@/components/BuildingEmblem";
+import { HeaderSearchForm } from "@/components/HeaderSearchForm";
 import { HeaderNotificationBell } from "@/components/HeaderNotificationBell";
 import { HeaderAccount } from "@/components/HeaderAccount";
 
@@ -61,13 +62,24 @@ export default function AppLayout({ children }: LayoutProps<"/">) {
           </div>
         </div>
 
-        <header className="flex items-center justify-end border-b border-border bg-card px-4 py-3 sm:px-6">
+        <header className="flex items-center gap-3 border-b border-border bg-card px-4 py-3 sm:px-6">
+          <div className="hidden flex-1 lg:block">
+            <HeaderSearchForm />
+          </div>
           <Link
             href="/leads/new"
-            className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+            className="ml-auto shrink-0 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 lg:ml-0"
           >
             + New Lead
           </Link>
+          <div className="hidden items-center gap-1 lg:flex">
+            <Suspense fallback={null}>
+              <HeaderNotificationBell />
+            </Suspense>
+            <Suspense fallback={null}>
+              <HeaderAccount />
+            </Suspense>
+          </div>
         </header>
 
         <main className="flex-1 px-4 pb-20 pt-4 sm:px-6 lg:pb-6 lg:pt-6">{children}</main>

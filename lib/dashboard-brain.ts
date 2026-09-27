@@ -151,6 +151,29 @@ export async function getMyDutyQueue(): Promise<DutyQueue> {
   };
 }
 
+export type TodayFollowUpProgress = { done: number; pending: number; dueToday: number };
+
+const EMPTY_TODAY_PROGRESS: TodayFollowUpProgress = { done: 0, pending: 0, dueToday: 0 };
+
+// Real completion progress for follow-ups due today, scoped by the same RLS
+// every other query in this file relies on (staff sees only their own rows).
+// "target" for the Today's Progress ring is dueToday itself -- the actual
+// count of tasks due today, not an invented fixed quota.
+export async function getTodayFollowUpProgress(): Promise<TodayFollowUpProgress> {
+  const profile = await getCurrentProfile();
+  if (!profile) return EMPTY_TODAY_PROGRESS;
+
+  const supabase = await createClient();
+  const today = todayIso();
+
+  const { data, error } = await supabase.from("follow_ups").select("status").eq("due_date", today);
+  if (error) throw new Error(error.message);
+
+  const rows = data ?? [];
+  const done = rows.filter((row) => row.status === "completed").length;
+  return { done, pending: rows.length - done, dueToday: rows.length };
+}
+
 export type StalledPipelineLead = {
   id: string;
   customer_name: string | null;

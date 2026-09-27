@@ -1,9 +1,10 @@
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import type { LeadRow, LeadStatus } from "@/lib/supabase/types";
-import { LEAD_STATUSES } from "@/lib/constants";
+import { LEAD_STATUSES, OPEN_LEAD_STATUSES } from "@/lib/constants";
 import { getCurrentProfile } from "@/lib/auth";
 import { recordAuditEvent } from "@/lib/audit";
+import { businessDate, businessDateOf } from "@/lib/business-time";
 
 function isLeadStatus(value: string): value is LeadStatus {
   return (LEAD_STATUSES as string[]).includes(value);
@@ -145,6 +146,64 @@ export async function getDashboardStats(): Promise<DashboardStats> {
       .filter((row) => row.status === "won")
       .reduce((sum, row) => sum + (row.job_value ?? 0), 0),
     statusBreakdown,
+  };
+}
+
+export type StaffOverview = {
+  // Sum of active (open-pipeline) leads' job_value, falling back to
+  // quotation_amount when no job_value has been set yet -- the same
+  // "best known deal size" fallback the Deals UI-level view already uses.
+  pipelineValue: number;
+  totalLeadsThisMonth: number;
+  siteVisitsThisMonth: number;
+  // No dedicated "quotation sent" / "won at" timestamp exists in schema yet
+  // (see .claude/rules/database.md -- UI-level view over existing columns
+  // only, no new schema without approval), so these two are approximated by
+  // "last updated this month" on a lead that already has the relevant field
+  // set. Good enough for a dashboard stat tile; not audit-grade.
+  quotationsThisMonth: number;
+  wonThisMonth: number;
+};
+
+const EMPTY_STAFF_OVERVIEW: StaffOverview = {
+  pipelineValue: 0,
+  totalLeadsThisMonth: 0,
+  siteVisitsThisMonth: 0,
+  quotationsThisMonth: 0,
+  wonThisMonth: 0,
+};
+
+export async function getStaffOverview(): Promise<StaffOverview> {
+  const profile = await getCurrentProfile();
+  if (!profile) return EMPTY_STAFF_OVERVIEW;
+
+  const supabase = await createClient();
+  let query = supabase
+    .from("leads")
+    .select("status, job_value, quotation_amount, site_visit_date, created_at, updated_at")
+    .is("merged_into_id", null);
+
+  if (profile.role === "staff") {
+    query = query.eq("assigned_to_id", profile.id);
+  }
+
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+  const rows = data ?? [];
+
+  const monthKey = businessDate().slice(0, 7);
+  const inThisMonth = (value: string | null) => value !== null && businessDateOf(value)?.slice(0, 7) === monthKey;
+
+  const pipelineValue = rows
+    .filter((row) => OPEN_LEAD_STATUSES.includes(row.status))
+    .reduce((sum, row) => sum + (row.job_value ?? row.quotation_amount ?? 0), 0);
+
+  return {
+    pipelineValue,
+    totalLeadsThisMonth: rows.filter((row) => inThisMonth(row.created_at)).length,
+    siteVisitsThisMonth: rows.filter((row) => inThisMonth(row.site_visit_date)).length,
+    quotationsThisMonth: rows.filter((row) => row.quotation_amount !== null && inThisMonth(row.updated_at)).length,
+    wonThisMonth: rows.filter((row) => row.status === "won" && inThisMonth(row.updated_at)).length,
   };
 }
 

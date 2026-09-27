@@ -24,6 +24,11 @@ export type StaffHomeItem = {
   customerName: string;
   phone: string | null;
   serviceRequired: string | null;
+  // Real, already-fetched lead columns (leads.location / leads.project_type /
+  // leads.source) -- display enrichment only, same as serviceRequired.
+  location: string | null;
+  projectType: string | null;
+  source: string | null;
   stage: LeadStatus | null;
   statusLabel: string;
   tone: StaffHomeTone;
@@ -31,6 +36,9 @@ export type StaffHomeItem = {
   dueDate: string | null;
   dueTime: string | null;
   createdAt: string;
+  // The follow-up's own note ("Call and confirm site visit date"), when one
+  // exists -- real staff-written text, never a fabricated action.
+  note: string | null;
 };
 
 export type StaffHomeBoard = {
@@ -45,9 +53,12 @@ export type StaffHomeLead = {
   status: LeadStatus;
   service_required: string | null;
   created_at: string;
+  location?: string | null;
+  project_type?: string | null;
+  source?: string | null;
 };
 
-export type StaffHomeFollowUp = { id: string; due_date: string; due_time: string | null };
+export type StaffHomeFollowUp = { id: string; due_date: string; due_time: string | null; notes?: string | null };
 
 export function buildStaffHome(input: {
   dutyItems: DutyItem[];
@@ -71,10 +82,14 @@ export function buildStaffHome(input: {
       customerName: duty.customerName,
       phone: duty.phone,
       serviceRequired: lead?.service_required ?? null,
+      location: lead?.location ?? null,
+      projectType: lead?.project_type ?? null,
+      source: lead?.source ?? null,
       stage,
       dueDate: null as string | null,
       dueTime: null as string | null,
       createdAt: lead?.created_at ?? duty.sortAt,
+      note: null as string | null,
     };
 
     switch (duty.reasonKind) {
@@ -85,6 +100,7 @@ export function buildStaffHome(input: {
           tone: "now",
           dueDate: followUp?.due_date ?? duty.sortAt,
           dueTime: followUp?.due_time ?? null,
+          note: followUp?.notes ?? null,
         });
         break;
       case "due_today_follow_up":
@@ -94,6 +110,7 @@ export function buildStaffHome(input: {
           tone: "today",
           dueDate: followUp?.due_date ?? duty.sortAt,
           dueTime: followUp?.due_time ?? null,
+          note: followUp?.notes ?? null,
         });
         break;
       case "uncontacted_lead":
