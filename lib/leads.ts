@@ -151,6 +151,14 @@ export type DashboardStats = {
   wonJobs: number;
   lostLeads: number;
   revenue: number;
+  // "Ever" counts, independent of current pipeline stage -- the same
+  // quotation_amount-present / site_visit_date-present definitions
+  // /quotations and /site-visits already use, so an Admin Dashboard KPI
+  // tile can reuse them instead of approximating from current status
+  // (a lead that was quoted or visited earlier and has since moved
+  // stages, e.g. to Won or Lost, must still count here).
+  quotedCount: number;
+  siteVisitScheduledCount: number;
   // Full per-status tally for the pipeline visualization -- computed from
   // the same rows already fetched below (no extra Supabase query). Covers
   // every LeadStatus, including the ones the named fields above don't
@@ -172,6 +180,8 @@ const EMPTY_DASHBOARD_STATS: DashboardStats = {
   wonJobs: 0,
   lostLeads: 0,
   revenue: 0,
+  quotedCount: 0,
+  siteVisitScheduledCount: 0,
   statusBreakdown: EMPTY_STATUS_BREAKDOWN,
 };
 
@@ -180,7 +190,12 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   if (!profile) return EMPTY_DASHBOARD_STATS;
 
   const supabase = await createClient();
-  let query = supabase.from("leads").select("status, job_value");
+  // merged_into_id exclusion added to match the "active leads only"
+  // convention every other query in this file already follows (see
+  // getLeads/getUncontactedLeads/getStaffOverview) -- a retired/merged
+  // lead was previously still counted here, a real pre-existing
+  // undercount inconsistency this fix corrects.
+  let query = supabase.from("leads").select("status, job_value, quotation_amount, site_visit_date").is("merged_into_id", null);
 
   if (profile.role === "staff") {
     query = query.eq("assigned_to_id", profile.id);
@@ -206,6 +221,8 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     revenue: rows
       .filter((row) => row.status === "won")
       .reduce((sum, row) => sum + (row.job_value ?? 0), 0),
+    quotedCount: rows.filter((row) => row.quotation_amount !== null).length,
+    siteVisitScheduledCount: rows.filter((row) => row.site_visit_date !== null).length,
     statusBreakdown,
   };
 }

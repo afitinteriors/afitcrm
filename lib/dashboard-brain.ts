@@ -3,9 +3,16 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentProfile } from "@/lib/auth";
 import { getUncontactedLeads } from "@/lib/leads";
 import { getUnansweredConversations } from "@/lib/conversations";
-import { OPEN_LEAD_STATUSES } from "@/lib/constants";
-import { businessDate } from "@/lib/business-time";
-import type { LeadStatus } from "@/lib/supabase/types";
+import { OPEN_LEAD_STATUSES, LEAD_SOURCE_LABELS } from "@/lib/constants";
+import {
+  businessDate,
+  businessDateOf,
+  businessDatePlusDays,
+  businessDayRangeToUtcBounds,
+  businessMonthRange,
+  toBusinessDateTimeLocal,
+} from "@/lib/business-time";
+import type { FollowUpType, LeadStatus } from "@/lib/supabase/types";
 import { buildDutyItems, type DutyFollowUpWithLead, type DutyLeadWithoutFollowUp, type DutyItem, type DutyReasonKind } from "@/lib/duty";
 
 // AFIT Follow-Up Brain -- Phase A (UI-only).
@@ -243,6 +250,8 @@ export type RecentLead = {
   phone: string;
   status: LeadStatus;
   source: string | null;
+  service_required: string | null;
+  location: string | null;
   created_at: string;
 };
 
@@ -250,7 +259,10 @@ export type RecentLead = {
 // Activity section -- the most recently created leads, regardless of
 // source or assignment. Not a general activity feed (no new table for
 // that in this phase); just the one recent-activity signal that's cheap
-// and meaningful with existing columns.
+// and meaningful with existing columns. service_required/location are
+// real lead columns (same ones the Leads list/cards already show) --
+// included here so the reference's "Interior Work · Kochi" subtitle style
+// is real data, not invented.
 export async function getRecentLeads(limit = 5): Promise<RecentLead[]> {
   const profile = await getCurrentProfile();
   if (!profile) return [];
@@ -258,7 +270,7 @@ export async function getRecentLeads(limit = 5): Promise<RecentLead[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("leads")
-    .select("id, customer_name, phone, status, source, created_at")
+    .select("id, customer_name, phone, status, source, service_required, location, created_at")
     .is("merged_into_id", null)
     .order("created_at", { ascending: false })
     .limit(limit);
@@ -301,5 +313,261 @@ export async function getStaffWorkload(): Promise<StaffWorkloadRow[]> {
     const openLeads = (leads ?? []).filter((l) => l.assigned_to_id === p.id).length;
     const overdueFollowUps = (followUps ?? []).filter((f) => leadOwner.get(f.lead_id) === p.id).length;
     return { staffId: p.id, displayName: p.display_name, openLeads, overdueFollowUps };
+  });
+}
+
+export type LeadsTrendPoint = {
+  date: string; // "YYYY-MM-DD" business day
+  new: number;
+  contacted: number;
+  qualified: number;
+  quotation: number;
+  won: number;
+};
+
+// Daily counts of leads *created* on each of the last `days` business-days,
+// broken down by their CURRENT status -- not a status-history
+// reconstruction (no audit-log-based "reached this stage on this date"
+// query in this phase; leads.status only ever holds the current stage).
+// Matches the Admin Dashboard reference's 5-series trend chart legend
+// (New/Contacted/Qualified/Quotation/Won); Site Visit/Negotiation/Lost are
+// real statuses too but aren't in that legend, so they're left out here
+// rather than silently added.
+export async function getLeadsTrend(days = 7): Promise<LeadsTrendPoint[]> {
+  const profile = await getCurrentProfile();
+  if (!profile) return [];
+
+  const supabase = await createClient();
+  const from = businessDatePlusDays(-(days - 1));
+  const today = businessDate();
+  const bounds = businessDayRangeToUtcBounds(from, today);
+
+  let query = supabase.from("leads").select("created_at, status").is("merged_into_id", null);
+  if (bounds) query = query.gte("created_at", bounds.startIso).lt("created_at", bounds.endExclusiveIso);
+  if (profile.role === "staff") query = query.eq("assigned_to_id", profile.id);
+
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+
+  const byDay = new Map<string, LeadsTrendPoint>();
+  for (let i = 0; i < days; i += 1) {
+    const date = businessDatePlusDays(-(days - 1 - i));
+    byDay.set(date, { date, new: 0, contacted: 0, qualified: 0, quotation: 0, won: 0 });
+  }
+
+  for (const row of data ?? []) {
+    const day = businessDateOf(row.created_at);
+    const point = day ? byDay.get(day) : undefined;
+    if (!point) continue;
+    if (row.status === "new" || row.status === "contacted" || row.status === "qualified" || row.status === "quotation" || row.status === "won") {
+      point[row.status] += 1;
+    }
+  }
+
+  return Array.from(byDay.values());
+}
+
+export type RevenueOverviewPoint = {
+  month: string; // "YYYY-MM"
+  quotationValue: number;
+  wonValue: number;
+};
+
+// Last `months` business-months of quotation/won value, bucketed by
+// updated_at -- the same "quoted/won this month" approximation
+// getStaffOverview() already documents and uses (no dedicated "quoted at" /
+// "won at" timestamp exists in schema), applied across a range instead of
+// just the current month.
+export async function getRevenueOverview(months = 6): Promise<RevenueOverviewPoint[]> {
+  const profile = await getCurrentProfile();
+  if (!profile) return [];
+
+  const supabase = await createClient();
+  let query = supabase
+    .from("leads")
+    .select("status, job_value, quotation_amount, updated_at")
+    .is("merged_into_id", null);
+  if (profile.role === "staff") query = query.eq("assigned_to_id", profile.id);
+
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+  const rows = data ?? [];
+
+  const ranges = Array.from({ length: months }, (_, i) => businessMonthRange(months - 1 - i));
+  return ranges.map(({ from, to }) => {
+    const month = from.slice(0, 7);
+    let quotationValue = 0;
+    let wonValue = 0;
+    for (const row of rows) {
+      const day = businessDateOf(row.updated_at);
+      if (!day || day < from || day > to) continue;
+      if (row.quotation_amount !== null) quotationValue += row.quotation_amount;
+      if (row.status === "won") wonValue += row.job_value ?? row.quotation_amount ?? 0;
+    }
+    return { month, quotationValue, wonValue };
+  });
+}
+
+export type LeadSourceSlice = { source: string; label: string; count: number; percentage: number };
+
+// Real lead.source values only (whatsapp/manual/meta_ads today -- see
+// lib/constants.ts's LEAD_SOURCES for the full recognised set) -- never the
+// generic Website/Instagram/Reference categories a generic dashboard
+// reference might show, since this project doesn't track those.
+export async function getLeadSourceDistribution(): Promise<LeadSourceSlice[]> {
+  const profile = await getCurrentProfile();
+  if (!profile) return [];
+
+  const supabase = await createClient();
+  let query = supabase.from("leads").select("source").is("merged_into_id", null);
+  if (profile.role === "staff") query = query.eq("assigned_to_id", profile.id);
+
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+  const rows = data ?? [];
+  const total = rows.length;
+  if (total === 0) return [];
+
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    const key = row.source ?? "other";
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+
+  return Array.from(counts.entries())
+    .map(([source, count]) => ({
+      source,
+      label: LEAD_SOURCE_LABELS[source] ?? source,
+      count,
+      percentage: Math.round((count / total) * 1000) / 10,
+    }))
+    .sort((a, b) => b.count - a.count);
+}
+
+export type TeamPerformanceRow = {
+  staffId: string;
+  displayName: string | null;
+  totalLeads: number;
+  siteVisits: number;
+  won: number;
+  conversionPct: number;
+};
+
+// Admin-only in practice, same as getStaffWorkload -- lifetime (not just
+// open) counts per staff: leads ever assigned, how many had a site visit
+// scheduled, how many were won, and won/total as a real conversion rate
+// (0 when a staff member has no leads yet, never NaN/Infinity).
+export async function getTeamPerformance(): Promise<TeamPerformanceRow[]> {
+  const profile = await getCurrentProfile();
+  if (!profile) return [];
+
+  const supabase = await createClient();
+  const [{ data: profiles, error: profilesError }, { data: leads, error: leadsError }] = await Promise.all([
+    supabase.from("profiles").select("id, display_name").eq("role", "staff"),
+    supabase.from("leads").select("assigned_to_id, status, site_visit_date").is("merged_into_id", null),
+  ]);
+  if (profilesError) throw new Error(profilesError.message);
+  if (leadsError) throw new Error(leadsError.message);
+
+  return (profiles ?? [])
+    .map((p) => {
+      const own = (leads ?? []).filter((l) => l.assigned_to_id === p.id);
+      const won = own.filter((l) => l.status === "won").length;
+      const siteVisits = own.filter((l) => l.site_visit_date !== null).length;
+      const totalLeads = own.length;
+      return {
+        staffId: p.id,
+        displayName: p.display_name,
+        totalLeads,
+        siteVisits,
+        won,
+        conversionPct: totalLeads === 0 ? 0 : Math.round((won / totalLeads) * 1000) / 10,
+      };
+    })
+    .sort((a, b) => b.totalLeads - a.totalLeads);
+}
+
+export type ScheduleItem = {
+  key: string;
+  time: string | null; // "HH:MM" or null when no time was recorded
+  kind: "follow_up" | "site_visit";
+  leadId: string;
+  customerName: string | null;
+  label: string;
+};
+
+const FOLLOW_UP_TYPE_LABEL: Record<FollowUpType, string> = {
+  call: "Call",
+  whatsapp_message: "WhatsApp message",
+  site_visit: "Site visit",
+  quotation: "Quotation",
+  meeting: "Meeting",
+  follow_up: "Follow-up",
+};
+
+// Today's schedule: pending follow-ups due today + leads with a site visit
+// today, merged into one time-ordered list (real due_time / site_visit_date
+// values only; an item with no recorded time sorts after every timed item,
+// not to a fabricated time).
+export async function getTodaysSchedule(): Promise<ScheduleItem[]> {
+  const profile = await getCurrentProfile();
+  if (!profile) return [];
+
+  const supabase = await createClient();
+  const today = todayIso();
+
+  const { data: followUps, error: followUpsError } = await supabase
+    .from("follow_ups")
+    .select("id, lead_id, type, due_time, lead:leads(customer_name, assigned_to_id)")
+    .eq("status", "pending")
+    .eq("due_date", today);
+  if (followUpsError) throw new Error(followUpsError.message);
+
+  const { data: siteLeads, error: siteLeadsError } = await supabase
+    .from("leads")
+    .select("id, customer_name, site_visit_date, assigned_to_id")
+    .is("merged_into_id", null)
+    .not("site_visit_date", "is", null);
+  if (siteLeadsError) throw new Error(siteLeadsError.message);
+
+  const isMine = (assignedToId: string | null) => profile.role === "admin" || assignedToId === profile.id;
+
+  const followUpItems: ScheduleItem[] = ((followUps ?? []) as unknown as {
+    id: string;
+    lead_id: string;
+    type: FollowUpType;
+    due_time: string | null;
+    lead: { customer_name: string | null; assigned_to_id: string | null } | null;
+  }[])
+    .filter((f) => isMine(f.lead?.assigned_to_id ?? null))
+    .map((f) => ({
+      key: `follow_up:${f.id}`,
+      time: f.due_time ? f.due_time.slice(0, 5) : null,
+      kind: "follow_up" as const,
+      leadId: f.lead_id,
+      customerName: f.lead?.customer_name ?? null,
+      label: FOLLOW_UP_TYPE_LABEL[f.type],
+    }));
+
+  const siteVisitItems: ScheduleItem[] = ((siteLeads ?? []) as unknown as {
+    id: string;
+    customer_name: string | null;
+    site_visit_date: string;
+    assigned_to_id: string | null;
+  }[])
+    .filter((l) => businessDateOf(l.site_visit_date) === today && isMine(l.assigned_to_id))
+    .map((l) => ({
+      key: `site_visit:${l.id}`,
+      time: toBusinessDateTimeLocal(l.site_visit_date).slice(11, 16) || null,
+      kind: "site_visit" as const,
+      leadId: l.id,
+      customerName: l.customer_name,
+      label: "Site visit",
+    }));
+
+  return [...followUpItems, ...siteVisitItems].sort((a, b) => {
+    if (a.time === null) return b.time === null ? 0 : 1;
+    if (b.time === null) return -1;
+    return a.time.localeCompare(b.time);
   });
 }

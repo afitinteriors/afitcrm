@@ -31,7 +31,7 @@ vi.mock("@/lib/auth", () => ({
   getCurrentProfile: () => getCurrentProfileMock(),
 }));
 
-import { getLeads, getLeadIdsInListOrder, buildLeadsQueryString } from "./leads";
+import { getLeads, getLeadIdsInListOrder, buildLeadsQueryString, getDashboardStats } from "./leads";
 
 describe("getLeads", () => {
   beforeEach(() => {
@@ -178,6 +178,44 @@ describe("getLeadIdsInListOrder", () => {
 
     expect(await getLeadIdsInListOrder({})).toEqual([]);
     expect(fakeFrom).not.toHaveBeenCalled();
+  });
+});
+
+describe("getDashboardStats", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getCurrentProfileMock.mockResolvedValue({ id: "admin-1", role: "admin" });
+  });
+
+  it("excludes retired/merged leads, same convention as every other query in this file", async () => {
+    fakeFrom = vi.fn(() => makeBuilder({ data: [], error: null }));
+    fakeSupabase = { from: fakeFrom } as unknown as SupabaseClient<Database>;
+
+    await getDashboardStats();
+
+    const builder = fakeFrom.mock.results[0].value as { is: ReturnType<typeof vi.fn> };
+    expect(builder.is).toHaveBeenCalledWith("merged_into_id", null);
+  });
+
+  it("quotedCount/siteVisitScheduledCount use the 'ever' definition (quotation_amount/site_visit_date present), independent of current status", async () => {
+    fakeFrom = vi.fn(() =>
+      makeBuilder({
+        data: [
+          { status: "won", job_value: 100000, quotation_amount: 90000, site_visit_date: "2026-08-01T00:00:00Z" }, // quoted+visited, now Won
+          { status: "lost", job_value: null, quotation_amount: 50000, site_visit_date: null }, // quoted, then Lost
+          { status: "new", job_value: null, quotation_amount: null, site_visit_date: null },
+        ],
+        error: null,
+      }),
+    );
+    fakeSupabase = { from: fakeFrom } as unknown as SupabaseClient<Database>;
+
+    const stats = await getDashboardStats();
+
+    expect(stats.totalLeads).toBe(3);
+    expect(stats.quotedCount).toBe(2); // won + lost leads, even though neither is currently "at Quotation stage"
+    expect(stats.siteVisitScheduledCount).toBe(1);
+    expect(stats.revenue).toBe(100000);
   });
 });
 

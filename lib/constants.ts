@@ -81,6 +81,22 @@ export const LEAD_STATUS_BAR_CLASSES: Record<LeadStatus, string> = {
   invalid: "bg-zinc-400",
 };
 
+// Hex equivalents of LEAD_STATUS_BAR_CLASSES' exact Tailwind shades, for
+// contexts that need a real color value rather than a class (recharts fills/
+// strokes) -- same one color-per-status definition, just in the form SVG
+// chart libraries need. Keep in sync with LEAD_STATUS_BAR_CLASSES above.
+export const LEAD_STATUS_CHART_COLORS: Record<LeadStatus, string> = {
+  new: "#94a3b8",
+  contacted: "#0ea5e9",
+  qualified: "#6366f1",
+  site_visit: "#f59e0b",
+  quotation: "#a855f7",
+  negotiation: "#f97316",
+  won: "#10b981",
+  lost: "#ef4444",
+  invalid: "#a1a1aa",
+};
+
 export const LEAD_SOURCES = [
   "whatsapp",
   "meta_ads",

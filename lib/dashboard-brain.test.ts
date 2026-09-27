@@ -8,11 +8,13 @@ type LeadRow = { id: string; customer_name: string; phone: string; status: strin
 
 let followUps: FollowUpRow[] = [];
 let leadsTable: LeadRow[] = [];
+let profilesTable: unknown[] = [];
+let currentProfile: { id: string; role: string } = { id: "admin-1", role: "admin" };
 
 function builder(rows: unknown[]) {
   const b: Record<string, unknown> = {};
   const chain = () => b;
-  for (const m of ["select", "eq", "in", "is", "lt", "order", "limit", "neq"]) b[m] = vi.fn(chain);
+  for (const m of ["select", "eq", "in", "is", "lt", "gte", "not", "order", "limit", "neq"]) b[m] = vi.fn(chain);
   b.then = (resolve: (v: { data: unknown[]; error: null }) => unknown) => Promise.resolve({ data: rows, error: null }).then(resolve);
   return b;
 }
@@ -20,10 +22,11 @@ function builder(rows: unknown[]) {
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({
-    from: (table: string) => builder(table === "follow_ups" ? followUps : table === "leads" ? leadsTable : []),
+    from: (table: string) =>
+      builder(table === "follow_ups" ? followUps : table === "leads" ? leadsTable : table === "profiles" ? profilesTable : []),
   }),
 }));
-vi.mock("@/lib/auth", () => ({ getCurrentProfile: async () => ({ id: "admin-1", role: "admin" }) }));
+vi.mock("@/lib/auth", () => ({ getCurrentProfile: async () => currentProfile }));
 
 const getUncontactedLeadsMock = vi.fn(async () => [] as unknown[]);
 vi.mock("@/lib/leads", () => ({ getUncontactedLeads: () => getUncontactedLeadsMock() }));
@@ -33,7 +36,14 @@ vi.mock("@/lib/conversations", () => ({
   getUnansweredConversations: () => getUnansweredConversationsMock(),
 }));
 
-import { getMyDutyQueue } from "@/lib/dashboard-brain";
+import {
+  getMyDutyQueue,
+  getLeadsTrend,
+  getRevenueOverview,
+  getLeadSourceDistribution,
+  getTeamPerformance,
+  getTodaysSchedule,
+} from "@/lib/dashboard-brain";
 
 const lead = { customer_name: "C", phone: "+919000000000", status: "contacted", assigned: null };
 const fu = (id: string, due_date: string, leadId = `lead-${id}`): FollowUpRow => ({
@@ -157,5 +167,189 @@ describe("getMyDutyQueue counts (regression: must match the deduped list, not ra
 
     expect(queue.items.filter((i) => i.reasonKind === "overdue_follow_up")).toHaveLength(2);
     expect(queue.counts.overdue).toBe(2);
+  });
+});
+
+describe("getLeadsTrend -- Admin Dashboard reference chart", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-27T10:00:00Z")); // 15:30 IST on the 27th
+    leadsTable = [];
+    currentProfile = { id: "admin-1", role: "admin" };
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it("buckets by created_at's business day and current status, one point per day", async () => {
+    leadsTable = [
+      { id: "l1", customer_name: "A", phone: "+91", status: "new", created_at: "2026-09-27T09:00:00Z", assigned: null },
+      { id: "l2", customer_name: "B", phone: "+91", status: "won", created_at: "2026-09-27T05:00:00Z", assigned: null },
+      { id: "l3", customer_name: "C", phone: "+91", status: "contacted", created_at: "2026-09-26T10:00:00Z", assigned: null },
+      // Outside the 7-day window -- must not appear in any bucket.
+      { id: "l4", customer_name: "D", phone: "+91", status: "new", created_at: "2026-09-01T10:00:00Z", assigned: null },
+    ] as unknown as LeadRow[];
+
+    const trend = await getLeadsTrend(7);
+
+    expect(trend).toHaveLength(7);
+    expect(trend[trend.length - 1].date).toBe("2026-09-27");
+    expect(trend[trend.length - 1].new).toBe(1);
+    expect(trend[trend.length - 1].won).toBe(1);
+    expect(trend[trend.length - 2].date).toBe("2026-09-26");
+    expect(trend[trend.length - 2].contacted).toBe(1);
+    const total = trend.reduce((sum, p) => sum + p.new + p.contacted + p.qualified + p.quotation + p.won, 0);
+    expect(total).toBe(3); // l4 excluded
+  });
+
+  it("ignores statuses outside the reference's 5-series legend (site_visit/negotiation/lost)", async () => {
+    leadsTable = [
+      { id: "l1", customer_name: "A", phone: "+91", status: "site_visit", created_at: "2026-09-27T09:00:00Z", assigned: null },
+      { id: "l2", customer_name: "B", phone: "+91", status: "lost", created_at: "2026-09-27T09:00:00Z", assigned: null },
+    ] as unknown as LeadRow[];
+
+    const trend = await getLeadsTrend(7);
+    const total = trend.reduce((sum, p) => sum + p.new + p.contacted + p.qualified + p.quotation + p.won, 0);
+    expect(total).toBe(0);
+  });
+});
+
+describe("getRevenueOverview -- monthly quotation/won value", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-27T10:00:00Z"));
+    leadsTable = [];
+    currentProfile = { id: "admin-1", role: "admin" };
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it("sums quotation_amount and won job_value into the month each was last updated", async () => {
+    leadsTable = [
+      { id: "l1", customer_name: "A", phone: "+91", status: "quotation", quotation_amount: 100000, job_value: null, updated_at: "2026-09-10T10:00:00Z" },
+      { id: "l2", customer_name: "B", phone: "+91", status: "won", quotation_amount: 200000, job_value: 250000, updated_at: "2026-09-15T10:00:00Z" },
+      { id: "l3", customer_name: "C", phone: "+91", status: "quotation", quotation_amount: 50000, job_value: null, updated_at: "2026-08-05T10:00:00Z" },
+    ] as unknown as LeadRow[];
+
+    const overview = await getRevenueOverview(6);
+    const sep = overview.find((p) => p.month === "2026-09")!;
+    const aug = overview.find((p) => p.month === "2026-08")!;
+
+    expect(sep.quotationValue).toBe(300000); // l1 + l2
+    expect(sep.wonValue).toBe(250000); // l2's job_value, not its quotation_amount
+    expect(aug.quotationValue).toBe(50000);
+    expect(aug.wonValue).toBe(0);
+  });
+
+  it("falls back to quotation_amount for a won lead with no job_value recorded yet", async () => {
+    leadsTable = [
+      { id: "l1", customer_name: "A", phone: "+91", status: "won", quotation_amount: 80000, job_value: null, updated_at: "2026-09-10T10:00:00Z" },
+    ] as unknown as LeadRow[];
+
+    const overview = await getRevenueOverview(6);
+    expect(overview.find((p) => p.month === "2026-09")!.wonValue).toBe(80000);
+  });
+});
+
+describe("getLeadSourceDistribution -- real source values only", () => {
+  beforeEach(() => {
+    leadsTable = [];
+    currentProfile = { id: "admin-1", role: "admin" };
+  });
+
+  it("groups by the real source column and labels via LEAD_SOURCE_LABELS", async () => {
+    leadsTable = [
+      { source: "whatsapp" },
+      { source: "whatsapp" },
+      { source: "meta_ads" },
+      { source: null },
+    ] as unknown as LeadRow[];
+
+    const dist = await getLeadSourceDistribution();
+    const whatsapp = dist.find((s) => s.source === "whatsapp")!;
+    const other = dist.find((s) => s.source === "other")!;
+
+    expect(whatsapp.count).toBe(2);
+    expect(whatsapp.label).toBe("WhatsApp");
+    expect(whatsapp.percentage).toBe(50);
+    expect(other.count).toBe(1); // null source bucketed as "other", not dropped
+  });
+
+  it("returns an empty array rather than dividing by zero when there are no leads", async () => {
+    leadsTable = [];
+    expect(await getLeadSourceDistribution()).toEqual([]);
+  });
+});
+
+describe("getTeamPerformance -- per-staff conversion, never NaN", () => {
+  beforeEach(() => {
+    profilesTable = [];
+    leadsTable = [];
+    currentProfile = { id: "admin-1", role: "admin" };
+  });
+
+  it("computes totalLeads/siteVisits/won/conversionPct per staff", async () => {
+    profilesTable = [
+      { id: "staff-1", display_name: "Azhar" },
+      { id: "staff-2", display_name: "New Hire" },
+    ];
+    leadsTable = [
+      { assigned_to_id: "staff-1", status: "won", site_visit_date: "2026-09-20T10:00:00Z" },
+      { assigned_to_id: "staff-1", status: "new", site_visit_date: null },
+      { assigned_to_id: "staff-1", status: "lost", site_visit_date: null },
+    ] as unknown as LeadRow[];
+
+    const rows = await getTeamPerformance();
+    const azhar = rows.find((r) => r.staffId === "staff-1")!;
+    const newHire = rows.find((r) => r.staffId === "staff-2")!;
+
+    expect(azhar.totalLeads).toBe(3);
+    expect(azhar.siteVisits).toBe(1);
+    expect(azhar.won).toBe(1);
+    expect(azhar.conversionPct).toBeCloseTo(33.3, 1);
+
+    // A staff member with zero assigned leads gets 0%, not NaN.
+    expect(newHire.totalLeads).toBe(0);
+    expect(newHire.conversionPct).toBe(0);
+  });
+});
+
+describe("getTodaysSchedule -- merged, time-sorted, real values only", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-27T05:00:00Z")); // 10:30 IST on the 27th
+    followUps = [];
+    leadsTable = [];
+    currentProfile = { id: "admin-1", role: "admin" };
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it("merges today's pending follow-ups and today's site visits, sorted by time, untimed items last", async () => {
+    followUps = [
+      { id: "f1", lead_id: "lead-a", type: "call", due_date: "2026-09-27", due_time: "15:00:00", notes: null, lead: { customer_name: "A", assigned_to_id: null } },
+      { id: "f2", lead_id: "lead-b", type: "meeting", due_date: "2026-09-27", due_time: null, notes: null, lead: { customer_name: "B", assigned_to_id: null } },
+    ] as unknown as FollowUpRow[];
+    leadsTable = [
+      { id: "lead-c", customer_name: "C", phone: "+91", site_visit_date: "2026-09-27T05:30:00Z", assigned_to_id: null }, // 11:00 IST
+    ] as unknown as LeadRow[];
+
+    const schedule = await getTodaysSchedule();
+
+    expect(schedule.map((s) => s.key)).toEqual(["site_visit:lead-c", "follow_up:f1", "follow_up:f2"]);
+    expect(schedule[0].time).toBe("11:00");
+    expect(schedule[1].time).toBe("15:00");
+    expect(schedule[2].time).toBeNull();
+  });
+
+  it("a staff caller sees only their own items, an admin sees everyone's", async () => {
+    followUps = [
+      { id: "f1", lead_id: "lead-a", type: "call", due_date: "2026-09-27", due_time: "09:00:00", notes: null, lead: { customer_name: "A", assigned_to_id: "staff-1" } },
+      { id: "f2", lead_id: "lead-b", type: "call", due_date: "2026-09-27", due_time: "09:00:00", notes: null, lead: { customer_name: "B", assigned_to_id: "staff-2" } },
+    ] as unknown as FollowUpRow[];
+
+    currentProfile = { id: "staff-1", role: "staff" };
+    const staffView = await getTodaysSchedule();
+    expect(staffView.map((s) => s.key)).toEqual(["follow_up:f1"]);
+
+    currentProfile = { id: "admin-1", role: "admin" };
+    const adminView = await getTodaysSchedule();
+    expect(adminView.map((s) => s.key).sort()).toEqual(["follow_up:f1", "follow_up:f2"]);
   });
 });
