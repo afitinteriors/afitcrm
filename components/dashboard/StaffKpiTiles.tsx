@@ -1,4 +1,6 @@
-type Tile = { count: number; label: string; sublabel: string; tone: "danger" | "warning" | "info" | "success" };
+import Link from "next/link";
+
+type Tile = { count: number; label: string; sublabel: string; tone: "danger" | "warning" | "info" | "success"; href: string };
 
 const TONE_CLASSES: Record<Tile["tone"], { bg: string; iconBg: string; iconText: string; count: string }> = {
   danger: { bg: "bg-danger-soft", iconBg: "bg-danger/15", iconText: "text-danger", count: "text-danger" },
@@ -28,11 +30,18 @@ export function StaffKpiTiles({
   newLeads: number;
   other: number;
 }) {
+  // Real existing destinations only -- the same anchors StaffHome's own
+  // "View all" links use for the two follow-up buckets (the /follow-ups
+  // page has no per-bucket query filter, just three stacked sections, so
+  // an anchor to that exact section is the real destination, not a
+  // fabricated filter). "Also check" has no equivalent /leads or
+  // /follow-ups filter, so it jumps to this same page's own Also Check
+  // section instead of inventing one.
   const tiles: Tile[] = [
-    { count: followUpNow, label: "Follow up now", sublabel: "Overdue leads", tone: "danger" },
-    { count: followUpToday, label: "Follow up today", sublabel: "Due today", tone: "warning" },
-    { count: newLeads, label: "New leads", sublabel: "Not contacted yet", tone: "info" },
-    { count: other, label: "Also check", sublabel: "Needs attention", tone: "success" },
+    { count: followUpNow, label: "Follow up now", sublabel: "Overdue leads", tone: "danger", href: "/follow-ups#follow-up-now-title" },
+    { count: followUpToday, label: "Follow up today", sublabel: "Due today", tone: "warning", href: "/follow-ups#follow-up-today-title" },
+    { count: newLeads, label: "New leads", sublabel: "Not contacted yet", tone: "info", href: "/leads?status=new" },
+    { count: other, label: "Also check", sublabel: "Needs attention", tone: "success", href: "#also-check-title" },
   ];
 
   return (
@@ -40,7 +49,11 @@ export function StaffKpiTiles({
       {tiles.map((tile) => {
         const tone = TONE_CLASSES[tile.tone];
         return (
-          <div key={tile.label} className={`min-w-0 rounded-2xl p-4 ${tone.bg}`}>
+          <Link
+            key={tile.label}
+            href={tile.href}
+            className={`block min-w-0 rounded-2xl p-4 transition-all duration-150 hover:-translate-y-px hover:shadow-md motion-reduce:transition-none motion-reduce:hover:translate-y-0 ${tone.bg}`}
+          >
             <span className={`flex h-9 w-9 items-center justify-center rounded-full ${tone.iconBg} ${tone.iconText}`} aria-hidden="true">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="h-5 w-5">
                 <path strokeLinecap="round" strokeLinejoin="round" d={ICONS[tile.tone]} />
@@ -49,7 +62,7 @@ export function StaffKpiTiles({
             <p className={`mt-2 text-2xl font-bold leading-none ${tone.count}`}>{tile.count}</p>
             <p className="mt-1.5 text-sm font-semibold text-foreground">{tile.label}</p>
             <p className="text-xs text-muted-foreground">{tile.sublabel}</p>
-          </div>
+          </Link>
         );
       })}
     </div>
