@@ -1,10 +1,14 @@
 import { cache } from "react";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
-import type { LeadRow, LeadStatus } from "@/lib/supabase/types";
+import type { Database, LeadRow, LeadStatus } from "@/lib/supabase/types";
 import { LEAD_STATUSES, OPEN_LEAD_STATUSES } from "@/lib/constants";
-import { getCurrentProfile } from "@/lib/auth";
+import { getCurrentProfile, type CurrentProfile } from "@/lib/auth";
 import { recordAuditEvent } from "@/lib/audit";
-import { businessDate, businessDateOf } from "@/lib/business-time";
+import { businessDate, businessDateOf, businessDayRangeToUtcBounds } from "@/lib/business-time";
+import { isDatePreset, resolveDateRange } from "@/lib/lead-date-filters";
+
+export { DATE_PRESETS, isDatePreset, resolveDateRange, type DatePreset } from "@/lib/lead-date-filters";
 
 function isLeadStatus(value: string): value is LeadStatus {
   return (LEAD_STATUSES as string[]).includes(value);
@@ -14,6 +18,9 @@ export type LeadFilters = {
   search?: string;
   status?: string;
   campaign?: string;
+  datePreset?: string;
+  dateFrom?: string;
+  dateTo?: string;
 };
 
 function sanitizeForFilter(value: string) {
@@ -29,18 +36,19 @@ function sanitizeForFilter(value: string) {
 
 export type LeadListRow = LeadRow & { assigned: { display_name: string | null } | null };
 
-// Same assigned:profiles(display_name) embed as getUncontactedLeads() below --
-// existing, already-proven pattern, not a new query shape. Needed so the
-// leads list can show ownership without an N+1 lookup per row.
-export async function getLeads(filters: LeadFilters): Promise<LeadListRow[]> {
-  const profile = await getCurrentProfile();
-  if (!profile) return [];
-
-  const supabase = await createClient();
-
+// Shared by getLeads() and getLeadIdsInListOrder() -- the exact same
+// filter/scope/order logic applied to whatever `select` clause the caller
+// needs, so the "Save & Next" resolver can never drift from what the Leads
+// list itself actually renders. One source of truth for ordering.
+function buildLeadsQuery(
+  supabase: SupabaseClient<Database>,
+  profile: CurrentProfile,
+  filters: LeadFilters,
+  select: string
+) {
   let query = supabase
     .from("leads")
-    .select("*, assigned:profiles(display_name)")
+    .select(select)
     .is("merged_into_id", null)
     .order("created_at", { ascending: false });
 
@@ -59,9 +67,62 @@ export async function getLeads(filters: LeadFilters): Promise<LeadListRow[]> {
     query = query.eq("campaign_name", filters.campaign);
   }
 
-  const { data, error } = await query;
+  const dateRange = resolveDateRange(filters);
+  if (dateRange) {
+    const bounds = businessDayRangeToUtcBounds(dateRange.from, dateRange.to);
+    if (bounds) {
+      query = query.gte("created_at", bounds.startIso).lt("created_at", bounds.endExclusiveIso);
+    }
+  }
+
+  return query;
+}
+
+// Same assigned:profiles(display_name) embed as getUncontactedLeads() below --
+// existing, already-proven pattern, not a new query shape. Needed so the
+// leads list can show ownership without an N+1 lookup per row.
+export async function getLeads(filters: LeadFilters): Promise<LeadListRow[]> {
+  const profile = await getCurrentProfile();
+  if (!profile) return [];
+
+  const supabase = await createClient();
+  const { data, error } = await buildLeadsQuery(supabase, profile, filters, "*, assigned:profiles(display_name)");
   if (error) throw new Error(error.message);
   return (data ?? []) as unknown as LeadListRow[];
+}
+
+// The ordered id sequence the Leads list would render for these exact
+// filters -- id-only, so it's cheap to run purely to locate "the next lead"
+// (Lead Detail's Save & Next). Reuses buildLeadsQuery so this can never
+// disagree with getLeads()'s own ordering/scoping/filtering.
+export async function getLeadIdsInListOrder(filters: LeadFilters): Promise<string[]> {
+  const profile = await getCurrentProfile();
+  if (!profile) return [];
+
+  const supabase = await createClient();
+  const { data, error } = await buildLeadsQuery(supabase, profile, filters, "id");
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as unknown as { id: string }[]).map((row) => row.id);
+}
+
+// The Leads-list query params, reduced to only the ones actually set --
+// shared by every place that needs to carry "which filtered/sorted list was
+// this lead opened from" through a URL (list -> detail -> edit -> the Save &
+// Next redirect target), so that context round-trips via plain query-string
+// state rather than a new client-side store.
+export function buildLeadsQueryString(filters: LeadFilters): string {
+  const params = new URLSearchParams();
+  if (filters.search) params.set("search", filters.search);
+  if (filters.status) params.set("status", filters.status);
+  if (filters.campaign) params.set("campaign", filters.campaign);
+  if (filters.datePreset && isDatePreset(filters.datePreset)) {
+    params.set("datePreset", filters.datePreset);
+    if (filters.datePreset === "custom") {
+      if (filters.dateFrom) params.set("dateFrom", filters.dateFrom);
+      if (filters.dateTo) params.set("dateTo", filters.dateTo);
+    }
+  }
+  return params.toString();
 }
 
 export async function getCampaignOptions(): Promise<string[]> {

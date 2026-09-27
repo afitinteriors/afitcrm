@@ -1,4 +1,4 @@
-import { getCampaignOptions, getLeads } from "@/lib/leads";
+import { buildLeadsQueryString, getCampaignOptions, getLeads } from "@/lib/leads";
 import { LeadsFilterBar } from "@/components/LeadsFilterBar";
 import { LeadRow } from "@/components/LeadRow";
 import { LeadCard } from "@/components/LeadCard";
@@ -7,18 +7,33 @@ import { getCurrentProfile } from "@/lib/auth";
 export default async function LeadsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ search?: string; status?: string; campaign?: string }>;
+  searchParams: Promise<{
+    search?: string;
+    status?: string;
+    campaign?: string;
+    datePreset?: string;
+    dateFrom?: string;
+    dateTo?: string;
+  }>;
 }) {
   const params = await searchParams;
   const search = params.search ?? "";
   const status = params.status ?? "";
   const campaign = params.campaign ?? "";
+  const datePreset = params.datePreset ?? "";
+  const dateFrom = params.dateFrom ?? "";
+  const dateTo = params.dateTo ?? "";
 
   const [leads, campaignOptions, profile] = await Promise.all([
-    getLeads({ search, status, campaign }),
+    getLeads({ search, status, campaign, datePreset, dateFrom, dateTo }),
     getCampaignOptions(),
     getCurrentProfile(),
   ]);
+
+  // Carried into each lead's link so Lead Detail/Edit can hand it back to
+  // the "Save & Next" resolver -- the exact list this lead was opened from,
+  // not a freshly re-derived one.
+  const listQuery = buildLeadsQueryString({ search, status, campaign, datePreset, dateFrom, dateTo });
 
   const heading = profile?.role === "staff" ? "My Leads" : "Leads";
   const description =
@@ -37,6 +52,9 @@ export default async function LeadsPage({
           status={status}
           campaign={campaign}
           campaignOptions={campaignOptions}
+          datePreset={datePreset}
+          dateFrom={dateFrom}
+          dateTo={dateTo}
         />
       </div>
 
@@ -64,7 +82,7 @@ export default async function LeadsPage({
               </thead>
               <tbody className="divide-y divide-border">
                 {leads.map((lead) => (
-                  <LeadRow key={lead.id} lead={lead} />
+                  <LeadRow key={lead.id} lead={lead} listQuery={listQuery} />
                 ))}
               </tbody>
             </table>
@@ -72,7 +90,7 @@ export default async function LeadsPage({
 
           <ul className="-mx-2 mt-1 lg:hidden">
             {leads.map((lead) => (
-              <LeadCard key={lead.id} lead={lead} showAssignee={profile?.role === "admin"} />
+              <LeadCard key={lead.id} lead={lead} showAssignee={profile?.role === "admin"} listQuery={listQuery} />
             ))}
           </ul>
         </>

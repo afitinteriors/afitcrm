@@ -4,6 +4,8 @@ import {
   businessDate,
   businessDateOf,
   businessDatePlusDays,
+  businessDayRangeToUtcBounds,
+  businessMonthRange,
   parseBusinessDateTime,
   toBusinessDateTimeLocal,
 } from "@/lib/business-time";
@@ -95,6 +97,43 @@ describe("businessDatePlusDays -- the 7-day window", () => {
   it("rolls over month and year boundaries", () => {
     expect(businessDatePlusDays(7, new Date("2026-12-27T20:00:00Z"))).toBe("2027-01-04");
     expect(businessDatePlusDays(0, new Date("2026-09-21T19:00:00Z"))).toBe("2026-09-22");
+  });
+});
+
+describe("businessMonthRange -- the Leads date filter's month presets", () => {
+  it("this month (monthsAgo 0)", () => {
+    expect(businessMonthRange(0, new Date("2026-09-27T10:00:00Z"))).toEqual({ from: "2026-09-01", to: "2026-09-30" });
+  });
+
+  it("last month (monthsAgo 1)", () => {
+    expect(businessMonthRange(1, new Date("2026-09-27T10:00:00Z"))).toEqual({ from: "2026-08-01", to: "2026-08-31" });
+  });
+
+  it("rolls back across a year boundary", () => {
+    expect(businessMonthRange(1, new Date("2027-01-15T10:00:00Z"))).toEqual({ from: "2026-12-01", to: "2026-12-31" });
+  });
+});
+
+describe("businessDayRangeToUtcBounds -- the Leads date filter's Supabase query bounds", () => {
+  it("a single IST day becomes [that day's IST midnight, next day's IST midnight)", () => {
+    const bounds = businessDayRangeToUtcBounds("2026-09-27", "2026-09-27");
+    expect(bounds?.startIso).toBe("2026-09-26T18:30:00.000Z"); // 2026-09-27T00:00 IST
+    expect(bounds?.endExclusiveIso).toBe("2026-09-27T18:30:00.000Z"); // 2026-09-28T00:00 IST
+  });
+
+  it("a multi-day range spans from the first day's start to the day after the last day's start", () => {
+    const bounds = businessDayRangeToUtcBounds("2026-09-21", "2026-09-27");
+    expect(bounds?.startIso).toBe("2026-09-20T18:30:00.000Z");
+    expect(bounds?.endExclusiveIso).toBe("2026-09-27T18:30:00.000Z");
+  });
+
+  it("returns null for a malformed day string", () => {
+    expect(businessDayRangeToUtcBounds("2026-09-27", "not-a-date")).toBeNull();
+    expect(businessDayRangeToUtcBounds("garbage", "2026-09-27")).toBeNull();
+  });
+
+  it("returns null for an inverted range (from after to)", () => {
+    expect(businessDayRangeToUtcBounds("2026-09-27", "2026-09-01")).toBeNull();
   });
 });
 

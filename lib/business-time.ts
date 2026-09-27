@@ -95,3 +95,39 @@ export function toBusinessDateTimeLocal(timestamp: string | null | undefined): s
   const p = partsOf(d);
   return `${pad(p.year, 4)}-${pad(p.month)}-${pad(p.day)}T${pad(p.hour)}:${pad(p.minute)}`;
 }
+
+const fmtDay = (d: Date) => `${pad(d.getUTCFullYear(), 4)}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+
+// First/last business-day of the month `monthsAgo` months before the current
+// business month (0 = this month, 1 = last month), as "YYYY-MM-DD" business
+// days. Same Date.UTC calendar-arithmetic trick as businessDatePlusDays --
+// day 0 of the next month is the last day of the target month.
+export function businessMonthRange(monthsAgo: number, from: Date = new Date()): { from: string; to: string } {
+  const [y, m] = businessDate(from).split("-").map(Number);
+  const monthIndex = m - 1 - monthsAgo;
+  const first = new Date(Date.UTC(y, monthIndex, 1));
+  const last = new Date(Date.UTC(y, monthIndex + 1, 0));
+  return { from: fmtDay(first), to: fmtDay(last) };
+}
+
+const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+// Absolute instant bounds [startIso, endExclusiveIso) covering business-days
+// `from`..`to` inclusive, for filtering a timestamptz column such as
+// created_at. The exclusive upper bound (midnight of the day *after* `to`)
+// sidesteps the 23:59:59.999 edge case entirely, the same reasoning
+// parseBusinessDateTime's own tests rely on for IST-vs-UTC day boundaries.
+// Returns null for a malformed day string or an inverted range.
+export function businessDayRangeToUtcBounds(from: string, to: string): { startIso: string; endExclusiveIso: string } | null {
+  if (!DAY_PATTERN.test(from) || !DAY_PATTERN.test(to)) return null;
+
+  const start = parseBusinessDateTime(`${from}T00:00`);
+  if (!start) return null;
+
+  const [y, m, d] = to.split("-").map(Number);
+  const nextDay = new Date(Date.UTC(y, m - 1, d + 1));
+  const end = parseBusinessDateTime(`${fmtDay(nextDay)}T00:00`);
+  if (!end || start.getTime() > end.getTime()) return null;
+
+  return { startIso: start.toISOString(), endExclusiveIso: end.toISOString() };
+}
