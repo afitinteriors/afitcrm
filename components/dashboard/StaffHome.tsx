@@ -180,9 +180,19 @@ export function StaffHome({
           <ListSection id="follow-up-now" title="Follow up now" tone="now" items={board.followUpNow} empty="No overdue follow-ups." viewAllHref="/follow-ups" />
           <ListSection id="follow-up-today" title="Follow up today" tone="today" items={board.followUpToday} empty="Nothing due today." viewAllHref="/follow-ups" />
 
-          {/* Mobile only: New leads sits in the main column; on desktop it moves to the right rail below. */}
+          {/* Mobile only: New leads sits in the main column; on desktop it moves to the right rail below.
+              Capped to a short preview (same 5-item cap as the desktop panel below) -- the dashboard is a
+              summary, not the full Leads list; "View all" (real total in the header) goes to /leads?status=new. */}
           <div className="lg:hidden">
-            <ListSection id="new-leads" title="New leads" tone="new" items={board.newLeads} empty="No new leads right now." viewAllHref="/leads?status=new" />
+            <ListSection
+              id="new-leads"
+              title="New leads"
+              tone="new"
+              items={board.newLeads.slice(0, 5)}
+              totalCount={board.newLeads.length}
+              empty="No new leads right now."
+              viewAllHref="/leads?status=new"
+            />
           </div>
 
           {board.other.length > 0 && (
