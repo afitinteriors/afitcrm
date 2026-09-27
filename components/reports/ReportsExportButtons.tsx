@@ -4,8 +4,19 @@ import { useState } from "react";
 import type { ReportsData } from "@/lib/reports";
 import { buildReportsCsv, buildReportsPdf } from "@/lib/reports-export";
 
-function downloadBlob(content: BlobPart, filename: string, type: string) {
-  const blob = new Blob([content], { type });
+// A direct, synchronous anchor-click download -- deliberately NOT
+// jsPDF's own doc.save(), which internally triggers its click via
+// setTimeout(0) (a bundled FileSaver-style helper). That delay moves the
+// click outside the original event handler's call stack, which some
+// Chrome configurations then no longer treat as a direct user gesture --
+// the download either gets held/never completes, or the file that lands
+// is empty/unusable, while the PDF bytes themselves (verified separately)
+// are fine. Triggering the click synchronously, in the same call stack as
+// the button's onClick, avoids that entirely. The object URL is revoked
+// a second later, not immediately, so a slower browser has time to finish
+// reading a larger file first.
+function downloadBlob(content: BlobPart | Blob, filename: string, type: string) {
+  const blob = content instanceof Blob ? content : new Blob([content], { type });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -13,7 +24,7 @@ function downloadBlob(content: BlobPart, filename: string, type: string) {
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 // Client-side export: builds from the exact ReportsData already rendered
@@ -22,7 +33,7 @@ function downloadBlob(content: BlobPart, filename: string, type: string) {
 export function ReportsExportButtons({ data, generatedBy }: { data: ReportsData; generatedBy: string }) {
   const [busy, setBusy] = useState<"pdf" | "csv" | null>(null);
 
-  async function handlePdf() {
+  function handlePdf() {
     setBusy("pdf");
     try {
       const doc = buildReportsPdf(data, {
@@ -31,7 +42,11 @@ export function ReportsExportButtons({ data, generatedBy }: { data: ReportsData;
         generatedAt: new Date(),
         generatedBy,
       });
-      doc.save(`afit-management-report_${data.period.from}_to_${data.period.to}.pdf`);
+      // doc.output("blob") -- the same real, correctly-typed PDF bytes
+      // doc.save() would produce -- downloaded via our own direct click,
+      // not jsPDF's internal delayed one (see downloadBlob above).
+      const blob = doc.output("blob");
+      downloadBlob(blob, `afit-management-report_${data.period.from}_to_${data.period.to}.pdf`, "application/pdf");
     } finally {
       setBusy(null);
     }
