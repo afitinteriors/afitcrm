@@ -31,7 +31,7 @@ export function RevenueOverviewChart({ data }: { data: RevenueOverviewPoint[] })
       ) : (
         <div className="mt-3 h-64">
           <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={data} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
+            <ComposedChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
               <XAxis dataKey="month" tickFormatter={monthLabel} tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} axisLine={false} tickLine={false} />
               <YAxis
@@ -39,7 +39,7 @@ export function RevenueOverviewChart({ data }: { data: RevenueOverviewPoint[] })
                 tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
                 axisLine={false}
                 tickLine={false}
-                width={56}
+                width={72}
               />
               <Tooltip
                 labelFormatter={(m) => monthLabel(m as string)}
