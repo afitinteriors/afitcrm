@@ -25,6 +25,16 @@ const ICONS: Record<Tone, string> = {
 // getDashboardStats()/getRecentLeads() upstream (Admin Dashboard reference's
 // 6-tile KPI row), each linking to the real existing view that shows the
 // underlying leads (never a fabricated filter).
+//
+// `compact` renders only the reference's mobile 2x2 subset (Total Leads/New
+// Leads/Site Visits/Won) instead of all 6 -- the mobile reference
+// deliberately trims Quotations/Revenue from this view rather than shrinking
+// all 6 tiles to fit; Quotations/Revenue are still one tap away via Leads/
+// Reports, not lost. The mobile reference also shows a "vs last week" trend
+// percentage per tile; that has no real backing computation in this schema
+// yet (no historical snapshot to compare against), so it's left out here
+// rather than fabricated -- same reasoning as the Active Projects/Map View/
+// System Status substitutions already made for this dashboard.
 export function AdminKpiTiles({
   totalLeads,
   newLeads,
@@ -32,6 +42,7 @@ export function AdminKpiTiles({
   quotations,
   won,
   revenue,
+  compact = false,
 }: {
   totalLeads: number;
   newLeads: number;
@@ -39,8 +50,9 @@ export function AdminKpiTiles({
   quotations: number;
   won: number;
   revenue: string;
+  compact?: boolean;
 }) {
-  const tiles: Tile[] = [
+  const allTiles: Tile[] = [
     { count: String(totalLeads), label: "Total Leads", sublabel: "All active leads", tone: "info", href: "/leads" },
     { count: String(newLeads), label: "New Leads", sublabel: "Not contacted yet", tone: "success", href: "/leads?status=new" },
     { count: String(siteVisits), label: "Site Visits", sublabel: "Ever scheduled", tone: "warning", href: "/site-visits" },
@@ -48,9 +60,10 @@ export function AdminKpiTiles({
     { count: String(won), label: "Won Projects", sublabel: "Closed won", tone: "emerald", href: "/leads?status=won" },
     { count: revenue, label: "Revenue (Est.)", sublabel: "Won job value", tone: "brand", href: "/reports" },
   ];
+  const tiles = compact ? [allTiles[0], allTiles[1], allTiles[2], allTiles[4]] : allTiles;
 
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+    <div className={compact ? "grid grid-cols-2 gap-3" : "grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6"}>
       {tiles.map((tile) => {
         const tone = TONE_CLASSES[tile.tone];
         return (

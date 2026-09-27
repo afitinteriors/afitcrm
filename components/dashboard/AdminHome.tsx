@@ -203,9 +203,10 @@ export function AdminHome({
           quotations={stats.quotedCount}
           won={stats.wonJobs}
           revenue={formatCurrency(stats.revenue)}
+          compact
         />
 
-        <LeadsTrendChart data={trend} />
+        <LeadsTrendChart data={trend} simple />
         <TodaysScheduleList items={todaysSchedule} />
 
         <div className="rounded-xl border border-border bg-card shadow-sm">
