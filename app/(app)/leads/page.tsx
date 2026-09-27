@@ -1,4 +1,4 @@
-import { buildLeadsQueryString, getCampaignOptions, getLeads } from "@/lib/leads";
+import { getCampaignOptions, getLeads } from "@/lib/leads";
 import { LeadsFilterBar } from "@/components/LeadsFilterBar";
 import { LeadRow } from "@/components/LeadRow";
 import { LeadCard } from "@/components/LeadCard";
@@ -29,11 +29,6 @@ export default async function LeadsPage({
     getCampaignOptions(),
     getCurrentProfile(),
   ]);
-
-  // Carried into each lead's link so Lead Detail/Edit can hand it back to
-  // the "Save & Next" resolver -- the exact list this lead was opened from,
-  // not a freshly re-derived one.
-  const listQuery = buildLeadsQueryString({ search, status, campaign, datePreset, dateFrom, dateTo });
 
   const heading = profile?.role === "staff" ? "My Leads" : "Leads";
   const description =
@@ -82,7 +77,7 @@ export default async function LeadsPage({
               </thead>
               <tbody className="divide-y divide-border">
                 {leads.map((lead) => (
-                  <LeadRow key={lead.id} lead={lead} listQuery={listQuery} />
+                  <LeadRow key={lead.id} lead={lead} />
                 ))}
               </tbody>
             </table>
@@ -90,7 +85,7 @@ export default async function LeadsPage({
 
           <ul className="-mx-2 mt-1 lg:hidden">
             {leads.map((lead) => (
-              <LeadCard key={lead.id} lead={lead} showAssignee={profile?.role === "admin"} listQuery={listQuery} />
+              <LeadCard key={lead.id} lead={lead} showAssignee={profile?.role === "admin"} />
             ))}
           </ul>
         </>
