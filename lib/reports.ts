@@ -3,15 +3,24 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentProfile } from "@/lib/auth";
 import { getAssignableStaff } from "@/lib/staff";
 import { isFollowUpOverdue } from "@/lib/follow-up-status";
-import { LEAD_STATUSES, FOLLOW_UP_TYPES } from "@/lib/constants";
+import { LEAD_STATUSES, FOLLOW_UP_TYPES, OPEN_LEAD_STATUSES, LEAD_SOURCE_LABELS } from "@/lib/constants";
+import { businessDateOf, businessDayRangeToUtcBounds } from "@/lib/business-time";
+import { resolveReportDateRange, type ReportDateFilterInput, type ReportDatePreset } from "@/lib/report-date-filters";
 import type { LeadStatus, FollowUpType, FollowUpStatus } from "@/lib/supabase/types";
 
-// Reports v1 is snapshot-only (approved spec, 2026-08-30): every metric here
-// is derived from current row state (leads.status, job_value,
-// quotation_amount, etc.), never from audit_logs or any assumed
-// stage-transition history -- neither exists reliably in this schema. See
-// CLAUDE.md's Reports section for why (no won_at/lost_at, and audit_logs
-// RLS is admin-only so it could never back a staff-facing report anyway).
+// Reports v2 (this file) adds a real reporting-period filter on top of the
+// original v1 "snapshot of every current row" design (approved spec,
+// 2026-08-30): every metric is still derived from current row state
+// (leads.status, job_value, quotation_amount, etc.) rather than
+// audit_logs or any assumed stage-transition history -- neither exists
+// reliably in this schema (no won_at/lost_at). The period filter scopes
+// *which leads/follow-ups count* by their real created_at timestamp (the
+// one reliable per-row date this schema has, the same one the Leads
+// list's own date filter and the Admin Dashboard's trend chart already
+// key off), then reports each metric computed from THEIR CURRENT status --
+// e.g. "Won this period" means "won leads that were created in this
+// period", not "leads that transitioned to Won during this period" (this
+// schema cannot tell you the latter).
 
 const EMPTY_STATUS_BREAKDOWN: Record<LeadStatus, number> = Object.fromEntries(
   LEAD_STATUSES.map((status) => [status, 0]),
@@ -26,6 +35,8 @@ type ReportLead = {
   qualification_score: number | null;
   service_required: string | null;
   lost_reason: string | null;
+  source: string | null;
+  created_at: string;
 };
 
 type ReportFollowUp = {
@@ -37,23 +48,25 @@ type ReportFollowUp = {
   lead: { assigned_to_id: string | null } | null;
 };
 
+type Bounds = { startIso: string; endExclusiveIso: string };
+
 // Same RLS-safe shape as getLeads()/getFollowUps() in lib/leads.ts and
 // lib/follow-ups.ts: admin unrestricted, staff explicitly narrowed to their
-// own assigned_to_id in addition to RLS. One shared fetch per request (this
-// page needs all seven reports at once) rather than seven independent
-// queries repeating the same scoping.
-async function getReportLeads(): Promise<ReportLead[]> {
+// own assigned_to_id in addition to RLS. `bounds`, when given, scopes to
+// leads created within the reporting period -- the same [gte, lt) pattern
+// the Leads list's own date filter uses (lib/business-time.ts).
+async function getReportLeads(bounds: Bounds | null): Promise<ReportLead[]> {
   const profile = await getCurrentProfile();
   if (!profile) return [];
 
   const supabase = await createClient();
   let query = supabase
     .from("leads")
-    .select("id, status, job_value, quotation_amount, assigned_to_id, qualification_score, service_required, lost_reason");
+    .select("id, status, job_value, quotation_amount, assigned_to_id, qualification_score, service_required, lost_reason, source, created_at")
+    .is("merged_into_id", null);
 
-  if (profile.role === "staff") {
-    query = query.eq("assigned_to_id", profile.id);
-  }
+  if (bounds) query = query.gte("created_at", bounds.startIso).lt("created_at", bounds.endExclusiveIso);
+  if (profile.role === "staff") query = query.eq("assigned_to_id", profile.id);
 
   const { data, error } = await query;
   if (error) throw new Error(error.message);
@@ -64,18 +77,17 @@ async function getReportLeads(): Promise<ReportLead[]> {
 // lead's assigned_to_id, not follow_ups.assigned_to_id (which just records
 // who created/actioned the follow-up, per the Follow-ups phase's own
 // finding) -- no extra .eq() needed here, matching lib/follow-ups.ts's
-// existing functions. The `lead:leads(assigned_to_id)` embed is what lets
-// Staff Performance below group follow-ups by the *lead's* owner, the same
-// unit of ownership every other view in this app uses.
-async function getReportFollowUps(): Promise<ReportFollowUp[]> {
+// existing functions. `bounds` scopes to follow-ups created within the
+// reporting period, same as leads above.
+async function getReportFollowUps(bounds: Bounds | null): Promise<ReportFollowUp[]> {
   const profile = await getCurrentProfile();
   if (!profile) return [];
 
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("follow_ups")
-    .select("status, due_date, completed_at, created_at, type, lead:leads(assigned_to_id)");
+  let query = supabase.from("follow_ups").select("status, due_date, completed_at, created_at, type, lead:leads(assigned_to_id)");
+  if (bounds) query = query.gte("created_at", bounds.startIso).lt("created_at", bounds.endExclusiveIso);
 
+  const { data, error } = await query;
   if (error) throw new Error(error.message);
   return (data ?? []) as unknown as ReportFollowUp[];
 }
@@ -98,6 +110,7 @@ export type WonLostReport = {
   lostCount: number;
   winRate: number | null;
   totalWonValue: number;
+  averageWonValue: number | null;
   lostReasons: LostReasonCount[];
 };
 
@@ -105,6 +118,7 @@ function computeWonLost(leads: ReportLead[]): WonLostReport {
   const won = leads.filter((l) => l.status === "won");
   const lost = leads.filter((l) => l.status === "lost");
   const decided = won.length + lost.length;
+  const totalWonValue = won.reduce((sum, l) => sum + (l.job_value ?? 0), 0);
 
   const reasonCounts = new Map<string, number>();
   for (const lead of lost) {
@@ -116,7 +130,8 @@ function computeWonLost(leads: ReportLead[]): WonLostReport {
     wonCount: won.length,
     lostCount: lost.length,
     winRate: decided > 0 ? won.length / decided : null,
-    totalWonValue: won.reduce((sum, l) => sum + (l.job_value ?? 0), 0),
+    totalWonValue,
+    averageWonValue: won.length > 0 ? totalWonValue / won.length : null,
     lostReasons: Array.from(reasonCounts, ([reason, count]) => ({ reason, count })).sort((a, b) => b.count - a.count),
   };
 }
@@ -292,7 +307,130 @@ function computeFollowUpPerformance(followUps: ReportFollowUp[]): FollowUpPerfor
   };
 }
 
+export type LeadSourceSlice = { source: string; label: string; count: number; percentage: number };
+
+// Real leads.source values only (whatsapp/manual/meta_ads today -- see
+// LEAD_SOURCES in lib/constants.ts for the full recognised set), computed
+// from the same period-scoped `leads` array every other section here uses
+// -- no second query.
+function computeLeadSourceBreakdown(leads: ReportLead[]): LeadSourceSlice[] {
+  const total = leads.length;
+  if (total === 0) return [];
+
+  const counts = new Map<string, number>();
+  for (const lead of leads) {
+    const key = lead.source ?? "other";
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+
+  return Array.from(counts.entries())
+    .map(([source, count]) => ({
+      source,
+      label: LEAD_SOURCE_LABELS[source] ?? source,
+      count,
+      percentage: Math.round((count / total) * 1000) / 10,
+    }))
+    .sort((a, b) => b.count - a.count);
+}
+
+export type TrendPoint = { date: string; new: number; contacted: number; qualified: number; quotation: number; won: number };
+
+const TREND_MAX_POINTS = 120;
+
+function shiftDay(day: string, deltaDays: number): string {
+  const [y, m, d] = day.split("-").map(Number);
+  const shifted = new Date(Date.UTC(y, m - 1, d + deltaDays));
+  const pad = (n: number, w = 2) => String(n).padStart(w, "0");
+  return `${pad(shifted.getUTCFullYear(), 4)}-${pad(shifted.getUTCMonth() + 1)}-${pad(shifted.getUTCDate())}`;
+}
+
+// One point per business-day in [from, to], tallying the period-scoped
+// `leads` by created_at day and CURRENT status (new/contacted/qualified/
+// quotation/won -- the same 5-series legend the Admin Dashboard's own
+// trend chart uses, for visual consistency; site_visit/negotiation/lost
+// aren't in that legend so they're left out here too rather than silently
+// added). Capped at TREND_MAX_POINTS so a very wide custom range degrades
+// to "too many days to chart" instead of an unusably dense line.
+function computeTrendByDay(leads: ReportLead[], from: string, to: string): TrendPoint[] {
+  const days: string[] = [];
+  let cur = from;
+  while (cur <= to && days.length < TREND_MAX_POINTS) {
+    days.push(cur);
+    cur = shiftDay(cur, 1);
+  }
+
+  const byDay = new Map<string, TrendPoint>(days.map((d) => [d, { date: d, new: 0, contacted: 0, qualified: 0, quotation: 0, won: 0 }]));
+  for (const lead of leads) {
+    const day = businessDateOf(lead.created_at);
+    const point = day ? byDay.get(day) : undefined;
+    if (!point) continue;
+    if (lead.status === "new" || lead.status === "contacted" || lead.status === "qualified" || lead.status === "quotation" || lead.status === "won") {
+      point[lead.status] += 1;
+    }
+  }
+
+  return Array.from(byDay.values());
+}
+
+export type PeriodComparison = { current: number; previous: number; changePct: number | null };
+
+function compare(current: number, previous: number): PeriodComparison {
+  return { current, previous, changePct: previous > 0 ? Math.round(((current - previous) / previous) * 1000) / 10 : null };
+}
+
+export type ExecutiveSummary = {
+  totalLeads: PeriodComparison;
+  newLeadsCount: number;
+  qualifiedCount: number;
+  wonCount: PeriodComparison;
+  wonValue: PeriodComparison;
+  quotedCount: PeriodComparison;
+  quotedValue: PeriodComparison;
+  pipelineValue: number;
+  averageWonValue: number | null;
+  averageQuotationValue: number | null;
+  overallWonRate: number | null;
+};
+
+// Pipeline value: sum of job_value (falling back to quotation_amount) for
+// every OPEN-pipeline lead in the period -- the exact same "best known deal
+// size" convention getStaffOverview() already uses for the Staff Dashboard.
+function computePipelineValue(leads: ReportLead[]): number {
+  return leads
+    .filter((l) => OPEN_LEAD_STATUSES.includes(l.status))
+    .reduce((sum, l) => sum + (l.job_value ?? l.quotation_amount ?? 0), 0);
+}
+
+function computeExecutiveSummary(leads: ReportLead[], previousLeads: ReportLead[]): ExecutiveSummary {
+  const won = leads.filter((l) => l.status === "won");
+  const quoted = leads.filter((l) => l.quotation_amount !== null);
+  const prevWon = previousLeads.filter((l) => l.status === "won");
+  const prevQuoted = previousLeads.filter((l) => l.quotation_amount !== null);
+  const nonInvalid = leads.filter((l) => l.status !== "invalid");
+
+  const wonValue = won.reduce((sum, l) => sum + (l.job_value ?? 0), 0);
+  const quotedValue = quoted.reduce((sum, l) => sum + (l.quotation_amount ?? 0), 0);
+
+  return {
+    totalLeads: compare(leads.length, previousLeads.length),
+    newLeadsCount: leads.filter((l) => l.status === "new").length,
+    qualifiedCount: leads.filter((l) => l.status === "qualified").length,
+    wonCount: compare(won.length, prevWon.length),
+    wonValue: compare(wonValue, prevWon.reduce((sum, l) => sum + (l.job_value ?? 0), 0)),
+    quotedCount: compare(quoted.length, prevQuoted.length),
+    quotedValue: compare(quotedValue, prevQuoted.reduce((sum, l) => sum + (l.quotation_amount ?? 0), 0)),
+    pipelineValue: computePipelineValue(leads),
+    averageWonValue: won.length > 0 ? wonValue / won.length : null,
+    averageQuotationValue: quoted.length > 0 ? quotedValue / quoted.length : null,
+    overallWonRate: nonInvalid.length > 0 ? won.length / nonInvalid.length : null,
+  };
+}
+
+export type ReportPeriod = { preset: ReportDatePreset; from: string; to: string };
+
 export type ReportsData = {
+  period: ReportPeriod;
+  executiveSummary: ExecutiveSummary;
   pipelineDistribution: PipelineDistribution;
   wonLost: WonLostReport;
   quotationPerformance: QuotationPerformance;
@@ -300,28 +438,66 @@ export type ReportsData = {
   conversion: ConversionReport;
   staffPerformance: StaffPerformanceRow[];
   followUpPerformance: FollowUpPerformance;
+  leadSourceBreakdown: LeadSourceSlice[];
+  trend: TrendPoint[];
 };
 
-const EMPTY_REPORTS_DATA: ReportsData = {
-  pipelineDistribution: { statusBreakdown: EMPTY_STATUS_BREAKDOWN, totalLeads: 0 },
-  wonLost: { wonCount: 0, lostCount: 0, winRate: null, totalWonValue: 0, lostReasons: [] },
-  quotationPerformance: { quotedCount: 0, totalQuotedValue: 0, averageQuotationAmount: null, quoteToWonRate: null },
-  salesPerformance: { totalWonValue: 0, wonCount: 0, byStaff: [], byService: [] },
-  conversion: { overallWonRate: null, statusBreakdown: EMPTY_STATUS_BREAKDOWN, totalLeads: 0 },
-  staffPerformance: [],
-  followUpPerformance: { completionRate: null, overdueCount: 0, byType: [], avgTimeToCompleteHours: null },
-};
+function emptyReportsData(period: ReportPeriod): ReportsData {
+  return {
+    period,
+    executiveSummary: {
+      totalLeads: { current: 0, previous: 0, changePct: null },
+      newLeadsCount: 0,
+      qualifiedCount: 0,
+      wonCount: { current: 0, previous: 0, changePct: null },
+      wonValue: { current: 0, previous: 0, changePct: null },
+      quotedCount: { current: 0, previous: 0, changePct: null },
+      quotedValue: { current: 0, previous: 0, changePct: null },
+      pipelineValue: 0,
+      averageWonValue: null,
+      averageQuotationValue: null,
+      overallWonRate: null,
+    },
+    pipelineDistribution: { statusBreakdown: EMPTY_STATUS_BREAKDOWN, totalLeads: 0 },
+    wonLost: { wonCount: 0, lostCount: 0, winRate: null, totalWonValue: 0, averageWonValue: null, lostReasons: [] },
+    quotationPerformance: { quotedCount: 0, totalQuotedValue: 0, averageQuotationAmount: null, quoteToWonRate: null },
+    salesPerformance: { totalWonValue: 0, wonCount: 0, byStaff: [], byService: [] },
+    conversion: { overallWonRate: null, statusBreakdown: EMPTY_STATUS_BREAKDOWN, totalLeads: 0 },
+    staffPerformance: [],
+    followUpPerformance: { completionRate: null, overdueCount: 0, byType: [], avgTimeToCompleteHours: null },
+    leadSourceBreakdown: [],
+    trend: [],
+  };
+}
 
-// One combined fetch (leads + follow_ups, each already RLS-scoped) feeding
-// all seven reports, rather than seven independent queries repeating the
-// same admin-vs-staff scoping seven times over for one page render.
-export async function getReportsData(): Promise<ReportsData> {
+// One combined fetch (leads + follow_ups, each already RLS-scoped and
+// period-scoped) feeding every report section, rather than repeating the
+// same admin-vs-staff scoping and date filter once per section. A second,
+// equal-length "previous period" leads fetch backs the executive summary's
+// period-over-period deltas -- the only section that needs it, so it's
+// kept separate rather than widening the main fetch.
+export async function getReportsData(filters: ReportDateFilterInput = {}): Promise<ReportsData> {
+  const resolved = resolveReportDateRange(filters);
+  const period: ReportPeriod = resolved;
+  const bounds = businessDayRangeToUtcBounds(resolved.from, resolved.to);
+
   const profile = await getCurrentProfile();
-  if (!profile) return EMPTY_REPORTS_DATA;
+  if (!profile || !bounds) return emptyReportsData(period);
 
-  const [leads, followUps] = await Promise.all([getReportLeads(), getReportFollowUps()]);
+  const spanDays = daysBetween(resolved.from, resolved.to) + 1;
+  const previousTo = shiftDay(resolved.from, -1);
+  const previousFrom = shiftDay(previousTo, -(spanDays - 1));
+  const previousBounds = businessDayRangeToUtcBounds(previousFrom, previousTo);
+
+  const [leads, followUps, previousLeads] = await Promise.all([
+    getReportLeads(bounds),
+    getReportFollowUps(bounds),
+    previousBounds ? getReportLeads(previousBounds) : Promise.resolve([]),
+  ]);
 
   return {
+    period,
+    executiveSummary: computeExecutiveSummary(leads, previousLeads),
     pipelineDistribution: computePipelineDistribution(leads),
     wonLost: computeWonLost(leads),
     quotationPerformance: computeQuotationPerformance(leads),
@@ -329,5 +505,15 @@ export async function getReportsData(): Promise<ReportsData> {
     conversion: computeConversion(leads),
     staffPerformance: await computeStaffPerformance(leads, followUps, profile),
     followUpPerformance: computeFollowUpPerformance(followUps),
+    leadSourceBreakdown: computeLeadSourceBreakdown(leads),
+    trend: computeTrendByDay(leads, resolved.from, resolved.to),
   };
+}
+
+function daysBetween(from: string, to: string): number {
+  const [fy, fm, fd] = from.split("-").map(Number);
+  const [ty, tm, td] = to.split("-").map(Number);
+  const fromMs = Date.UTC(fy, fm - 1, fd);
+  const toMs = Date.UTC(ty, tm - 1, td);
+  return Math.round((toMs - fromMs) / 86400000);
 }
