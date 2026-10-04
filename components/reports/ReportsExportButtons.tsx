@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import type { ReportsData } from "@/lib/reports";
+import { exportReportsData } from "@/lib/actions/reports";
+import type { ReportDateFilterInput } from "@/lib/report-date-filters";
 import { buildReportsCsv, buildReportsPdf } from "@/lib/reports-export";
 
 // A direct, synchronous anchor-click download -- deliberately NOT
@@ -27,39 +28,55 @@ function downloadBlob(content: BlobPart | Blob, filename: string, type: string) 
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-// Client-side export: builds from the exact ReportsData already rendered
-// on this page (passed down as a prop, not re-fetched), so the PDF/CSV can
-// never disagree with what's on screen.
-export function ReportsExportButtons({ data, generatedBy }: { data: ReportsData; generatedBy: string }) {
+// Export is admin-only and enforced on the server: exportReportsData() returns
+// an error for any other caller, so no export data is produced for staff even
+// if this component is rendered or its action is invoked directly. The page
+// renders these buttons only for admins; the server check is the real gate.
+// The file is then built in the browser from the same server-computed report
+// for the same period the page is showing.
+export function ReportsExportButtons({ filters, generatedBy }: { filters: ReportDateFilterInput; generatedBy: string }) {
   const [busy, setBusy] = useState<"pdf" | "csv" | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  function handlePdf() {
-    setBusy("pdf");
+  async function run(kind: "pdf" | "csv") {
+    setBusy(kind);
+    setError(null);
     try {
-      const doc = buildReportsPdf(data, {
-        companyName: "AFIT Business OS",
-        reportTitle: "Management Analytics Report",
-        generatedAt: new Date(),
-        generatedBy,
-      });
-      // doc.output("blob") -- the same real, correctly-typed PDF bytes
-      // doc.save() would produce -- downloaded via our own direct click,
-      // not jsPDF's internal delayed one (see downloadBlob above).
-      const blob = doc.output("blob");
-      downloadBlob(blob, `afit-management-report_${data.period.from}_to_${data.period.to}.pdf`, "application/pdf");
+      const result = await exportReportsData(filters);
+      if ("error" in result) {
+        setError(result.error);
+        return;
+      }
+      const { data } = result;
+      if (kind === "pdf") {
+        const doc = buildReportsPdf(data, {
+          companyName: "AFIT Business OS",
+          reportTitle: "Management Analytics Report",
+          generatedAt: new Date(),
+          generatedBy,
+        });
+        // doc.output("blob") -- the same real, correctly-typed PDF bytes
+        // doc.save() would produce -- downloaded via our own direct click,
+        // not jsPDF's internal delayed one (see downloadBlob above).
+        const blob = doc.output("blob");
+        downloadBlob(blob, `afit-management-report_${data.period.from}_to_${data.period.to}.pdf`, "application/pdf");
+      } else {
+        const csv = buildReportsCsv(data);
+        downloadBlob(csv, `afit-report-data_${data.period.from}_to_${data.period.to}.csv`, "text/csv;charset=utf-8");
+      }
+    } catch {
+      setError("Could not prepare the export. Please try again.");
     } finally {
       setBusy(null);
     }
   }
 
+  function handlePdf() {
+    void run("pdf");
+  }
+
   function handleCsv() {
-    setBusy("csv");
-    try {
-      const csv = buildReportsCsv(data);
-      downloadBlob(csv, `afit-report-data_${data.period.from}_to_${data.period.to}.csv`, "text/csv;charset=utf-8");
-    } finally {
-      setBusy(null);
-    }
+    void run("csv");
   }
 
   return (
@@ -86,6 +103,11 @@ export function ReportsExportButtons({ data, generatedBy }: { data: ReportsData;
         </svg>
         {busy === "csv" ? "Preparing…" : "Export CSV"}
       </button>
+      {error && (
+        <p role="alert" className="w-full text-xs text-danger">
+          {error}
+        </p>
+      )}
     </div>
   );
 }

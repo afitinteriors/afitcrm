@@ -1,15 +1,15 @@
 import Link from "next/link";
 
 const LINKS = [
-  { href: "/follow-ups", label: "My Calendar", sublabel: "All follow-ups", tone: "bg-violet-100 text-violet-700", icon: "M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" },
-  { href: "/site-visits", label: "Site Visits", sublabel: "Upcoming visits", tone: "bg-blue-100 text-blue-700", icon: "M15 10.5a3 3 0 11-6 0 3 3 0 016 0z M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" },
-  { href: "/quotations", label: "My Quotations", sublabel: "Draft & sent", tone: "bg-emerald-100 text-emerald-700", icon: "M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" },
-  { href: "/reports", label: "My Performance", sublabel: "Targets & stats", tone: "bg-orange-100 text-orange-700", icon: "M3 13.5l4.5-4.5 4.5 4.5 7.5-7.5M3 20.25h18" },
+  { href: "/follow-ups", label: "Follow-ups", sublabel: "All follow-ups", tone: "bg-violet-100 text-violet-700", icon: "M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" },
+  { href: "/site-visits", label: "Site Visits", sublabel: "View visits", tone: "bg-blue-100 text-blue-700", icon: "M15 10.5a3 3 0 11-6 0 3 3 0 016 0z M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" },
+  { href: "/quotations", label: "Quotations", sublabel: "View quotations", tone: "bg-emerald-100 text-emerald-700", icon: "M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" },
+  { href: "/reports", label: "My Reports", sublabel: "Your lead summary", tone: "bg-orange-100 text-orange-700", icon: "M3 13.5l4.5-4.5 4.5 4.5 7.5-7.5M3 20.25h18" },
 ];
 
-// Real existing routes only ("My Performance" -> /reports, the closest
-// existing targets/stats surface; there is no dedicated per-staff
-// performance page).
+// Real existing routes only. Labels describe what each destination actually
+// shows: /follow-ups is the follow-up list (there is no calendar page),
+// /reports shows the staff member's own lead summary (there are no targets).
 export function StaffQuickLinks() {
   return (
     <div className="rounded-2xl border border-border bg-card p-4">

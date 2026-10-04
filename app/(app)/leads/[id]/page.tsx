@@ -205,7 +205,7 @@ export default async function LeadDetailPage({ params }: PageProps<"/leads/[id]"
         </div>
 
         <div className="space-y-6">
-          <AssignmentCard leadId={lead.id} assignedToId={lead.assigned_to_id} />
+          <AssignmentCard leadId={lead.id} assignedToId={lead.assigned_to_id} createdAt={lead.created_at} />
 
           {sections.has("qualification") && (
             <Card title="Qualification">

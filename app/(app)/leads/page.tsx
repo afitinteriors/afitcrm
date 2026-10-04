@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { getCampaignOptions, getLeads } from "@/lib/leads";
 import { LeadsFilterBar } from "@/components/LeadsFilterBar";
 import { LeadRow } from "@/components/LeadRow";
@@ -11,6 +12,7 @@ export default async function LeadsPage({
     search?: string;
     status?: string;
     campaign?: string;
+    assignment?: string;
     datePreset?: string;
     dateFrom?: string;
     dateTo?: string;
@@ -20,12 +22,13 @@ export default async function LeadsPage({
   const search = params.search ?? "";
   const status = params.status ?? "";
   const campaign = params.campaign ?? "";
+  const assignment = params.assignment ?? "";
   const datePreset = params.datePreset ?? "";
   const dateFrom = params.dateFrom ?? "";
   const dateTo = params.dateTo ?? "";
 
   const [leads, campaignOptions, profile] = await Promise.all([
-    getLeads({ search, status, campaign, datePreset, dateFrom, dateTo }),
+    getLeads({ search, status, campaign, assignment, datePreset, dateFrom, dateTo }),
     getCampaignOptions(),
     getCurrentProfile(),
   ]);
@@ -40,12 +43,19 @@ export default async function LeadsPage({
     <div>
       <h1 className="text-xl font-semibold text-foreground">{heading}</h1>
       <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+      {profile?.role === "admin" && (
+        <Link href="/leads/unassigned" className="mt-3 inline-flex min-h-11 items-center text-sm font-semibold text-primary hover:underline">
+          Review unassigned leads
+        </Link>
+      )}
 
       <div className="mt-4">
         <LeadsFilterBar
           search={search}
           status={status}
           campaign={campaign}
+          assignment={assignment}
+          showAssignment={profile?.role === "admin"}
           campaignOptions={campaignOptions}
           datePreset={datePreset}
           dateFrom={dateFrom}

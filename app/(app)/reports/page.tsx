@@ -82,7 +82,7 @@ export default async function ReportsPage({
             {isAdmin ? "Management analytics for the selected reporting period." : "A snapshot of your own leads and follow-ups for the selected period."}
           </p>
         </div>
-        <ReportsExportButtons data={data} generatedBy={profile?.displayName || "AFIT Business OS"} />
+        {isAdmin && <ReportsExportButtons filters={{ datePreset, dateFrom, dateTo }} generatedBy={profile?.displayName || "AFIT Business OS"} />}
       </div>
 
       <div className="mt-4">
@@ -110,7 +110,9 @@ export default async function ReportsPage({
           </div>
         </div>
         <p className="rounded-md border border-dashed border-border bg-card px-4 py-3 text-center text-xs text-muted-foreground">
-          Full pipeline, staff and quotation breakdowns are in the PDF/CSV export above, or view this page on a larger screen.
+          {isAdmin
+            ? "Full pipeline, staff and quotation breakdowns are in the PDF/CSV export above, or view this page on a larger screen."
+            : "Full pipeline and quotation breakdowns are available on a larger screen."}
         </p>
       </div>
 

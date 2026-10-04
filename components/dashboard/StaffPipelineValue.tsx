@@ -20,7 +20,7 @@ export function StaffPipelineValue({ value }: { value: number }) {
           <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
         </svg>
       </div>
-      <p className="mt-2 text-2xl font-bold text-foreground">{formatLakhs(value)}</p>
+      <p className="mt-2 text-2xl font-bold text-foreground">{value === 0 ? "₹0" : formatLakhs(value)}</p>
       <p className="text-xs text-muted-foreground">in active opportunities</p>
     </Link>
   );

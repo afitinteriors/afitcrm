@@ -18,6 +18,8 @@ export type LeadFilters = {
   search?: string;
   status?: string;
   campaign?: string;
+  // Admin-only in practice: "assigned" | "unassigned" | "" (all).
+  assignment?: string;
   datePreset?: string;
   dateFrom?: string;
   dateTo?: string;
@@ -62,6 +64,12 @@ function buildLeadsQuery(
   }
   if (filters.status && isLeadStatus(filters.status)) {
     query = query.eq("status", filters.status);
+  }
+  // Assignment filter. Staff are already scoped to their own rows above, so
+  // it only has an effect for admin.
+  if (profile.role === "admin") {
+    if (filters.assignment === "unassigned") query = query.is("assigned_to_id", null);
+    else if (filters.assignment === "assigned") query = query.not("assigned_to_id", "is", null);
   }
   if (filters.campaign) {
     query = query.eq("campaign_name", filters.campaign);
@@ -115,6 +123,7 @@ export function buildLeadsQueryString(filters: LeadFilters): string {
   if (filters.search) params.set("search", filters.search);
   if (filters.status) params.set("status", filters.status);
   if (filters.campaign) params.set("campaign", filters.campaign);
+  if (filters.assignment === "assigned" || filters.assignment === "unassigned") params.set("assignment", filters.assignment);
   if (filters.datePreset && isDatePreset(filters.datePreset)) {
     params.set("datePreset", filters.datePreset);
     if (filters.datePreset === "custom") {

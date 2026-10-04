@@ -6,7 +6,7 @@ import { PIPELINE_STATUSES, LEAD_STATUS_LABELS } from "@/lib/constants";
 import { DATE_PRESETS, isDatePreset, resolveDateRange } from "@/lib/lead-date-filters";
 import { formatDate } from "@/lib/format";
 
-type Filters = { search: string; status: string; campaign: string; datePreset: string; dateFrom: string; dateTo: string };
+type Filters = { search: string; status: string; campaign: string; assignment: string; datePreset: string; dateFrom: string; dateTo: string };
 
 const DATE_KEYS: (keyof Filters)[] = ["datePreset", "dateFrom", "dateTo"];
 
@@ -52,6 +52,8 @@ export function LeadsFilterBar({
   search,
   status,
   campaign,
+  assignment,
+  showAssignment,
   campaignOptions,
   datePreset,
   dateFrom,
@@ -60,13 +62,16 @@ export function LeadsFilterBar({
   search: string;
   status: string;
   campaign: string;
+  assignment: string;
+  // Admin only: staff lists are already limited to their own leads.
+  showAssignment: boolean;
   campaignOptions: string[];
   datePreset: string;
   dateFrom: string;
   dateTo: string;
 }) {
-  const current: Filters = { search, status, campaign, datePreset, dateFrom, dateTo };
-  const hasFilters = Boolean(search || status || campaign || datePreset);
+  const current: Filters = { search, status, campaign, assignment, datePreset, dateFrom, dateTo };
+  const hasFilters = Boolean(search || status || campaign || assignment || datePreset);
   const [showCustomRange, setShowCustomRange] = useState(datePreset === "custom");
   const dateLabel = describeDateFilter(datePreset, dateFrom, dateTo);
 
@@ -187,6 +192,24 @@ export function LeadsFilterBar({
               ))}
             </select>
           </div>
+
+          {showAssignment && (
+            <div className="min-w-0 basis-full sm:basis-auto sm:w-48">
+              <label htmlFor="assignment" className="sr-only text-xs font-medium text-muted-foreground sm:not-sr-only sm:block">
+                Assignment
+              </label>
+              <select
+                id="assignment"
+                name="assignment"
+                defaultValue={assignment}
+                className="mt-0 sm:mt-1 block h-11 w-full rounded-md border border-border bg-card px-3 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              >
+                <option value="">All leads</option>
+                <option value="assigned">Assigned</option>
+                <option value="unassigned">Unassigned</option>
+              </select>
+            </div>
+          )}
 
           {showCustomRange && (
             <>

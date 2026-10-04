@@ -42,20 +42,20 @@ export function StaffFollowUpCard({ item }: { item: StaffHomeItem }) {
       </span>
 
       <div className="min-w-0 flex-1">
-        <div className="flex items-start justify-between gap-2">
-          <Link href={href} className="min-w-0 truncate text-sm font-semibold text-foreground after:absolute after:inset-0 after:content-['']">
+        <div className="flex flex-wrap items-start justify-between gap-x-2 gap-y-1">
+          <Link href={href} className="min-w-0 break-words text-sm font-semibold text-foreground after:absolute after:inset-0 after:content-['']">
             {item.customerName}
           </Link>
           <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${PILL_CLASSES[item.tone]}`}>{pillText(item)}</span>
         </div>
-        {item.serviceRequired && <p className="mt-0.5 truncate text-xs text-muted-foreground">{item.serviceRequired}</p>}
+        {item.serviceRequired && <p className="mt-0.5 break-words text-xs text-muted-foreground">{item.serviceRequired}</p>}
         {(item.projectType || item.location) && (
-          <p className="mt-0.5 truncate text-xs text-muted-foreground">
+          <p className="mt-0.5 break-words text-xs text-muted-foreground">
             {[item.projectType, item.location].filter(Boolean).join(" • ")}
           </p>
         )}
         {item.tone === "new" && item.source && LEAD_SOURCE_LABELS[item.source] && (
-          <p className="mt-0.5 truncate text-xs text-muted-foreground">
+          <p className="mt-0.5 break-words text-xs text-muted-foreground">
             New enquiry from {LEAD_SOURCE_LABELS[item.source]} · {formatRelative(item.createdAt)}
           </p>
         )}
@@ -66,7 +66,7 @@ export function StaffFollowUpCard({ item }: { item: StaffHomeItem }) {
             <a
               href={telLink(item.phone)}
               aria-label="Call customer"
-              className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-50 text-blue-600 ring-1 ring-inset ring-blue-100 hover:bg-blue-100"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600 ring-1 ring-inset ring-blue-100 hover:bg-blue-100 lg:h-9 lg:w-9"
             >
               <Glyph d={ICON.phone} className="h-4 w-4" />
             </a>
@@ -77,7 +77,7 @@ export function StaffFollowUpCard({ item }: { item: StaffHomeItem }) {
               target="_blank"
               rel="noopener noreferrer"
               aria-label="WhatsApp customer"
-              className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 ring-1 ring-inset ring-emerald-100 hover:bg-emerald-100"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 ring-1 ring-inset ring-emerald-100 hover:bg-emerald-100 lg:h-9 lg:w-9"
             >
               <Glyph d={ICON.chat} className="h-4 w-4" />
             </a>

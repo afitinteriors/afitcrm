@@ -2,6 +2,8 @@ import Link from "next/link";
 import { StatCard } from "@/components/StatCard";
 import { DutyList } from "@/components/dashboard/DutyList";
 import { UnassignedLeadsList } from "@/components/dashboard/UnassignedLeadsList";
+import { UnassignedSummaryCard } from "@/components/dashboard/admin/UnassignedSummaryCard";
+import { summarizeUnassigned } from "@/lib/assignment-logic";
 import { StalledPipelineList } from "@/components/dashboard/StalledPipelineList";
 import { AdminKpiTiles } from "@/components/dashboard/admin/AdminKpiTiles";
 import { LeadsTrendChart } from "@/components/dashboard/admin/LeadsTrendChart";
@@ -31,7 +33,6 @@ import type { SiteVisitLead } from "@/lib/site-visits";
 import { formatCurrency } from "@/lib/format";
 
 const OVERDUE_ICON = <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M12 6v6l4 2m6-2a10 10 0 11-20 0 10 10 0 0120 0z" />;
-const UNASSIGNED_ICON = <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.5 20.25a7.5 7.5 0 0115 0" />;
 const RISK_ICON = <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.947-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007" />;
 const NO_ACTION_ICON = <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />;
 
@@ -115,11 +116,16 @@ export function AdminHome({
 }) {
   const overdueItems = queue.items.filter((i) => i.reasonKind === "overdue_follow_up" || i.reasonKind === "due_today_follow_up");
   const stalledValue = stalled.reduce((sum, l) => sum + (l.quotation_amount ?? l.job_value ?? 0), 0);
+  const unassignedSummary = summarizeUnassigned(unassigned, new Date());
 
   return (
     <div>
       <h1 className="text-xl font-semibold text-foreground">Admin Dashboard</h1>
       <p className="mt-1 text-sm text-muted-foreground">Complete overview of your business performance and operations.</p>
+
+      <div className="mt-5">
+        <UnassignedSummaryCard summary={unassignedSummary} />
+      </div>
 
       {/* ---------- Desktop ---------- */}
       <div className="mt-5 hidden lg:block">
@@ -155,9 +161,8 @@ export function AdminHome({
 
         <div className="mt-6 border-t border-border pt-4">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Alerts &amp; Operational Monitoring</h2>
-          <div className="mt-3 grid grid-cols-4 gap-3">
+          <div className="mt-3 grid grid-cols-3 gap-3">
             <StatCard label="Overdue (Team)" value={queue.counts.overdue} icon={OVERDUE_ICON} tone={queue.counts.overdue > 0 ? "danger" : "neutral"} />
-            <StatCard label="Unassigned Leads" value={unassigned.length} icon={UNASSIGNED_ICON} tone={unassigned.length > 0 ? "warning" : "neutral"} />
             <StatCard label="No Follow-up" value={queue.counts.noFollowUp} icon={NO_ACTION_ICON} tone={queue.counts.noFollowUp > 0 ? "warning" : "neutral"} />
             <StatCard label="Pipeline at Risk" value={formatCurrency(stalledValue)} icon={RISK_ICON} tone={stalledValue > 0 ? "danger" : "neutral"} />
           </div>

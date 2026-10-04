@@ -32,11 +32,15 @@ function ListSection({
   totalCount,
   empty,
   viewAllHref,
+  note,
 }: {
   id: string;
   title: string;
   tone: "now" | "today" | "new";
   items: StaffHomeItem[];
+  // Optional one-line explanation shown under the header (e.g. why this
+  // count differs from what "View all" opens).
+  note?: string;
   // Real total, when `items` is a capped preview (the desktop right-rail
   // "New leads" panel) -- so the header count never disagrees with "View
   // all"'s actual destination.
@@ -101,6 +105,7 @@ function ListSection({
       ) : (
         header
       )}
+      {note && <p className="mt-1 px-1 text-xs text-muted-foreground">{note}</p>}
       {items.length === 0 ? (
         viewAllHref ? (
           <Link
@@ -143,6 +148,14 @@ export function StaffHome({
   overview: StaffOverview;
 }) {
   const nothingToDo = board.newLeads.length + board.followUpNow.length + board.followUpToday.length === 0;
+  // The New leads tile is a unique queue: a lead that already has a follow-up
+  // is shown under Follow up now/today, not here. "View all" opens the full
+  // /leads?status=new list, which still contains those leads -- say so.
+  const newLeadsOverlap = [...board.followUpNow, ...board.followUpToday].filter((item) => item.stage === "new").length;
+  const newLeadsNote =
+    newLeadsOverlap > 0
+      ? `Excludes ${newLeadsOverlap} lead${newLeadsOverlap === 1 ? "" : "s"} already in Follow up. "View all" opens every new lead, including ${newLeadsOverlap === 1 ? "that one" : "those"}.`
+      : undefined;
   const newLeadsToday = board.newLeads.filter((item) => {
     const created = new Date(item.createdAt);
     const now = new Date();
@@ -192,6 +205,7 @@ export function StaffHome({
               totalCount={board.newLeads.length}
               empty="No new leads right now."
               viewAllHref="/leads?status=new"
+              note={newLeadsNote}
             />
           </div>
 
@@ -238,6 +252,7 @@ export function StaffHome({
               totalCount={board.newLeads.length}
               empty="No new leads right now."
               viewAllHref="/leads?status=new"
+              note={newLeadsNote}
             />
           </div>
         </div>

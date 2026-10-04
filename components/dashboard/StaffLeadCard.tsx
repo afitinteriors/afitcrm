@@ -44,7 +44,7 @@ export function StaffLeadCard({ item }: { item: StaffHomeItem }) {
             {item.customerName}
           </Link>
         )}
-        {item.serviceRequired && <p className="mt-0.5 truncate text-sm text-muted-foreground">{item.serviceRequired}</p>}
+        {item.serviceRequired && <p className="mt-0.5 break-words text-sm text-muted-foreground">{item.serviceRequired}</p>}
       </div>
 
       <LeadContactActions phone={item.phone} />

@@ -40,7 +40,7 @@ export function StaffKpiTiles({
   const tiles: Tile[] = [
     { count: followUpNow, label: "Follow up now", sublabel: "Overdue leads", tone: "danger", href: "/follow-ups#follow-up-now-title" },
     { count: followUpToday, label: "Follow up today", sublabel: "Due today", tone: "warning", href: "/follow-ups#follow-up-today-title" },
-    { count: newLeads, label: "New leads", sublabel: "Not contacted yet", tone: "info", href: "/leads?status=new" },
+    { count: newLeads, label: "New leads", sublabel: "Not in Follow up", tone: "info", href: "/leads?status=new" },
     { count: other, label: "Also check", sublabel: "Needs attention", tone: "success", href: "#also-check-title" },
   ];
 

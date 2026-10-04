@@ -261,11 +261,15 @@ export async function assignLead(leadId: string, staffId: string): Promise<Actio
 
   if (error || !data) return { error: "Could not assign this lead." };
 
+  // Assignment history: the previous and new owner are stored in the audit
+  // event's metadata so the history can say "A -> B" without overwriting
+  // anything. previous_staff_id is null when the lead was unassigned.
   await recordAuditEvent({
     actorId: profile.id,
     action: "lead_assigned",
     targetType: "lead",
     targetId: data.id,
+    metadata: { previous_staff_id: current.assigned_to_id, new_staff_id: staffId },
   });
 
   revalidateLead(leadId);
