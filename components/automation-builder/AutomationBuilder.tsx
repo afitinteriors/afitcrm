@@ -186,6 +186,30 @@ export function AutomationBuilder({
   const selectedNodes = nodes.filter((n) => n.selected);
   const selectedNode = selectedNodes.length === 1 ? selectedNodes[0] : null;
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance<FlowNodeType, Edge> | null>(null);
+  // Id of the block most recently added or duplicated. Once it is on the canvas,
+  // the viewport is centred on it if it isn't already in view, so every new block
+  // can be seen and reached even when the visible area is full.
+  const pendingReveal = useRef<string | null>(null);
+  useEffect(() => {
+    const id = pendingReveal.current;
+    if (!id || !flowInstance) return;
+    const node = nodes.find((n) => n.id === id);
+    if (!node) return;
+    pendingReveal.current = null;
+    const bounds = visibleFlowBounds(flowInstance);
+    if (!bounds) return;
+    const inView =
+      node.position.x >= bounds.minX &&
+      node.position.y >= bounds.minY &&
+      node.position.x + LAYOUT_NODE_WIDTH <= bounds.maxX &&
+      node.position.y + 120 <= bounds.maxY;
+    if (!inView) {
+      flowInstance.setCenter(node.position.x + LAYOUT_NODE_WIDTH / 2, node.position.y + 60, {
+        zoom: flowInstance.getZoom(),
+        duration: 200,
+      });
+    }
+  }, [nodes, flowInstance]);
 
   // Every content edit goes through here. A live flow can be viewed and
   // selected, but nothing that records a change is applied. The server refuses
@@ -200,6 +224,8 @@ export function AutomationBuilder({
 
   const addNode = useCallback(
     (type: BuilderNodeType, position?: { x: number; y: number }) => {
+      const id = newId(type);
+      pendingReveal.current = id;
       edit(
         (s) => {
           const at =
@@ -210,7 +236,7 @@ export function AutomationBuilder({
               visibleFlowBounds(flowInstance)
             );
           const node: FlowNodeType = {
-            id: newId(type),
+            id,
             type: "flowNode",
             position: at,
             data: { nodeType: type, ...defaultDataFor(type) },
@@ -242,12 +268,14 @@ export function AutomationBuilder({
 
   const duplicateNode = useCallback(
     (id: string) => {
+      const copyId = newId("copy");
+      pendingReveal.current = copyId;
       edit(
         (s) => {
           const source = s.nodes.find((n) => n.id === id);
           if (!source) return s;
           const copy: FlowNodeType = {
-            id: newId(source.data.nodeType),
+            id: copyId,
             type: "flowNode",
             position: findFreePosition(
               occupiedRects(s.nodes),
@@ -392,6 +420,11 @@ export function AutomationBuilder({
     <div className="flex h-[calc(100vh-8rem)] flex-col">
       <form
         action={formAction}
+        onKeyDown={(e) => {
+          // Enter in a single-line field must not submit the form. The first
+          // submit button is Save Draft, so an accidental Enter would save.
+          if (e.key === "Enter" && e.target instanceof HTMLInputElement) e.preventDefault();
+        }}
         onSubmitCapture={() => {
           submittedKeyRef.current = currentKey;
           setPublishNotice(null);
