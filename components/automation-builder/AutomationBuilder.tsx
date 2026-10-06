@@ -39,19 +39,16 @@ import {
   type VisibleBounds,
 } from "@/components/automation-builder/layout";
 import {
+  cloneNodeData,
   decorateFlow,
   flowToGraph,
   graphToFlow,
-  type FlowNodeData,
+  newId,
   type FlowNodeType,
   type FlowSnapshot,
 } from "@/components/automation-builder/flow-model";
 
 const DEFAULT_FLOW_NAME = "Default automation";
-
-function newId(prefix: string) {
-  return `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
-}
 
 // The flow-coordinate area currently on screen. The canvas element stops at the
 // config panel, so anything inside these bounds is visible and clickable.
@@ -87,17 +84,6 @@ function defaultDataFor(type: BuilderNodeType): BuilderNodeData {
   return {};
 }
 
-// Copies a block for Duplicate. Choice ids are regenerated so the copy's
-// outputs are independent of the original's. Connections are not copied.
-function cloneNodeData(data: FlowNodeData): FlowNodeData {
-  const copy: FlowNodeData = { ...data };
-  delete copy.jumpTargetId;
-  delete copy.hasIssue;
-  if (copy.buttons) copy.buttons = copy.buttons.map((b) => ({ ...b, id: newId("b") }));
-  if (copy.items) copy.items = copy.items.map((i) => ({ ...i, id: newId("i") }));
-  if (copy.branchPaths) copy.branchPaths = copy.branchPaths.map((p) => ({ ...p, id: newId("p") }));
-  return copy;
-}
 
 function loadInitialGraph(raw: unknown): { graph: BuilderGraph; notice: string | null } {
   if (!raw) return { graph: buildEmptyBuilderGraph(), notice: null };

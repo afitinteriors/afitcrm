@@ -51,6 +51,7 @@ export function summarizeNode(type: BuilderNodeType, data: BuilderNodeData): str
     case "update_stage":
       return data.stage ? `Move to ${LEAD_STATUS_LABELS[data.stage]}` : "No stage chosen";
     case "assign_staff":
+      if (data.assignmentMode === "auto_team") return "Automatic / Team";
       return data.staffId ? "Assigned to a staff member" : "No staff chosen";
     case "add_tag":
       return hasText(data.tag) ? `Tag: ${data.tag}` : "No tag yet";

@@ -415,21 +415,43 @@ function TypeSettings({
         </Field>
       );
 
-    case "assign_staff":
+    case "assign_staff": {
+      const mode = data.assignmentMode ?? "specific";
       return (
-        <Field label="Staff member">
-          <select value={data.staffId ?? ""} onChange={(e) => patch({ staffId: e.target.value })} className={INPUT}>
-            <option value="" disabled>
-              Choose a staff member…
-            </option>
-            {staff.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.display_name ?? "Unnamed staff"}
-              </option>
-            ))}
-          </select>
-        </Field>
+        <>
+          <Field label="Assignment mode">
+            <select
+              value={mode}
+              onChange={(e) =>
+                patch(e.target.value === "auto_team" ? { assignmentMode: "auto_team", staffId: undefined } : { assignmentMode: "specific" })
+              }
+              className={INPUT}
+            >
+              <option value="auto_team">Automatic / Team</option>
+              <option value="specific">Specific staff member</option>
+            </select>
+          </Field>
+          {mode === "auto_team" ? (
+            <p className="text-xs text-muted-foreground">
+              No individual is chosen. This is configuration only: automatic or team assignment does not run yet.
+            </p>
+          ) : (
+            <Field label="Staff member">
+              <select value={data.staffId ?? ""} onChange={(e) => patch({ staffId: e.target.value })} className={INPUT}>
+                <option value="" disabled>
+                  Choose a staff member…
+                </option>
+                {staff.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.display_name ?? "Unnamed staff"}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
+        </>
       );
+    }
 
     case "add_tag":
       return (

@@ -18,6 +18,23 @@ export type FlowEdgeType = Edge;
 
 export type FlowSnapshot = { nodes: FlowNodeType[]; edges: FlowEdgeType[] };
 
+export function newId(prefix: string) {
+  return `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+// Copies a block for Duplicate. Choice ids are regenerated so the copy's
+// outputs are independent of the original's. Connections are not copied.
+// Every other setting (including assignment mode and staff) is carried over.
+export function cloneNodeData(data: FlowNodeData): FlowNodeData {
+  const copy: FlowNodeData = { ...data };
+  delete copy.jumpTargetId;
+  delete copy.hasIssue;
+  if (copy.buttons) copy.buttons = copy.buttons.map((b) => ({ ...b, id: newId("b") }));
+  if (copy.items) copy.items = copy.items.map((i) => ({ ...i, id: newId("i") }));
+  if (copy.branchPaths) copy.branchPaths = copy.branchPaths.map((p) => ({ ...p, id: newId("p") }));
+  return copy;
+}
+
 export function graphToFlow(graph: BuilderGraph): FlowSnapshot {
   return {
     nodes: graph.nodes.map((n) => ({

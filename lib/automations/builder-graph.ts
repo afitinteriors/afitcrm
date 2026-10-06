@@ -111,6 +111,10 @@ export type ChoiceItem = { id: string; label: string; description?: string };
 export type AnswerType = "text" | "number" | "phone" | "choice";
 export type MatchType = "contains" | "exact" | "starts_with";
 export type ValueSource = "customer_reply" | "fixed";
+// Assign Staff configuration. "auto_team" = no individual person chosen
+// (configuration only; no executor handles assignment yet). "specific" needs
+// a staffId. A missing mode is a legacy block and is validated as "specific".
+export type AssignmentMode = "auto_team" | "specific";
 export type ConditionOperator = "equals" | "contains" | "is_empty" | "is_not_empty";
 export type DelayUnit = "minutes" | "hours" | "days";
 
@@ -134,6 +138,7 @@ export type BuilderNodeData = {
   valueSource?: ValueSource;
   fixedValue?: string;
   stage?: LeadStatus;
+  assignmentMode?: AssignmentMode;
   staffId?: string;
   tag?: string;
   followUpTitle?: string;
@@ -335,6 +340,7 @@ const ENUMS: Record<string, readonly string[]> = {
   matchType: ["contains", "exact", "starts_with"],
   answerType: ["text", "number", "phone", "choice"],
   valueSource: ["customer_reply", "fixed"],
+  assignmentMode: ["auto_team", "specific"],
   delayUnit: ["minutes", "hours", "days"],
   conditionOperator: ["equals", "contains", "is_empty", "is_not_empty"],
   fieldKey: CAPTURABLE_LEAD_FIELDS.map((f) => f.value),
@@ -549,7 +555,8 @@ function configProblems(node: BuilderNode, graph: BuilderGraph): { code: FlowIss
       if (!d.stage) missing("choose a stage.");
       break;
     case "assign_staff":
-      if (blank(d.staffId)) missing("choose a staff member.");
+      // Automatic / Team needs no individual. Specific (and legacy, no mode) does.
+      if (d.assignmentMode !== "auto_team" && blank(d.staffId)) missing("choose a staff member.");
       break;
     case "add_tag":
       if (blank(d.tag)) missing("enter a tag.");
