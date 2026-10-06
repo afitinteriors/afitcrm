@@ -30,20 +30,52 @@ export function rectsOverlap(a: LayoutRect, b: LayoutRect, gap = LAYOUT_GAP): bo
   );
 }
 
+// The part of the flow the user can currently see, in flow coordinates. The
+// config panel sits outside the canvas, so it never hides these bounds.
+export type VisibleBounds = { minX: number; minY: number; maxX: number; maxY: number };
+
+const VISIBLE_MARGIN = 24;
+
 // First free slot, scanning rows top to bottom and columns left to right.
-export function findFreePosition(occupied: LayoutRect[], height: number): { x: number; y: number } {
-  for (let y = ORIGIN.y; y <= MAX_SCAN_Y; y += SCAN_STEP) {
-    for (let column = 0; column < COLUMNS; column++) {
-      const candidate: LayoutRect = {
-        x: ORIGIN.x + column * COLUMN_STEP,
-        y,
-        width: LAYOUT_NODE_WIDTH,
-        height,
-      };
+// When visible bounds are given, slots are searched inside them first, so a new
+// block is never placed where the user can't see it. Only if the visible area
+// is full does it fall back to the unbounded search.
+export function findFreePosition(
+  occupied: LayoutRect[],
+  height: number,
+  visible?: VisibleBounds
+): { x: number; y: number } {
+  if (visible) {
+    const slot = scanFree(occupied, height, {
+      fromX: visible.minX + VISIBLE_MARGIN,
+      toX: visible.maxX - VISIBLE_MARGIN - LAYOUT_NODE_WIDTH,
+      fromY: visible.minY + VISIBLE_MARGIN,
+      toY: visible.maxY - VISIBLE_MARGIN - height,
+    });
+    if (slot) return slot;
+  }
+  return (
+    scanFree(occupied, height, {
+      fromX: ORIGIN.x,
+      toX: ORIGIN.x + (COLUMNS - 1) * COLUMN_STEP,
+      fromY: ORIGIN.y,
+      toY: MAX_SCAN_Y,
+    }) ?? { x: ORIGIN.x, y: MAX_SCAN_Y }
+  );
+}
+
+function scanFree(
+  occupied: LayoutRect[],
+  height: number,
+  range: { fromX: number; toX: number; fromY: number; toY: number }
+): { x: number; y: number } | null {
+  for (let y = range.fromY; y <= range.toY; y += SCAN_STEP) {
+    for (let x = range.fromX; x <= range.toX; x += COLUMN_STEP) {
+      const candidate: LayoutRect = { x, y, width: LAYOUT_NODE_WIDTH, height };
       if (!occupied.some((rect) => rectsOverlap(candidate, rect))) {
-        return { x: candidate.x, y: candidate.y };
+        return { x, y };
       }
     }
   }
-  return { x: ORIGIN.x, y: MAX_SCAN_Y };
+  return null;
 }

@@ -36,6 +36,7 @@ import {
   estimateNodeHeight,
   findFreePosition,
   type LayoutRect,
+  type VisibleBounds,
 } from "@/components/automation-builder/layout";
 import {
   decorateFlow,
@@ -50,6 +51,16 @@ const DEFAULT_FLOW_NAME = "Default automation";
 
 function newId(prefix: string) {
   return `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+// The flow-coordinate area currently on screen. The canvas element stops at the
+// config panel, so anything inside these bounds is visible and clickable.
+function visibleFlowBounds(instance: ReactFlowInstance<FlowNodeType, Edge> | null): VisibleBounds | undefined {
+  const canvas = document.querySelector<HTMLElement>(".react-flow");
+  if (!instance || !canvas) return undefined;
+  const { x, y, zoom } = instance.getViewport();
+  const { width, height } = canvas.getBoundingClientRect();
+  return { minX: -x / zoom, minY: -y / zoom, maxX: (width - x) / zoom, maxY: (height - y) / zoom };
 }
 
 // Rectangles of the blocks already on the canvas. Uses the measured height
@@ -174,6 +185,7 @@ export function AutomationBuilder({
 
   const selectedNodes = nodes.filter((n) => n.selected);
   const selectedNode = selectedNodes.length === 1 ? selectedNodes[0] : null;
+  const [flowInstance, setFlowInstance] = useState<ReactFlowInstance<FlowNodeType, Edge> | null>(null);
 
   // Every content edit goes through here. A live flow can be viewed and
   // selected, but nothing that records a change is applied. The server refuses
@@ -191,7 +203,12 @@ export function AutomationBuilder({
       edit(
         (s) => {
           const at =
-            position ?? findFreePosition(occupiedRects(s.nodes), estimateNodeHeight(type, defaultDataFor(type)));
+            position ??
+            findFreePosition(
+              occupiedRects(s.nodes),
+              estimateNodeHeight(type, defaultDataFor(type)),
+              visibleFlowBounds(flowInstance)
+            );
           const node: FlowNodeType = {
             id: newId(type),
             type: "flowNode",
@@ -204,7 +221,7 @@ export function AutomationBuilder({
         { record: true }
       );
     },
-    [edit]
+    [edit, flowInstance]
   );
 
   const removeNode = useCallback(
@@ -232,7 +249,11 @@ export function AutomationBuilder({
           const copy: FlowNodeType = {
             id: newId(source.data.nodeType),
             type: "flowNode",
-            position: findFreePosition(occupiedRects(s.nodes), estimateNodeHeight(source.data.nodeType, source.data)),
+            position: findFreePosition(
+              occupiedRects(s.nodes),
+              estimateNodeHeight(source.data.nodeType, source.data),
+              visibleFlowBounds(flowInstance)
+            ),
             data: cloneNodeData(source.data),
             selected: true,
           };
@@ -241,7 +262,7 @@ export function AutomationBuilder({
         { record: true }
       );
     },
-    [edit]
+    [edit, flowInstance]
   );
 
   const patchNode: NodePatch = useCallback(
@@ -330,10 +351,9 @@ export function AutomationBuilder({
     if (moved) checkpoint(before);
   }, [checkpoint, isLive, presentRef]);
 
-  const flowRef = useRef<ReactFlowInstance<FlowNodeType, Edge> | null>(null);
   const fitToScreen = useCallback(() => {
-    flowRef.current?.fitView({ padding: 0.25, duration: 200 });
-  }, []);
+    flowInstance?.fitView({ padding: 0.25, duration: 200 });
+  }, [flowInstance]);
 
   // Keyboard: Ctrl/Cmd+Z undo, Ctrl+Y or Ctrl+Shift+Z redo, Ctrl/Cmd+D duplicate.
   // Ignored while typing in a field so text editing keeps its own undo.
@@ -430,9 +450,7 @@ export function AutomationBuilder({
               onNodeDragStart={onNodeDragStart}
               onNodeDragStop={onNodeDragStop}
               onAddNodeAt={(type, position) => addNode(type, position)}
-              onInit={(instance) => {
-                flowRef.current = instance;
-              }}
+              onInit={setFlowInstance}
             />
             {(issuesOpen || hasIssues) && (
               <IssuesTray
