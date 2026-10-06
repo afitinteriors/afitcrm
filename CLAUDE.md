@@ -505,6 +505,146 @@ inventing new scope.
 
 ---
 
+## AFIT Automation Builder UI — Scoped Phase Rules
+
+Defined 2026-10-06. This is the only authorized phase for the Automation
+Builder. It overrides the generic "ask before picking a next phase" guidance
+under Current Phase for this scope only. Scope is defined; **no build has
+started**. Phase rules here are stricter than general CRM rules where they
+overlap.
+
+### Objective
+
+Build ONLY the visual, admin-only Automation Builder UI: a WABIS/Interakt-style
+drag-and-drop workflow editor. Flow: DRAG → DROP → CONFIGURE → CONNECT → SAVE.
+The builder must stay independent of the future execution engine, Meta
+integration, CRM automation and AI agent, so each can attach later without
+rebuilding the builder.
+
+### Existing code — inspect and reuse first
+
+- The keyword-automation track (uncommitted; see Completed Work Log) already
+  has a visual flow builder (`@xyflow/react`, `/automation/services/[serviceId]/builder`),
+  a versioned graph schema, and `automations` / `automation_runs` /
+  `automation_sessions` / `automation_media` tables. **Extend and reuse it.**
+  Do not build a second builder, a second graph model, or a parallel node
+  registry. If it cannot satisfy a requirement, stop and report the gap
+  before diverging.
+- Reuse the existing design tokens, UI primitives, routing and media
+  infrastructure (`automation_media` / Meta media pipeline). Do not create a
+  new storage system. If existing media is insufficient, use a mock selector.
+- Canvas library: only `@xyflow/react` (already present). Any other canvas,
+  DnD or UI framework needs explicit approval.
+
+### In scope now (UI and interaction only)
+
+- **Palette (every item draggable onto the canvas):**
+  - Triggers: New Message, Keyword Trigger, Meta Lead, Button Clicked, List Selection, Conversation Start.
+  - Messages: Send Text, Send Image, Send Video, Send Audio/Voice, Send Document, Send Template.
+  - Actions: Ask Question, Buttons, List Message, Save to CRM, Update Stage, Assign Staff, Add Tag, Create Follow-up, Notify Team, End Flow.
+  - Logic: Condition, Branch, Delay/Wait, Jump to Step.
+- **Canvas:** grid background, pan, zoom in/out, fit to screen, drag/reposition,
+  select, duplicate, delete, connect, reconnect, delete connection, branch
+  connections, empty-canvas state, drop preview, selected-node state,
+  validation state, undo/redo.
+- **Node configuration panel** (UI/config only, opens on selection):
+  - Keyword Trigger: block name, keywords, match type, case sensitive, next step if matched, next step if not matched.
+  - Send Text: block name, message, next step.
+  - Media (image/video/audio/document): block name, media, caption, next step.
+  - Ask Question: question, answer type, required, retry behavior, fallback step, next step.
+  - Buttons: message, button labels, destination per button.
+  - Save to CRM: CRM field, value source, next step.
+  - Other nodes: their own minimal config fields, no invented behavior.
+- **Connections:** normal sequential flow, branching (e.g. Keyword Match →
+  Matched / Not Matched), separate destinations per button, and rule-based
+  fallback paths (known answer → Save; fallback → clarification → re-ask).
+  Loops only through an explicit Jump to Step.
+- **Toolbar:** flow name, undo, redo, Save Draft, Publish, More menu,
+  Draft / Saved / Published status.
+- **Flow overview:** name, status, total steps, last updated, created by.
+- **Validation (client-side UI only; names the affected node):** missing
+  trigger, missing required configuration, missing keyword, empty message,
+  button without destination, broken connection, orphan node, missing
+  outgoing path. Publish is blocked while errors exist.
+
+### Strictly out of scope — hard stop
+
+- WhatsApp or Meta API calls of any kind, message sending, webhook changes,
+  Meta Ads integration, lead/ad attribution processing.
+- Conversation execution engine, background workers, scheduler, broadcast engine.
+- Server-side automation execution validator.
+- Real CRM writes, real staff assignment, real follow-up creation, real notifications.
+- Analytics, reporting, automation performance tracking.
+- Production automation activation.
+- **Any AI**: no AI agent, classification, NLU, intent or semantic matching,
+  AI fallback, voice transcription or understanding. Do not couple the
+  builder to any AI module.
+
+If a task needs any item above, stop and ask. Do not implement it as a stub
+that "will be wired later."
+
+### Persistence and data
+
+- Default to local/mock flow state. If reusing existing `automations`
+  persistence, read and write **drafts only**, with no schema, migration or RLS
+  change (CLAUDE.md Database rules apply).
+- Publish in this phase sets a UI-level status only. It must not write any
+  status that the existing execution engine treats as live, and must not
+  trigger, enable or send anything.
+- Do not modify production rows, lead data, or existing automation records.
+  Test against mock or throwaway data only.
+
+### Architecture boundary
+
+- The builder's output is a plain, versioned graph document (nodes, edges,
+  config). It must not import from the execution engine, WhatsApp sender,
+  Meta, webhook or AI modules.
+- Node types come from one registry, so a future engine can map each type to
+  a handler without changing the builder.
+- Keep "flow", "trigger", "step" and "execution" as separate concepts in code.
+
+### Access and placement
+
+- Admin-only. Enforce server-side: staff get a 404 on the builder route and
+  any related server action, not only hidden navigation.
+- Desktop only. Do not add the builder to the mobile bottom bar or More menu.
+  Do not build a mobile drag-and-drop experience.
+- Do not change existing Staff/Admin behavior outside the builder routes.
+
+### Design
+
+- Use existing AFIT design tokens (`app/globals.css`, `@theme inline`). No new
+  UI framework, component library or default-blue palette.
+- The builder should look like a serious SaaS workflow tool: clean, clear
+  hierarchy, consistent icons, strong node-type differentiation (token-based
+  color plus icon per category), clear connection lines, clear selected and
+  validation states, minimal noise, minimal animation. Respect
+  `prefers-reduced-motion`.
+- Primary targets: 1440px, 1280px, 1024px. No horizontal overflow at any of them.
+
+### Verification (required before reporting)
+
+- `npx tsc --noEmit`, full test suite, `npm run lint`, `npm run build`.
+- Playwright via the `afit-verify` procedure at 1440×900, 1280×800 and 1024×768,
+  as Admin. Confirm Staff gets a 404 on builder routes.
+- Check: drag/drop, node create, move, select, configure, connect, branch,
+  delete, duplicate, undo/redo, validation messages (naming the node), Save
+  Draft, Publish blocked on invalid flow, no horizontal overflow, no console errors.
+- Existing Testing Rules still apply to any shared component changed
+  (375×812 and 390×844 checks).
+- Report each item PASS / FAIL / UNVERIFIED with evidence. Never claim a
+  check that was not run.
+
+### Reporting and stop
+
+Report: 1) files changed, 2) components created, 3) components reused,
+4) tests, 5) typecheck, 6) lint, 7) build, 8) responsive verification,
+9) what remains intentionally unimplemented. Then **STOP**. Do not commit,
+push or deploy without explicit instruction. Add a short Completed Work Log
+entry only after the phase is verified.
+
+---
+
 ## Completed Work Log
 
 *(Compact by design — see git log / commit messages for full detail on
