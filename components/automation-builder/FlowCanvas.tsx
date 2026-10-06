@@ -107,7 +107,7 @@ function CanvasInner(props: CanvasProps) {
         onInit={(instance) => onInit(instance)}
         fitView
         fitViewOptions={{ padding: 0.25, maxZoom: 1 }}
-        minZoom={0.25}
+        minZoom={0.1}
         maxZoom={1.75}
         snapToGrid
         snapGrid={[10, 10]}
