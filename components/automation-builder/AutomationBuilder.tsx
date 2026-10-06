@@ -32,6 +32,12 @@ import { NodeConfigPanel, type NodePatch } from "@/components/automation-builder
 import { BuilderToolbar, IssuesTray, type SavedStatus } from "@/components/automation-builder/BuilderToolbar";
 import { useFlowHistory } from "@/components/automation-builder/useFlowHistory";
 import {
+  LAYOUT_NODE_WIDTH,
+  estimateNodeHeight,
+  findFreePosition,
+  type LayoutRect,
+} from "@/components/automation-builder/layout";
+import {
   decorateFlow,
   flowToGraph,
   graphToFlow,
@@ -44,6 +50,17 @@ const DEFAULT_FLOW_NAME = "Default automation";
 
 function newId(prefix: string) {
   return `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+// Rectangles of the blocks already on the canvas. Uses the measured height
+// once the canvas has laid a block out, and the estimate until then.
+function occupiedRects(nodes: FlowNodeType[]): LayoutRect[] {
+  return nodes.map((n) => ({
+    x: n.position.x,
+    y: n.position.y,
+    width: LAYOUT_NODE_WIDTH,
+    height: n.measured?.height ?? estimateNodeHeight(n.data.nodeType, n.data),
+  }));
 }
 
 function defaultDataFor(type: BuilderNodeType): BuilderNodeData {
@@ -173,8 +190,8 @@ export function AutomationBuilder({
     (type: BuilderNodeType, position?: { x: number; y: number }) => {
       edit(
         (s) => {
-          const count = s.nodes.length;
-          const at = position ?? { x: 380 + (count % 3) * 280, y: 80 + Math.floor(count / 3) * 150 };
+          const at =
+            position ?? findFreePosition(occupiedRects(s.nodes), estimateNodeHeight(type, defaultDataFor(type)));
           const node: FlowNodeType = {
             id: newId(type),
             type: "flowNode",
@@ -215,7 +232,7 @@ export function AutomationBuilder({
           const copy: FlowNodeType = {
             id: newId(source.data.nodeType),
             type: "flowNode",
-            position: { x: source.position.x + 40, y: source.position.y + 40 },
+            position: findFreePosition(occupiedRects(s.nodes), estimateNodeHeight(source.data.nodeType, source.data)),
             data: cloneNodeData(source.data),
             selected: true,
           };
