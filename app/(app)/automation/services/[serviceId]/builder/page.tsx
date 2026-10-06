@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { getCurrentProfile } from "@/lib/auth";
 import { getServicesWithConfig, getAutomationMediaAssets } from "@/lib/automations/admin-data";
 import { AutomationBuilder } from "@/components/automation-builder/AutomationBuilder";
+import { getAssignableStaff } from "@/lib/staff";
 
 // Admin-only, same page-level pattern as /automation and /automation/services --
 // services/automations RLS (admin-only) is the real enforcement; this is
@@ -15,9 +16,13 @@ export default async function AutomationBuilderPage({
   if (!profile || profile.role !== "admin") notFound();
 
   const { serviceId } = await params;
-  const [services, mediaAssets] = await Promise.all([getServicesWithConfig(), getAutomationMediaAssets()]);
+  const [services, mediaAssets, staff] = await Promise.all([
+    getServicesWithConfig(),
+    getAutomationMediaAssets(),
+    getAssignableStaff(),
+  ]);
   const service = services.find((s) => s.id === serviceId);
   if (!service) notFound();
 
-  return <AutomationBuilder service={service} mediaAssets={mediaAssets} />;
+  return <AutomationBuilder service={service} mediaAssets={mediaAssets} staff={staff} />;
 }

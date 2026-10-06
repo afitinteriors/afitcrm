@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentProfile } from "@/lib/auth";
-import { parseAutomationGraph, validateGraphForSave, UnsupportedAutomationVersionError } from "@/lib/automations/graph-schema";
+import { parseBuilderGraph, validateBuilderGraph, BuilderGraphError } from "@/lib/automations/builder-graph";
 
 export type ActionState = { error: string } | null;
 
@@ -125,7 +125,14 @@ export async function deleteKeyword(_prevState: ActionState, formData: FormData)
 // whenever one exists (never inserting a second row for an
 // already-configured service) is what keeps this Server Action from ever
 // tripping it under normal use.
-export type SaveAutomationState = { error: string } | { automationId: string } | null;
+//
+// Builder safety (Automation Builder UI phase): this action never writes
+// status 'active'. The client's is_active value is not read at all, so a
+// stale or hand-built request cannot activate a flow. A flow already marked
+// active is refused rather than edited, because changing a live graph would
+// change live behaviour. "publish" only validates and stamps the graph with
+// meta.publishedAt -- it does not enable anything.
+export type SaveAutomationState = { error: string } | { automationId: string; publishedAt: string | null } | null;
 
 export async function saveAutomationGraph(
   _prevState: SaveAutomationState,
@@ -135,59 +142,61 @@ export async function saveAutomationGraph(
 
   const serviceId = str(formData, "service_id");
   const automationId = str(formData, "automation_id");
-  const isActive = str(formData, "is_active") === "true";
+  const mode = str(formData, "mode") === "publish" ? "publish" : "draft";
   const graphJson = str(formData, "graph");
+  const flowName = str(formData, "flow_name") || "Default automation";
+  if (flowName.length > 80) return { error: "Flow name must be 80 characters or fewer." };
 
   if (!serviceId) return { error: "Missing service." };
 
-  let rawGraph: unknown;
+  let graph;
   try {
-    rawGraph = JSON.parse(graphJson);
-  } catch {
-    return { error: "Flow data was invalid. Please try saving again." };
-  }
-
-  let actions;
-  try {
-    actions = parseAutomationGraph(rawGraph);
+    graph = parseBuilderGraph(JSON.parse(graphJson));
   } catch (err) {
-    if (err instanceof UnsupportedAutomationVersionError) return { error: err.message };
+    if (err instanceof BuilderGraphError) return { error: err.message };
     return { error: "Flow data was invalid. Please try saving again." };
   }
 
-  const validationErrors = validateGraphForSave(actions);
-  if (validationErrors.length > 0) {
-    return { error: validationErrors[0] };
+  const publishedAt = mode === "publish" ? new Date().toISOString() : null;
+  if (mode === "publish") {
+    const issues = validateBuilderGraph(graph);
+    if (issues.length > 0) return { error: issues[0].message };
   }
+  const actions = { ...graph, meta: { publishedAt } };
 
-  const status = isActive ? "active" : "draft";
   const supabase = await createClient();
 
   if (automationId) {
+    const { data: existing, error: lookupError } = await supabase
+      .from("automations")
+      .select("status")
+      .eq("id", automationId)
+      .maybeSingle();
+    if (lookupError) return { error: lookupError.message };
+    if (existing?.status === "active") {
+      return { error: "This flow is live, so it can't be edited here. Nothing was changed." };
+    }
+
     const { error } = await supabase
       .from("automations")
-      .update({ status, actions, updated_at: new Date().toISOString() })
+      .update({ name: flowName, status: "draft", actions, updated_at: new Date().toISOString() })
       .eq("id", automationId);
-    if (error) {
-      if (error.code === "23505") return { error: "Another automation for this service is already active." };
-      return { error: error.message };
-    }
+    if (error) return { error: error.message };
     revalidateServicesPage();
     revalidatePath(`/automation/services/${serviceId}/builder`);
-    return { automationId };
+    return { automationId, publishedAt };
   }
 
   const { data, error } = await supabase
     .from("automations")
-    .insert({ service_id: serviceId, name: "Default automation", status, actions })
+    .insert({ service_id: serviceId, name: flowName, status: "draft", actions })
     .select("id")
     .single();
   if (error || !data) {
-    if (error?.code === "23505") return { error: "Another automation for this service is already active." };
     return { error: error?.message ?? "Failed to save the flow." };
   }
 
   revalidateServicesPage();
   revalidatePath(`/automation/services/${serviceId}/builder`);
-  return { automationId: data.id };
+  return { automationId: data.id, publishedAt };
 }
