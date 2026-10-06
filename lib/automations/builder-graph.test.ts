@@ -285,3 +285,20 @@ describe("live executor rejects builder (v3) graphs", () => {
     expect(() => parseAutomationGraph({ version: 3, meta: { publishedAt: "2026-10-06T00:00:00Z" }, nodes: [], edges: [] })).toThrow();
   });
 });
+
+describe("single trigger rule", () => {
+  it("reports a second trigger on that block, and not on the first", () => {
+    const g = graph(
+      [node("t1", "trigger", { keywords: ["a"], label: "gypsum plastering" }), node("t2", "trigger", { keywords: [] })],
+      []
+    );
+    const dup = validateBuilderGraph(g).filter((i) => i.code === "duplicate_trigger");
+    expect(dup.map((i) => i.nodeId)).toEqual(["t2"]);
+    expect(dup[0].message).toContain("only one trigger");
+  });
+
+  it("reports nothing when there is exactly one trigger", () => {
+    const g = graph([node("t1", "trigger", { keywords: ["a"] })], []);
+    expect(validateBuilderGraph(g).some((i) => i.code === "duplicate_trigger")).toBe(false);
+  });
+});

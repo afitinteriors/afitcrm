@@ -253,6 +253,8 @@ export function AutomationBuilder({
 
   const addNode = useCallback(
     (type: BuilderNodeType, position?: { x: number; y: number }) => {
+      // A flow has exactly one trigger: refuse a second one (click or drop).
+      if (isTriggerType(type) && presentRef.current.nodes.some((n) => isTriggerType(n.data.nodeType))) return;
       const id = newId(type);
       pendingReveal.current = id;
       edit(
@@ -276,7 +278,7 @@ export function AutomationBuilder({
         { record: true }
       );
     },
-    [edit, flowInstance]
+    [edit, flowInstance, presentRef]
   );
 
   const removeNode = useCallback(
@@ -497,7 +499,7 @@ export function AutomationBuilder({
         )}
 
         <div className="flex min-h-0 flex-1">
-          <NodePalette onAdd={(type) => addNode(type)} />
+          <NodePalette onAdd={(type) => addNode(type)} triggerPresent={nodes.some((n) => isTriggerType(n.data.nodeType))} />
 
           <div className="relative flex min-w-0 flex-1 flex-col">
             <FlowCanvas

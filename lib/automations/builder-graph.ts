@@ -428,6 +428,7 @@ function sanitizeChoices(raw: unknown, max: number, where: string, what: string)
 
 export type FlowIssueCode =
   | "missing_trigger"
+  | "duplicate_trigger"
   | "missing_config"
   | "empty_keyword"
   | "empty_message"
@@ -444,8 +445,15 @@ export function validateBuilderGraph(graph: BuilderGraph): FlowIssue[] {
   const push = (code: FlowIssueCode, node: BuilderNode | null, message: string) =>
     issues.push({ code, nodeId: node?.id ?? null, message });
 
-  if (!graph.nodes.some((n) => isTriggerType(n.type))) {
+  // A flow has exactly one trigger. The builder won't add a second one, so an
+  // extra trigger can only come from saved data. It is reported on its own and
+  // every other check still runs for it.
+  const triggers = graph.nodes.filter((n) => isTriggerType(n.type));
+  if (triggers.length === 0) {
     push("missing_trigger", null, "Add a trigger block to start this flow.");
+  }
+  for (const extra of triggers.slice(1)) {
+    push("duplicate_trigger", extra, `"${getNodeName(extra)}": a flow can have only one trigger. Delete this extra trigger.`);
   }
 
   const validEdges = graph.edges.filter((e) => {
