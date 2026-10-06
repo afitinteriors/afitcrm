@@ -1,9 +1,8 @@
 "use client";
 
-import { useActionState, useEffect, useRef } from "react";
+import { useActionState, useEffect, useRef, useState, useTransition } from "react";
 import { uploadAutomationMedia, type UploadMediaState } from "@/lib/actions/automation-media";
 import type { AutomationMediaRow, AutomationMediaType } from "@/lib/supabase/types";
-import { SubmitButton } from "@/components/SubmitButton";
 
 // Real media library: image and video only (automation_media.media_type). Moved
 // here unchanged from the previous config panel -- upload and pick, nothing else.
@@ -22,14 +21,18 @@ export function MediaPicker({
 }) {
   const assetsOfType = mediaAssets.filter((a) => a.media_type === mediaType);
   const [state, formAction, isPending] = useActionState<UploadMediaState, FormData>(uploadAutomationMedia, null);
-  const formRef = useRef<HTMLFormElement>(null);
+  const [, startTransition] = useTransition();
+  const [localError, setLocalError] = useState<string | null>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const wasPending = useRef(false);
 
   useEffect(() => {
     if (wasPending.current && !isPending && state && "asset" in state) {
       onSelect(state.asset.id);
       onUploaded(state.asset);
-      formRef.current?.reset();
+      if (nameRef.current) nameRef.current.value = "";
+      if (fileRef.current) fileRef.current.value = "";
     }
     wasPending.current = isPending;
     // onSelect/onUploaded are stable setters from the parent -- excluded to
@@ -37,7 +40,29 @@ export function MediaPicker({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPending, state]);
 
-  const uploadError = state && "error" in state ? state.error : null;
+  // Not a <form>: this picker renders inside the builder's own <form>, and a
+  // nested form is ignored by the browser. A submit button here would then
+  // submit the builder (draft save) instead of uploading. The action is
+  // invoked directly with the file and name instead.
+  function handleUpload() {
+    const file = fileRef.current?.files?.[0];
+    const name = nameRef.current?.value.trim() ?? "";
+    if (!file) {
+      setLocalError("Choose a file to upload.");
+      return;
+    }
+    if (!name) {
+      setLocalError("A name is required.");
+      return;
+    }
+    setLocalError(null);
+    const payload = new FormData();
+    payload.set("name", name);
+    payload.set("file", file);
+    startTransition(() => formAction(payload));
+  }
+
+  const uploadError = localError ?? (state && "error" in state ? state.error : null);
   const accept = mediaType === "image" ? "image/jpeg,image/png" : "video/mp4,video/3gpp";
 
   return (
@@ -60,30 +85,33 @@ export function MediaPicker({
         ))}
       </select>
 
-      <form ref={formRef} action={formAction} className="mt-3 space-y-2 rounded-md border border-dashed border-border p-2">
+      <div className="mt-3 space-y-2 rounded-md border border-dashed border-border p-2">
         <p className="text-xs font-medium text-muted-foreground">Upload new {mediaType}</p>
         <input
+          ref={nameRef}
           type="text"
           name="name"
           placeholder="Name (e.g. Living room render)"
-          required
           className="block w-full rounded-md border border-border px-2 py-1.5 text-xs shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
         />
         <input
+          ref={fileRef}
           type="file"
           name="file"
           accept={accept}
-          required
+          onChange={() => setLocalError(null)}
           className="block w-full text-xs text-muted-foreground file:mr-2 file:rounded file:border-0 file:bg-secondary file:px-2 file:py-1 file:text-xs"
         />
         {uploadError && <p className="text-xs text-danger">{uploadError}</p>}
-        <SubmitButton
+        <button
+          type="button"
+          onClick={handleUpload}
+          disabled={isPending}
           className="h-8 w-full rounded-md border border-border px-2 text-xs font-medium text-foreground hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-60"
-          pendingLabel="Uploading…"
         >
-          Upload
-        </SubmitButton>
-      </form>
+          {isPending ? "Uploading…" : "Upload"}
+        </button>
+      </div>
     </div>
   );
 }
