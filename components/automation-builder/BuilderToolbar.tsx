@@ -138,7 +138,7 @@ export function BuilderToolbar({
             <div className="absolute right-0 top-10 z-30 w-56 rounded-lg border border-border bg-card p-1 shadow-lg">
               <MenuItem onClick={onFitToScreen}>Fit to screen</MenuItem>
               <MenuItem onClick={onDuplicate} disabled={!hasSelection || readOnly}>
-                Duplicate block (Ctrl+D)
+                Duplicate block
               </MenuItem>
               <MenuItem onClick={onDeleteSelected} disabled={!hasSelection || hasTriggerSelected || readOnly} danger>
                 Delete block
