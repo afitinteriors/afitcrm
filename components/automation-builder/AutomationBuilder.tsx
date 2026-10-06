@@ -211,6 +211,35 @@ export function AutomationBuilder({
     }
   }, [nodes, flowInstance]);
 
+  // When the canvas itself changes size (window narrowed, or the page reflowed),
+  // blocks that were visible can end up outside it. If any block is no longer
+  // fully in view, refit the view. Only the viewport changes: positions, data
+  // and connections are never touched.
+  useEffect(() => {
+    const canvas = document.querySelector<HTMLElement>(".react-flow");
+    if (!flowInstance || !canvas) return;
+    let last = { w: canvas.clientWidth, h: canvas.clientHeight };
+    const observer = new ResizeObserver(() => {
+      const size = { w: canvas.clientWidth, h: canvas.clientHeight };
+      if (size.w === last.w && size.h === last.h) return;
+      last = size;
+      const bounds = visibleFlowBounds(flowInstance);
+      if (!bounds) return;
+      const allInView = presentRef.current.nodes.every((n) => {
+        const height = n.measured?.height ?? estimateNodeHeight(n.data.nodeType, n.data);
+        return (
+          n.position.x >= bounds.minX &&
+          n.position.y >= bounds.minY &&
+          n.position.x + LAYOUT_NODE_WIDTH <= bounds.maxX &&
+          n.position.y + height <= bounds.maxY
+        );
+      });
+      if (!allInView) flowInstance.fitView({ padding: 0.2, duration: 200 });
+    });
+    observer.observe(canvas);
+    return () => observer.disconnect();
+  }, [flowInstance, presentRef]);
+
   // Every content edit goes through here. A live flow can be viewed and
   // selected, but nothing that records a change is applied. The server refuses
   // the same writes independently.
