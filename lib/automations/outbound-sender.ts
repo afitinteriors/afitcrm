@@ -10,6 +10,7 @@ import { MEDIA_BUCKET } from "@/lib/whatsapp/media";
 export interface OutboundSender {
   sendText(conversationId: string, text: string): Promise<void>;
   sendMedia(conversationId: string, mediaAssetId: string): Promise<void>;
+  sendDocument(conversationId: string, mediaAssetId: string): Promise<void>;
 }
 
 export class OutboundSendingBlockedError extends Error {}
@@ -27,6 +28,12 @@ export class BlockedOutboundSender implements OutboundSender {
   async sendMedia(): Promise<void> {
     throw new OutboundSendingBlockedError(
       "Automation-driven WhatsApp sending is not yet enabled. This flow reached a Send Image/Send Video block, which will send once outbound sending is explicitly approved for automations."
+    );
+  }
+
+  async sendDocument(): Promise<void> {
+    throw new OutboundSendingBlockedError(
+      "Automation-driven WhatsApp sending is not yet enabled. This flow reached a Send Document block, which will send once outbound sending is explicitly approved for automations."
     );
   }
 }
@@ -158,6 +165,77 @@ export class RealOutboundSender implements OutboundSender {
       wa_message_id: result.waMessageId,
       direction: "outbound",
       message_type: asset.media_type,
+      media_id: mediaId,
+      media_storage_path: asset.storage_path,
+      status: "sent",
+    });
+
+    if (insertError) {
+      throw new Error(
+        `Message was sent by Meta (wa_message_id: ${result.waMessageId}) but saving it to the conversation failed: ${insertError.message}`
+      );
+    }
+  }
+
+  // Sends an asset from the automation_media library as a WhatsApp document
+  // message -- same lazy-upload/cache/self-healing-retry mechanics as
+  // sendMedia above (see its comment), just a different Meta message type.
+  // automation_media's own CHECK constraint only allows media_type
+  // 'image'/'video' today (no schema change was made for this phase), so in
+  // production this can only ever be reached for an asset stored as one of
+  // those -- sent as a WhatsApp "document" message regardless of its stored
+  // media_type, since the message type a send_document block produces is a
+  // property of the block, not of the asset row. Exercised by synthetic
+  // tests with a fixture asset; see lib/automations/executor.ts's node
+  // comment for the real blocker (no real AFIT document file, and no DB
+  // column value for it yet).
+  async sendDocument(conversationId: string, mediaAssetId: string): Promise<void> {
+    const { data: conversation, error: conversationError } = await this.supabase
+      .from("conversations")
+      .select("wa_id, phone_number_id")
+      .eq("id", conversationId)
+      .single();
+
+    if (conversationError || !conversation) {
+      throw new Error(
+        `Failed to look up conversation for outbound send: ${conversationError?.message ?? "not found"}`
+      );
+    }
+
+    const { data: asset, error: assetError } = await this.supabase
+      .from("automation_media")
+      .select("mime_type, storage_path, meta_media_id")
+      .eq("id", mediaAssetId)
+      .single();
+
+    if (assetError || !asset) {
+      throw new Error(`Media asset not found (${mediaAssetId}): ${assetError?.message ?? "not found"}`);
+    }
+
+    let mediaId = asset.meta_media_id;
+    const usedCachedId = Boolean(mediaId);
+
+    if (!mediaId) {
+      mediaId = await this.uploadAssetToMeta(conversation.phone_number_id, asset, mediaAssetId);
+    }
+
+    let result;
+    try {
+      result = await sendMediaMessage(conversation.phone_number_id, conversation.wa_id, "document", mediaId);
+    } catch (err) {
+      if (usedCachedId && err instanceof SendMessageError && err.code === "meta_api_error") {
+        mediaId = await this.uploadAssetToMeta(conversation.phone_number_id, asset, mediaAssetId);
+        result = await sendMediaMessage(conversation.phone_number_id, conversation.wa_id, "document", mediaId);
+      } else {
+        throw err;
+      }
+    }
+
+    const { error: insertError } = await this.supabase.from("messages").insert({
+      conversation_id: conversationId,
+      wa_message_id: result.waMessageId,
+      direction: "outbound",
+      message_type: "document",
       media_id: mediaId,
       media_storage_path: asset.storage_path,
       status: "sent",

@@ -181,6 +181,24 @@ export function isTriggerType(type: BuilderNodeType): boolean {
   return TRIGGER_SET.has(type);
 }
 
+// The one graph lookup the executor needs to find where a run starts --
+// mirrors graph-schema.ts's findTriggerNodeId for the v2 format. Does not
+// walk the graph; only locates the trigger node.
+export function findTriggerNodeId(graph: BuilderGraph): string | null {
+  return graph.nodes.find((n) => isTriggerType(n.type))?.id ?? null;
+}
+
+// The executor's edge lookup: unlike v2 (exactly one outgoing edge per
+// node), a v3 node can have several ports (trigger's matched/not_matched,
+// buttons'/list_message's one port per option) -- the executor must follow
+// the edge leaving the SPECIFIC port it just finished with, never just "the"
+// outgoing edge. validateBuilderGraph's own save-time check (`usedPorts`)
+// already guarantees at most one edge can leave any single port, so this
+// never has to choose between two candidates.
+export function getOutgoingEdge(graph: BuilderGraph, nodeId: string, sourceHandle: string): BuilderEdge | undefined {
+  return graph.edges.find((e) => e.source === nodeId && e.sourceHandle === sourceHandle);
+}
+
 // Output ports for a node. Choice-based nodes get one port per option, keyed
 // by the option's stable id, so a relabel never breaks its connection.
 export function getPorts(type: BuilderNodeType, data: BuilderNodeData = {}): PortDef[] {

@@ -1,6 +1,6 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Database, LeadUpdate } from "@/lib/supabase/types";
+import type { Database, LeadStatus, LeadUpdate } from "@/lib/supabase/types";
 import type { CapturableLeadField } from "./graph-schema";
 import { toCanonicalPhone } from "@/lib/phone";
 
@@ -381,4 +381,113 @@ export async function captureLeadField(
   // customer_name / location / project_type -- never-clobber, race-safe
   // writes via captureNeverClobberTextField above.
   return captureNeverClobberTextField(supabase, leadId, context.fieldKey, replyText);
+}
+
+// Shared by every action below that needs this conversation's linked lead --
+// same "fail loud, not silent" rule as captureLeadField: a conversation with
+// no linked lead is a real, actionable configuration problem (normally
+// caused by a Save/Update/Assign/Follow-up block reached before a
+// create_or_link_lead block), not a reason to silently skip the step.
+async function requireLeadIdForConversation(supabase: SupabaseClient<Database>, conversationId: string): Promise<string> {
+  const { data: conversation, error } = await supabase
+    .from("conversations")
+    .select("lead_id")
+    .eq("id", conversationId)
+    .single();
+  if (error || !conversation) {
+    throw new Error(`Failed to look up conversation: ${error?.message ?? "not found"}`);
+  }
+  if (!conversation.lead_id) {
+    throw new Error("This conversation has no linked lead yet.");
+  }
+  return conversation.lead_id;
+}
+
+// Webhook-context equivalent of lib/actions/leads.ts's setLeadStatus() --
+// that function requires getCurrentProfile() (a real user session), which
+// the webhook never has, so it can't be reused directly; this duplicates
+// only its one essential safety rule, never its UI-only concerns (there's
+// no form to redirect from here).
+//
+// "won"/"lost" are rejected for the exact same reason setLeadStatus()
+// rejects them: those statuses are terminal and require job_value/
+// lost_reason, which only markLeadWon()/markLeadLost() know how to capture.
+// An automation block cannot supply either, so it must never be able to
+// reach those statuses -- this is the one safety rule CLAUDE.md marks "do
+// not remove," reimplemented here rather than bypassed.
+export async function updateLeadStage(
+  supabase: SupabaseClient<Database>,
+  conversationId: string,
+  stage: LeadStatus
+): Promise<void> {
+  if (stage === "won" || stage === "lost") {
+    throw new Error(`"Update Stage" cannot set "${stage}" -- use the Won/Lost close workflow for that, not an automation.`);
+  }
+  const leadId = await requireLeadIdForConversation(supabase, conversationId);
+
+  const { data: current, error: fetchError } = await supabase.from("leads").select("status").eq("id", leadId).single();
+  if (fetchError || !current) throw new Error(`Failed to load lead for stage update: ${fetchError?.message ?? "not found"}`);
+  if (current.status === "won" || current.status === "lost") {
+    throw new Error(`"Update Stage" cannot move a closed (${current.status}) lead back into the pipeline.`);
+  }
+
+  const update: LeadUpdate = { status: stage, lost_reason: null };
+  const { error } = await supabase.from("leads").update(update).eq("id", leadId);
+  if (error) throw new Error(`Failed to update lead stage: ${error.message}`);
+}
+
+// "Specific" assignment only -- directly, unambiguously assigns the one
+// staff member the flow was configured with. Mirrors
+// resolveDefaultAssignee's own validation (the id must belong to an
+// existing `staff` profile) so a stale/deleted staff reference fails the
+// run with a clear reason instead of silently assigning nothing or
+// crashing on the foreign key.
+//
+// "Automatic / Team" (assignmentMode "auto_team") deliberately has no case
+// here -- see lib/automations/executor.ts for why: no assignment strategy
+// for it exists anywhere in this codebase, and inventing one (round robin,
+// least workload, random, ...) is a product decision this function must
+// not make silently.
+export async function assignStaffSpecific(supabase: SupabaseClient<Database>, conversationId: string, staffId: string): Promise<void> {
+  const leadId = await requireLeadIdForConversation(supabase, conversationId);
+
+  const { data: staff, error: staffError } = await supabase.from("profiles").select("id").eq("id", staffId).eq("role", "staff").limit(1);
+  if (staffError) throw new Error(`Failed to validate staff member: ${staffError.message}`);
+  if (!staff || staff.length !== 1) {
+    throw new Error(`"Assign Staff" references a staff member that no longer exists (${staffId}).`);
+  }
+
+  const { error } = await supabase.from("leads").update({ assigned_to_id: staffId }).eq("id", leadId);
+  if (error) throw new Error(`Failed to assign staff: ${error.message}`);
+}
+
+export type CreateFollowUpParams = {
+  conversationId: string;
+  title: string;
+  dueHours: number;
+};
+
+// Webhook-context follow-up creation. follow_ups has no "title" column (see
+// its schema) -- the configured title is stored in `notes`, the same
+// column every other automation-written annotation already uses (see
+// appendQualificationNote's "[Automation] <label>: <value>" convention),
+// labeled so it's never confused with a human-written note. due_date is
+// computed from dueHours against the current moment -- this project has no
+// business-hours-aware due-date helper for sub-day offsets (business-time.ts
+// only resolves whole business days), and a 1-day automation follow-up
+// landing on a weekend is the same as any other lead activity that happens
+// to land there; nothing here claims otherwise.
+export async function createAutomationFollowUp(supabase: SupabaseClient<Database>, params: CreateFollowUpParams): Promise<void> {
+  const leadId = await requireLeadIdForConversation(supabase, params.conversationId);
+
+  const dueAt = new Date(Date.now() + params.dueHours * 60 * 60 * 1000);
+  const dueDate = dueAt.toISOString().slice(0, 10);
+
+  const { error } = await supabase.from("follow_ups").insert({
+    lead_id: leadId,
+    type: "follow_up",
+    due_date: dueDate,
+    notes: `[Automation] ${params.title}`,
+  });
+  if (error) throw new Error(`Failed to create follow-up: ${error.message}`);
 }

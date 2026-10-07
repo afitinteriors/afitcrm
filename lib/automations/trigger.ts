@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, AutomationRunStatus, AutomationSessionRow } from "@/lib/supabase/types";
 import { matchKeyword, type ActiveKeyword } from "./matching";
 import { startAndAdvance, resumeAndAdvance } from "./executor";
-import { parseAutomationGraph, findTriggerNodeId } from "./graph-schema";
+import { parseBuilderGraph, findTriggerNodeId } from "./builder-graph";
 import { getEngagedSession, startSession, markSessionTerminal, pauseSessionAt } from "./sessions";
 import { RealOutboundSender, type OutboundSender } from "./outbound-sender";
 
@@ -123,7 +123,7 @@ export async function triggerAutomationForMessage(
   // exists.
   let entryNodeId: string;
   try {
-    const graph = parseAutomationGraph(automation.actions);
+    const graph = parseBuilderGraph(automation.actions);
     const trigger = findTriggerNodeId(graph);
     if (!trigger) throw new Error("Automation flow has no trigger block.");
     entryNodeId = trigger;

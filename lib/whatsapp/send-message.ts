@@ -167,15 +167,20 @@ export async function uploadMediaToMeta(
 export type SendMediaMessageResult = { waMessageId: string };
 
 /**
- * Sends an image or video message referencing an already-uploaded Meta
- * media id (see uploadMediaToMeta). No caption -- v1 keeps media nodes
+ * Sends an image, video or document message referencing an already-uploaded
+ * Meta media id (see uploadMediaToMeta). No caption -- v1 keeps media nodes
  * focused only on sending the media; a caption/text follow-up is a
- * separate send_text node, not a parameter here.
+ * separate send_text node, not a parameter here. Meta's API shape is
+ * identical for all three types (only the top-level key differs), so one
+ * function covers them; document support was added for the executor's
+ * send_document block (lib/automations/executor.ts) -- automation_media
+ * itself still only accepts image/video rows (its own CHECK constraint),
+ * so this is exercised by synthetic tests only until that's extended.
  */
 export async function sendMediaMessage(
   phoneNumberId: string,
   to: string,
-  mediaType: "image" | "video",
+  mediaType: "image" | "video" | "document",
   mediaId: string
 ): Promise<SendMediaMessageResult> {
   const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;

@@ -1,64 +1,50 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
-import { parseAutomationGraph, getOutgoingEdges, type AutomationGraphV2 } from "./graph-schema";
-import { createOrLinkLeadForConversation, captureLeadField } from "./crm-actions";
+import {
+  parseBuilderGraph,
+  getOutgoingEdge,
+  NEXT_PORT,
+  type BuilderGraph,
+  type ChoiceItem,
+} from "./builder-graph";
+import {
+  createOrLinkLeadForConversation,
+  captureLeadField,
+  updateLeadStage,
+  assignStaffSpecific,
+  createAutomationFollowUp,
+} from "./crm-actions";
 import type { OutboundSender } from "./outbound-sender";
 
-// Sequential, single-outgoing-edge graph traversal. This replaces the
-// earlier "does the graph contain an enabled node anywhere" check with real
-// reachability from wherever the walk starts -- a create_or_link_lead node
-// that isn't actually connected no longer executes (a deliberate, approved
-// correction, not a regression: every graph built through the builder has
-// always connected the two directly).
+// Sequential graph traversal over the v3 Builder graph (lib/automations/
+// builder-graph.ts). Every automation saved through the Builder has been v3
+// since that phase shipped -- parseBuilderGraph() transparently upgrades
+// any remaining legacy v2 row on read, so this is the one graph format the
+// executor needs to understand. (Previously this file called graph-schema.ts's
+// v2-only parseAutomationGraph() directly, which meant no flow saved through
+// the v3 Builder could ever execute at all -- parseAutomationGraph() throws
+// UnsupportedAutomationVersionError for version 3. That was the actual
+// runtime-compatibility gap, not any single node type.)
 //
-// send_text and ask_question execute identically -- both call
-// outboundSender.sendText() and continue, never pausing. ask_question is a
-// distinct node type purely for builder clarity (a business wants to see
-// "Ask Question" as an intentional block, not a reused "Send Text"); it
-// does not itself wait for anything -- pairing it with a following
-// capture_lead_field block (which is what actually pauses) is a product
-// convention, not an engine rule.
+// Unlike v2 (exactly one outgoing edge per node), a v3 node can expose
+// several named ports (trigger's matched/not_matched; buttons'/
+// list_message's one port per configured option) -- getOutgoingEdge()
+// follows the edge leaving the SPECIFIC port a node just finished with.
 //
-// send_image and send_video execute identically to send_text/ask_question
-// (call outboundSender.sendMedia() and continue, never pausing) -- see
-// outbound-sender.ts for the media-id resolution/caching/self-healing
-// logic, none of which the executor needs to know about.
+// send_text/ask_question, send_image/send_video/send_document all execute
+// identically to their v2 counterparts (call the matching OutboundSender
+// method and continue, never pausing on their own) -- see outbound-sender.ts.
+// ask_question being a distinct type from send_text is builder clarity only,
+// same as before; something that actually waits for a reply (save_to_crm
+// with valueSource "customer_reply", buttons, list_message) must follow it.
 //
-// Node types with no defined execution behavior here (condition) are not
-// silently skipped -- reaching one fails the walk closed with a specific
-// "unsupported block type" error. It isn't addable through the builder
-// today, so this only matters as defense-in-depth against a hand-edited
-// graph.
+// Node types with no defined execution behavior here (condition, branch,
+// delay, jump_to, add_tag, notify_team, send_audio, send_template, and every
+// non-keyword trigger type) are not silently skipped -- reaching one fails
+// the walk closed with a specific "unsupported block type" error, the same
+// convention the v2 executor used for `condition`. None of these are used by
+// any flow this phase built or needed to run.
 
-// No node type here can create a cycle through the builder's own rules
-// (isValidConnection blocks a node connecting directly to itself, and
-// validateGraphForSave/parseAutomationGraph never inspect the edge
-// topology for longer cycles) -- but a graph loaded straight from the
-// database (a hand-edited row, a future bug, anything bypassing the
-// builder entirely) could still describe one.
-//
-// Primary defense: a visited-node-id set, scoped to one walk() call only
-// (never persisted, never carried across webhook requests). If the walker
-// is about to revisit a node id it has already processed during this same
-// continuous execution, that is unambiguously a cycle -- there is no
-// legitimate reason a single sequential pass would return to a node it
-// already ran. Detected and failed BEFORE that node's action executes
-// again, so a repeated send_text/ask_question is never actually sent a
-// second time; each outbound-capable node can execute at most once per
-// walk. Being scoped to the call (a fresh Set every time walk() runs)
-// is exactly what keeps this from misfiring on legitimate pause/resume:
-// a fresh inbound message starts a brand-new walk() with a brand-new
-// empty visited set, so a node genuinely revisited across two *separate*
-// webhook deliveries (the normal, expected shape of resuming a paused
-// capture_lead_field) is never mistaken for a cycle -- only a node
-// revisited within the same continuous pass is.
-//
-// Defense-in-depth: a hard cap on how many nodes a single walk() call may
-// visit at all, in case a future bug or node type ever produces a "cycle"
-// that doesn't strictly revisit an id (e.g. an unbounded generator of new
-// ids), or simply as a second, independent backstop. 30 is generous for
-// any realistic flow built in this project so far (the largest so far had
-// 9 nodes).
 export const MAX_GRAPH_STEPS = 30;
 
 export class GraphExecutionLimitError extends Error {}
@@ -71,29 +57,58 @@ export type ExecutionContext = {
   serviceName: string;
 };
 
-export type WalkOutcome = { outcome: "completed"; collectedData: Record<string, string> } | {
-  outcome: "paused";
-  nodeId: string;
-  collectedData: Record<string, string>;
-};
+export type WalkOutcome =
+  | { outcome: "completed"; collectedData: Record<string, string> }
+  | { outcome: "paused"; nodeId: string; collectedData: Record<string, string> };
 
-// `replyText` is only meaningful for the very first node visited -- it
-// represents an inbound reply being resumed into a node the session was
-// paused at. Every node reached after that is a fresh forward step with no
-// reply available, exactly like a brand-new walk from the trigger node.
-// `collectedData` in the result is only what THIS call captured (raw reply
-// text keyed by fieldKey) -- the caller merges it onto the session's
-// existing collected_data, it is not a replacement.
+const DEFAULT_FOLLOW_UP_DUE_HOURS = 24;
+
+// Matches a customer's free-text reply to one of a buttons/list_message
+// block's configured options. WhatsApp interactive replies aren't sent by
+// anything in this codebase yet (OutboundSender has no interactive-message
+// method -- these blocks compose a plain numbered text list, same as every
+// other send here), so a reply is always plain text: matched either by its
+// 1-based position ("2", "2.", "(2)") or by a case-insensitive
+// containment of the option's label, mirroring the same contains-match
+// convention lib/automations/text.ts already uses for keyword matching.
+// Returns null, never a guess, when nothing matches.
+function matchChoice(reply: string, choices: ChoiceItem[]): ChoiceItem | null {
+  const trimmed = reply.trim();
+  const numeric = trimmed.match(/^\(?(\d+)\)?\.?$/);
+  if (numeric) {
+    const index = Number(numeric[1]) - 1;
+    if (index >= 0 && index < choices.length) return choices[index];
+  }
+  const normalized = trimmed.toLowerCase();
+  const byLabel = choices.find((c) => c.label.trim().toLowerCase() === normalized);
+  if (byLabel) return byLabel;
+  return choices.find((c) => normalized.includes(c.label.trim().toLowerCase())) ?? null;
+}
+
+// Composes the plain-text prompt for a buttons/list_message block: the
+// configured message text, followed by one numbered line per option. This
+// is the entire rendering -- there is no real interactive-button send path
+// (see matchChoice's comment), so the numbering is also what a reply is
+// matched against.
+function composeChoicePrompt(text: string, listTitle: string | undefined, choices: ChoiceItem[]): string {
+  const lines = choices.map((c, i) => `${i + 1}. ${c.label}`);
+  const header = listTitle ? `${text}\n\n${listTitle}:` : text;
+  return `${header}\n${lines.join("\n")}`;
+}
+
 async function walk(
   supabase: SupabaseClient<Database>,
-  graph: AutomationGraphV2,
+  graph: BuilderGraph,
   startNodeId: string,
+  startPort: string,
   replyText: string | undefined,
   context: ExecutionContext,
   outboundSender: OutboundSender
 ): Promise<WalkOutcome> {
+  const byId = new Map(graph.nodes.map((n) => [n.id, n]));
   let currentId = startNodeId;
   let pendingReply = replyText;
+  let isFirstNode = true;
   const collectedData: Record<string, string> = {};
   const visited = new Set<string>();
   let steps = 0;
@@ -101,81 +116,101 @@ async function walk(
   for (;;) {
     steps += 1;
     if (steps > MAX_GRAPH_STEPS) {
-      // Defense-in-depth only -- the visited-set check below should always
-      // catch a real cycle well before this fires. Fail closed before
-      // visiting another node either way.
       throw new GraphExecutionLimitError(
         `Automation flow exceeded ${MAX_GRAPH_STEPS} steps in a single execution -- this usually means the flow's connections form a cycle. Check the blocks around "${currentId}" in the flow builder.`
       );
     }
-
     if (visited.has(currentId)) {
-      // Revisiting a node within the same continuous walk -- unambiguously
-      // a cycle. Fail here, before this node is looked up or executed
-      // again, so a repeated send_text/ask_question is never sent twice.
       throw new GraphCycleError(
         `Automation flow revisited block "${currentId}" during the same execution -- this means the flow's connections form a cycle. Check the blocks around "${currentId}" in the flow builder.`
       );
     }
     visited.add(currentId);
 
-    const node = graph.nodes.find((n) => n.id === currentId);
+    const node = byId.get(currentId);
     if (!node) {
       throw new Error(`Automation flow references an unknown block (${currentId}).`);
     }
 
+    // The port this node will leave by, once its action (if any) below
+    // decides it's done. Branching nodes (trigger/buttons/list_message)
+    // overwrite this themselves; every other node always leaves via "next".
+    let leavingPort = NEXT_PORT;
+
     switch (node.type) {
-      case "trigger":
-        break; // structural, no effect
-      case "end":
+      case "trigger": {
+        // Structural only -- real keyword matching already happened in
+        // trigger.ts before this walk started (service_keywords, not this
+        // node's own `keywords` field -- see the module comment on why
+        // those are two separate things today). The walk is only ever
+        // started here with startPort="matched" from real inbound traffic;
+        // "not_matched" is reachable by calling walk()/startAndAdvance()
+        // directly with that start port (what the synthetic tests do), not
+        // by anything in the real message pipeline -- see this file's own
+        // "known gap" note in the Step 7 report for why.
+        leavingPort = isFirstNode ? startPort : NEXT_PORT;
+        break;
+      }
+
+      case "end_flow":
         return { outcome: "completed", collectedData };
+
       case "create_or_link_lead":
-        // Not caught here -- a real failure must propagate to trigger.ts's
-        // own try/catch, which marks the whole run "failed" with the error.
         await createOrLinkLeadForConversation(supabase, context);
         break;
+
       case "send_text":
       case "ask_question": {
-        const text = node.data?.text;
+        const text = node.data.text;
         if (!text) {
           throw new Error(`"${node.type === "ask_question" ? "Ask Question" : "Send Text"}" block (${node.id}) has no text configured.`);
         }
-        // Not caught here -- same propagation rule as every other action.
-        // The only wired sender today (BlockedOutboundSender) always
-        // throws, so this fails the run/session closed rather than faking
-        // delivery.
         await outboundSender.sendText(context.conversationId, text);
         break;
       }
+
       case "send_image":
       case "send_video": {
-        const mediaAssetId = node.data?.mediaAssetId;
+        const mediaAssetId = node.data.mediaAssetId;
         if (!mediaAssetId) {
           throw new Error(`"${node.type === "send_image" ? "Send Image" : "Send Video"}" block (${node.id}) has no media selected.`);
         }
-        // Same propagation rule as every other node action -- not caught
-        // here, so a failed media send (upload rejected, Meta send
-        // rejected even after the self-healing re-upload retry) fails the
-        // run/session closed exactly like a failed send_text.
         await outboundSender.sendMedia(context.conversationId, mediaAssetId);
         break;
       }
-      case "capture_lead_field": {
-        const fieldKey = node.data?.fieldKey;
+
+      case "send_document": {
+        const mediaAssetId = node.data.mediaAssetId;
+        if (!mediaAssetId) {
+          throw new Error(`"Send Document" block (${node.id}) has no file selected.`);
+        }
+        await outboundSender.sendDocument(context.conversationId, mediaAssetId);
+        break;
+      }
+
+      case "save_to_crm": {
+        const fieldKey = node.data.fieldKey;
         if (!fieldKey) {
-          throw new Error(`"Capture Lead Field" block (${node.id}) has no field configured.`);
+          throw new Error(`"Save to CRM" block (${node.id}) has no field configured.`);
+        }
+        const isFixed = node.type === "save_to_crm" && node.data.valueSource === "fixed";
+        if (isFixed) {
+          const fixedValue = node.data.fixedValue;
+          if (!fixedValue) {
+            throw new Error(`"Save to CRM" block (${node.id}) has no fixed value configured.`);
+          }
+          const recordedValue = await captureLeadField(supabase, {
+            conversationId: context.conversationId,
+            fieldKey,
+            replyText: fixedValue,
+          });
+          collectedData[fieldKey] = recordedValue;
+          break;
         }
         if (pendingReply === undefined) {
-          // Forward arrival with nothing to capture yet -- this is the
-          // pause point. The caller persists current_node_id here.
+          // Pause point -- the caller persists current_node_id here.
           return { outcome: "paused", nodeId: node.id, collectedData };
         }
-        // captureLeadField() returns the field's actual, DB-confirmed value
-        // after its own atomic write/never-clobber race resolves -- not
-        // necessarily this walk's own pendingReply -- so collected_data
-        // always agrees with whatever really ended up in the lead row,
-        // even if this execution lost a concurrent capture race for the
-        // same field (see crm-actions.ts for the mechanism).
         const recordedValue = await captureLeadField(supabase, {
           conversationId: context.conversationId,
           fieldKey,
@@ -185,32 +220,102 @@ async function walk(
         pendingReply = undefined;
         break;
       }
+
+      case "buttons":
+      case "list_message": {
+        const choices = node.type === "buttons" ? node.data.buttons : node.data.items;
+        const text = node.data.text;
+        if (!text || !choices || choices.length === 0) {
+          throw new Error(`"${node.type === "buttons" ? "Buttons" : "List Message"}" block (${node.id}) is not fully configured.`);
+        }
+        if (pendingReply === undefined) {
+          await outboundSender.sendText(context.conversationId, composeChoicePrompt(text, node.data.listTitle, choices));
+          return { outcome: "paused", nodeId: node.id, collectedData };
+        }
+        const match = matchChoice(pendingReply, choices);
+        if (!match) {
+          // No option matched -- re-prompt and stay paused here rather than
+          // guessing a destination. Bounded by the customer's next reply,
+          // not by anything in this walk (each attempt is a separate
+          // inbound delivery/webhook call).
+          await outboundSender.sendText(context.conversationId, composeChoicePrompt(text, node.data.listTitle, choices));
+          return { outcome: "paused", nodeId: node.id, collectedData };
+        }
+        pendingReply = undefined;
+        leavingPort = match.id;
+        break;
+      }
+
+      case "update_stage": {
+        const stage = node.data.stage;
+        if (!stage) {
+          throw new Error(`"Update Stage" block (${node.id}) has no stage configured.`);
+        }
+        await updateLeadStage(supabase, context.conversationId, stage);
+        break;
+      }
+
+      case "assign_staff": {
+        if (node.data.assignmentMode === "auto_team") {
+          // No assignment strategy for "Automatic / Team" exists anywhere in
+          // this codebase (confirmed: lib/assignment-logic.ts's
+          // lowestWorkloadStaffId() is a human-facing *suggestion* helper for
+          // the manual-assign UI, never used to commit an assignment on its
+          // own -- using it here would mean this function silently choosing
+          // "least workload" as the automatic strategy, which is exactly the
+          // kind of invented business semantics this phase was told not to
+          // introduce). Fails the run/session closed with a specific,
+          // actionable reason instead.
+          throw new Error(
+            `"Assign Staff" block (${node.id}) is set to Automatic / Team, which has no defined runtime behavior yet. Use "Specific Staff Member" until an assignment strategy is decided.`
+          );
+        }
+        const staffId = node.data.staffId;
+        if (!staffId) {
+          throw new Error(`"Assign Staff" block (${node.id}) has no staff member configured.`);
+        }
+        await assignStaffSpecific(supabase, context.conversationId, staffId);
+        break;
+      }
+
+      case "create_follow_up": {
+        const title = node.data.followUpTitle;
+        if (!title) {
+          throw new Error(`"Create Follow-up" block (${node.id}) has no title configured.`);
+        }
+        await createAutomationFollowUp(supabase, {
+          conversationId: context.conversationId,
+          title,
+          dueHours: node.data.followUpDueHours ?? DEFAULT_FOLLOW_UP_DUE_HOURS,
+        });
+        break;
+      }
+
       default:
         throw new Error(`Automation flow contains an unsupported block type ("${node.type}").`);
     }
 
-    const outgoing = getOutgoingEdges(graph, currentId);
-    if (outgoing.length === 0) return { outcome: "completed", collectedData };
-    if (outgoing.length > 1) {
-      throw new Error(`Automation flow block (${currentId}) has more than one outgoing connection.`);
-    }
-    currentId = outgoing[0].target;
+    isFirstNode = false;
+    const edge = getOutgoingEdge(graph, currentId, leavingPort);
+    if (!edge) return { outcome: "completed", collectedData };
+    currentId = edge.target;
   }
 }
 
 // Fresh match: walk starts at the graph's trigger node with no reply to
-// consume. Throws on a missing/legacy/unrecognized version, exactly as
-// before -- not caught here, so it propagates to trigger.ts's catch and
-// marks the run "failed" with a clear reason.
+// consume, leaving via the "matched" port -- not caught here, so a
+// missing/unreadable graph propagates to trigger.ts's catch and marks the
+// run "failed" with a clear reason.
 export async function startAndAdvance(
   supabase: SupabaseClient<Database>,
   rawActions: unknown,
   triggerNodeId: string,
   context: ExecutionContext,
-  outboundSender: OutboundSender
+  outboundSender: OutboundSender,
+  startPort: string = "matched"
 ): Promise<WalkOutcome> {
-  const graph = parseAutomationGraph(rawActions);
-  return walk(supabase, graph, triggerNodeId, undefined, context, outboundSender);
+  const graph = parseBuilderGraph(rawActions);
+  return walk(supabase, graph, triggerNodeId, startPort, undefined, context, outboundSender);
 }
 
 // Resume: walk starts at wherever the session was paused, consuming the
@@ -223,6 +328,12 @@ export async function resumeAndAdvance(
   context: ExecutionContext,
   outboundSender: OutboundSender
 ): Promise<WalkOutcome> {
-  const graph = parseAutomationGraph(rawActions);
-  return walk(supabase, graph, currentNodeId, replyText, context, outboundSender);
+  const graph = parseBuilderGraph(rawActions);
+  return walk(supabase, graph, currentNodeId, NEXT_PORT, replyText, context, outboundSender);
 }
+
+// Exposed for tests only -- lets Scenario K ("invalid graph rejected before
+// execution") and other synthetic tests exercise parseBuilderGraph's own
+// throw behavior through the same entry point production code uses,
+// without needing a running webhook.
+export { parseBuilderGraph };
