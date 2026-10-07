@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { formatRelative } from "@/lib/format";
@@ -12,6 +12,24 @@ const STATUS_DOT: Record<string, string> = {
   open: "bg-emerald-500",
   closed: "bg-muted-foreground",
 };
+
+const noopSubscribe = () => () => {};
+
+// formatRelative() depends on Date.now(), which is evaluated at a different
+// wall-clock instant during SSR than during the client's initial hydration
+// render -- the classic cause of a text-content hydration mismatch (React
+// error #418) for any relative-time label rendered directly during render.
+// Same fix, same useSyncExternalStore idiom, as components/NotificationSoundControl.tsx
+// and components/automation-hub/UpdatedAt.tsx already established for this
+// project: a neutral placeholder on the server and first paint (both sides
+// render the same thing, so hydration has nothing to mismatch), the real
+// value once mounted. useState+useEffect was tried first and rejected --
+// setState directly in an effect body trips this project's
+// react-hooks/set-state-in-effect lint rule, same as those two files note.
+function RelativeTime({ value }: { value: string | null | undefined }) {
+  const isClient = useSyncExternalStore(noopSubscribe, () => true, () => false);
+  return <>{isClient ? formatRelative(value) : ""}</>;
+}
 
 // basePath lets this list be reused by both the CRM's embedded /conversations
 // view and the standalone /chat surface -- same data, same component,
@@ -108,7 +126,9 @@ export function ConversationListPanel({
                           {name}
                         </Link>
                       </span>
-                      <span className="shrink-0 text-[11px] text-muted-foreground">{formatRelative(conversation.updated_at)}</span>
+                      <span className="shrink-0 text-[11px] text-muted-foreground">
+                        <RelativeTime value={conversation.updated_at} />
+                      </span>
                     </div>
                     <div className="mt-0.5 flex items-center gap-1.5">
                       <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT[conversation.status] ?? STATUS_DOT.closed}`} />
