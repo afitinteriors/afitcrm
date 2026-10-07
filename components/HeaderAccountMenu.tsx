@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { SignOutButton } from "@/components/SignOutButton";
+import { firstInitial } from "@/lib/format";
 
 const ROLE_LABELS: Record<string, string> = {
   admin: "Administrator",
@@ -20,7 +21,7 @@ const ROLE_LABELS: Record<string, string> = {
 export function HeaderAccountMenu({ displayName, role, dark = false }: { displayName: string | null; role: string; dark?: boolean }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
-  const initial = (displayName ?? "?").charAt(0).toUpperCase();
+  const initial = firstInitial(displayName ?? "?");
 
   useEffect(() => {
     if (!open) return;

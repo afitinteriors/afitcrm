@@ -42,4 +42,22 @@ describe("firstInitial", () => {
   it("falls through to a plain BMP character when the emoji is not first", () => {
     expect(firstInitial("Achu❣️❣️❣️❣️❣️kashi")).toBe("A");
   });
+
+  it("extracts a full character from a Malayalam (BMP) name", () => {
+    // Real production example: "ഓം ശ്രീ വിഷ്ണുമായ ചാത്തൻ".
+    expect(firstInitial("ഓം ശ്രീ വിഷ്ണുമായ ചാത്തൻ")).toBe("ഓ");
+  });
+
+  it.each(["🖤🖤🖤", "💫D🅾️N💫"])(
+    "extracts a complete first character, never a lone surrogate, from %s",
+    (name) => {
+      const result = firstInitial(name);
+      expect(Array.from(result)).toHaveLength(1);
+      // A lone (unpaired) high surrogate would be the one thing this must
+      // never produce -- it's exactly what the buggy charAt(0) returned.
+      const code = result.codePointAt(0) ?? 0;
+      const isLoneHighSurrogateRange = code >= 0xd800 && code <= 0xdbff && result.length === 1;
+      expect(isLoneHighSurrogateRange).toBe(false);
+    }
+  );
 });

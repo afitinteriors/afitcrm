@@ -5,6 +5,7 @@ import { MessageThread } from "@/components/conversations/MessageThread";
 import { MobileChatHeader } from "@/components/conversations/MobileChatHeader";
 import { LeadDetailsContent } from "@/components/conversations/LeadDetailsContent";
 import { ReplyComposer } from "@/components/conversations/ReplyComposer";
+import { firstInitial } from "@/lib/format";
 import { useLiveMessages } from "@/lib/realtime/conversations";
 import type { ConversationDetail, MessageListItem } from "@/lib/conversations";
 
@@ -40,7 +41,7 @@ export function ChatThreadClient({
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <div className="flex items-center gap-3">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#14342a] text-sm font-semibold text-white">
-                {name.charAt(0).toUpperCase()}
+                {firstInitial(name)}
               </div>
               <div>
                 <p className="text-sm font-semibold text-foreground">{name}</p>
