@@ -30,7 +30,10 @@ export function DutyList({ items, emptyLabel }: { items: DutyItem[]; emptyLabel:
                 <p className="truncate text-sm font-medium text-foreground">
                   {item.customerName}
                   {badge && (
-                    <span className={`ml-2 rounded-full px-2 py-0.5 text-[11px] font-medium ${badge.className}`}>{badge.label}</span>
+                    <>
+                      {" "}
+                      <span className={`ml-2 rounded-full px-2 py-0.5 text-[11px] font-medium ${badge.className}`}>{badge.label}</span>
+                    </>
                   )}
                 </p>
                 <p className="truncate text-xs text-muted-foreground">{item.reasonText}</p>
