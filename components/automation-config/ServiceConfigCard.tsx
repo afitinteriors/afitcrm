@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useActionState, useEffect, useRef } from "react";
 import { toggleServiceActive, addKeyword, toggleKeywordActive, deleteKeyword } from "@/lib/actions/automation-config";
-import { parseAutomationGraph } from "@/lib/automations/graph-schema";
+import { parseBuilderGraph } from "@/lib/automations/builder-graph";
 import { SubmitButton } from "@/components/SubmitButton";
 import { Card } from "@/components/Card";
 import type { ServiceWithConfig } from "@/lib/automations/admin-data";
@@ -125,10 +125,18 @@ function AutomationSummary({
   automation: ServiceWithConfig["automation"];
 }) {
   const isActive = automation?.status === "active";
+  // Reads via parseBuilderGraph (not graph-schema.ts's v2-only
+  // parseAutomationGraph, which throws for every automation saved by the
+  // v3 Builder -- every automation, since that phase shipped -- making
+  // this summary silently claim "no executable action" for a flow that
+  // actually has one; a Step 7 compatibility-audit finding, not a
+  // cosmetic choice). "create_or_link_lead" is still the one node type
+  // that determines this specific message across both v2 and v3, since
+  // it's the only action type this summary has ever claimed to detect.
   const hasLeadAction = (() => {
     if (!automation) return false;
     try {
-      return parseAutomationGraph(automation.actions).nodes.some((n) => n.type === "create_or_link_lead");
+      return parseBuilderGraph(automation.actions).nodes.some((n) => n.type === "create_or_link_lead");
     } catch {
       return false;
     }
