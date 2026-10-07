@@ -15,19 +15,30 @@ export type CurrentProfile = {
 //
 // Wrapped in React's cache() so that within a single request, every caller
 // (layouts, pages, data-fetching helpers) that needs the current profile
-// shares one auth.getUser() + profiles lookup instead of each repeating both
-// round trips -- this was previously happening 4-5x per page load.
+// shares one JWT verification + profiles lookup instead of each repeating
+// both round trips -- this was previously happening 4-5x per page load.
+//
+// Uses getClaims() rather than getUser(): this project's Supabase Auth uses
+// asymmetric (ES256) JWT signing keys, so getClaims() verifies the access
+// token's signature locally via WebCrypto instead of making a network round
+// trip to the Auth server's /user endpoint. proxy.ts's middleware already
+// makes that real network call once per request (auth.getUser(), to decide
+// the login redirect) -- this was then repeating the same server-side
+// validation a second time on every request. The profiles lookup below still
+// goes through RLS with the caller's real JWT, so row-level access is
+// unaffected; only the redundant second Auth-server round trip is removed.
 export const getCurrentProfile = cache(async (): Promise<CurrentProfile | null> => {
   const supabase = await createClient();
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return null;
+    data,
+  } = await supabase.auth.getClaims();
+  const userId = data?.claims.sub;
+  if (!userId) return null;
 
   const { data: profile } = await supabase
     .from("profiles")
     .select("id, role, display_name")
-    .eq("id", user.id)
+    .eq("id", userId)
     .single();
   if (!profile) return null;
 
