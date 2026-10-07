@@ -7,14 +7,18 @@ import type { Database } from "@/lib/supabase/types";
 // "no active lead yet" lookup and both inserting).
 //
 // The fake database below is stateful and models the database rules that
-// matter, mirroring supabase/migrations/20260920140000_leads_active_phone_unique_idx.sql:
+// matter, mirroring both
+// supabase/migrations/20260920140000_leads_active_phone_unique_idx.sql and
+// supabase/migrations/20261007120000_conversations_wa_phone_unique_idx.sql:
 //   * leads: at most one ACTIVE (merged_into_id IS NULL) lead per phone among
 //     leads created after the migration; leads that pre-date it ("legacy")
 //     are exempt, exactly as in the migration's predicate; merged leads never
 //     count;
 //   * messages.wa_message_id is UNIQUE (the existing message-level dedup);
-//   * conversations have NO uniqueness (matches production today), so the
-//     conversation-level race is deliberately still reproducible.
+//   * conversations: at most one row per (wa_id, phone_number_id) among
+//     conversations created after the migration; conversations seeded as
+//     "legacy" (pre-migration historical duplicates) are exempt, exactly as
+//     in the migration's predicate.
 // Barriers hold an insert until BOTH requests have reached it, which forces
 // the exact interleaving that caused the bug (both lookups happen before
 // either insert). These tests prove the application handles the database's
@@ -82,8 +86,10 @@ class MemoryDb {
     return lead;
   }
 
-  seedConversation(id: string): Row {
-    const conversation = { id, lead_id: null };
+  // Pre-existing (pre-migration) row: exempt from the partial unique index,
+  // same convention as seedLead.
+  seedConversation(id: string, row: Row = {}): Row {
+    const conversation = { id, lead_id: null, wa_id: null, phone_number_id: null, ...row, __legacy: true };
     this.conversations.push(conversation);
     return conversation;
   }
@@ -122,6 +128,20 @@ class MemoryDb {
         return {
           data: null,
           error: { code: "23505", message: 'duplicate key value violates unique constraint "messages_wa_message_id_key"' },
+        };
+      }
+    }
+    if (table === "conversations") {
+      const conflict = this.conversations.some(
+        (r) => r.__legacy !== true && r.wa_id === payload.wa_id && r.phone_number_id === payload.phone_number_id
+      );
+      if (conflict) {
+        return {
+          data: null,
+          error: {
+            code: "23505",
+            message: 'duplicate key value violates unique constraint "conversations_wa_phone_unique_idx"',
+          },
         };
       }
     }
@@ -317,9 +337,10 @@ describe("WABIS ingestion under duplicate concurrent deliveries", () => {
     return parsed;
   }
 
-  it("two simultaneous deliveries of one message create ONE active lead, ONE message, and no orphan conversation", async () => {
+  it("two simultaneous deliveries of one message create ONE conversation, ONE active lead, ONE message, and no orphan conversation", async () => {
     // Force the production interleaving: both find no conversation and both
-    // create one (conversations have no uniqueness), and both then try to
+    // try to create one -- the conversations_wa_phone_unique_idx migration
+    // is what makes only one of those inserts win -- and both then try to
     // create the lead.
     db.barriers.conversations = new Barrier(2);
     db.barriers.leads = new Barrier(2);
@@ -334,13 +355,12 @@ describe("WABIS ingestion under duplicate concurrent deliveries", () => {
     expect(db.messages).toHaveLength(1);
     expect(String(db.messages[0].wa_message_id)).toMatch(/^wabis-fallback:/);
 
-    // The bug being fixed: only one active lead may exist.
+    // The bug being fixed: only one active lead, and exactly one conversation, may exist.
     expect(db.activeLeads()).toHaveLength(1);
     const leadId = db.activeLeads()[0].id;
 
-    // Every conversation created by either delivery is linked to that lead.
-    expect(db.conversations.length).toBeGreaterThanOrEqual(1);
-    expect(db.conversations.every((c) => c.lead_id === leadId)).toBe(true);
+    expect(db.conversations).toHaveLength(1);
+    expect(db.conversations[0].lead_id).toBe(leadId);
   });
 
   it("does not overwrite an existing lead's data when duplicate deliveries arrive concurrently", async () => {
@@ -363,7 +383,97 @@ describe("WABIS ingestion under duplicate concurrent deliveries", () => {
     expect(db.activeLeads()).toHaveLength(1); // no new lead at all
     expect(db.leads[0]).toEqual(before); // name, service, assignee, status, job value, quotation, site visit, lost reason: all untouched
     expect(db.messages).toHaveLength(1);
-    expect(db.conversations.every((c) => c.lead_id === rich.id)).toBe(true);
+    expect(db.conversations).toHaveLength(1);
+    expect(db.conversations[0].lead_id).toBe(rich.id);
+  });
+});
+
+// Dedicated conversation-race coverage (independent of the lead side effect
+// above): proves the invariant from
+// supabase/migrations/20261007120000_conversations_wa_phone_unique_idx.sql --
+// at most one canonical conversation per (wa_id, phone_number_id) -- holds
+// under every delivery pattern the webhook can actually see.
+describe("findOrCreateConversation / ingestInboundMessage concurrency (conversations_wa_phone_unique_idx)", () => {
+  const basePayload = {
+    first_name: "Test",
+    chat_id: "919000000001",
+    postbackid: "",
+    user_input_data: [] as unknown[],
+    whatsapp_bot_username: "+91 7356877322",
+  };
+
+  let db: MemoryDb;
+  beforeEach(() => {
+    db = new MemoryDb();
+  });
+
+  function messageFor(chatId: string, body: string) {
+    const parsed = parseWabisMessage({ ...basePayload, chat_id: chatId, user_message: body });
+    if (!parsed) throw new Error("test payload must parse");
+    return parsed;
+  }
+
+  it("two concurrent DIFFERENT messages from the SAME wa_id: one conversation, both messages recorded", async () => {
+    db.barriers.conversations = new Barrier(2);
+    db.barriers.leads = new Barrier(2);
+
+    const [a, b] = await Promise.all([
+      ingestInboundMessage(db.client(), messageFor("919000000001", "First message")),
+      ingestInboundMessage(db.client(), messageFor("919000000001", "Second, different message")),
+    ]);
+
+    expect([a.status, b.status]).toEqual(["ingested", "ingested"]); // different content -> different fallback ids, neither is a dup
+    expect(db.conversations).toHaveLength(1);
+    expect(db.messages).toHaveLength(2);
+    expect(db.messages.every((m) => m.conversation_id === db.conversations[0].id)).toBe(true);
+  });
+
+  it("sequential repeated delivery of the same message: reuses the existing conversation, second delivery is a no-op duplicate", async () => {
+    const first = await ingestInboundMessage(db.client(), messageFor("919000000002", "Hello"));
+    const second = await ingestInboundMessage(db.client(), messageFor("919000000002", "Hello"));
+
+    expect(first.status).toBe("ingested");
+    expect(second.status).toBe("duplicate");
+    expect(db.conversations).toHaveLength(1);
+    expect(db.messages).toHaveLength(1);
+  });
+
+  it("two different wa_ids delivered concurrently do not block each other: two separate conversations", async () => {
+    db.barriers.conversations = new Barrier(2);
+    db.barriers.leads = new Barrier(2);
+
+    const [a, b] = await Promise.all([
+      ingestInboundMessage(db.client(), messageFor("919000000003", "Hi from caller A")),
+      ingestInboundMessage(db.client(), messageFor("919000000004", "Hi from caller B")),
+    ]);
+
+    expect([a.status, b.status]).toEqual(["ingested", "ingested"]);
+    expect(db.conversations).toHaveLength(2);
+    expect(new Set(db.conversations.map((c) => c.wa_id))).toEqual(new Set(["919000000003", "919000000004"]));
+  });
+
+  it("an existing conversation receives a genuinely new follow-up message without creating a second conversation", async () => {
+    await ingestInboundMessage(db.client(), messageFor("919000000005", "Hello"));
+    const followUp = await ingestInboundMessage(db.client(), messageFor("919000000005", "Still interested, following up"));
+
+    expect(followUp.status).toBe("ingested");
+    expect(db.conversations).toHaveLength(1);
+    expect(db.messages).toHaveLength(2);
+  });
+
+  it("three overlapping deliveries of the same message (not just two) still yield exactly one conversation", async () => {
+    db.barriers.conversations = new Barrier(3);
+    db.barriers.leads = new Barrier(3);
+
+    const results = await Promise.all([
+      ingestInboundMessage(db.client(), messageFor("919000000006", "Hello")),
+      ingestInboundMessage(db.client(), messageFor("919000000006", "Hello")),
+      ingestInboundMessage(db.client(), messageFor("919000000006", "Hello")),
+    ]);
+
+    expect(results.map((r) => r.status).sort()).toEqual(["duplicate", "duplicate", "ingested"]);
+    expect(db.conversations).toHaveLength(1);
+    expect(db.messages).toHaveLength(1);
   });
 });
 
@@ -484,6 +594,7 @@ describe("WABIS new-lead auto-assignment (Azhar) against the same database rules
     expect(db.activeLeads()[0].assigned_to_id).toBe(AZHAR);
     expect(assigneeWrites()).toEqual([]); // assigned only by the winning INSERT
     expect(db.messages).toHaveLength(1);
+    expect(db.conversations).toHaveLength(1);
   });
 
   it("5. a later duplicate redelivery never reassigns -- even after an admin moved the lead to someone else", async () => {

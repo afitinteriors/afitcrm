@@ -78,21 +78,29 @@ export async function findLeadByExactPhone(
   return null;
 }
 
-export async function findOrCreateConversation(
+async function findConversationByWaIdAndPhoneNumberId(
   supabase: SupabaseClient<Database>,
   message: InboundWhatsAppMessage
-): Promise<{ conversationId: string; leadId: string | null } | null> {
-  const { data: existing, error: findError } = await supabase
+): Promise<{ id: string; lead_id: string | null } | null> {
+  const { data, error } = await supabase
     .from("conversations")
     .select("id, lead_id")
     .eq("wa_id", message.fromPhone)
     .eq("phone_number_id", message.phoneNumberId)
     .maybeSingle();
 
-  if (findError) {
-    console.error("Failed to look up WhatsApp conversation:", findError.message);
+  if (error) {
+    console.error("Failed to look up WhatsApp conversation:", error.message);
     return null;
   }
+  return data;
+}
+
+export async function findOrCreateConversation(
+  supabase: SupabaseClient<Database>,
+  message: InboundWhatsAppMessage
+): Promise<{ conversationId: string; leadId: string | null } | null> {
+  const existing = await findConversationByWaIdAndPhoneNumberId(supabase, message);
   if (existing) return { conversationId: existing.id, leadId: existing.lead_id };
 
   // Exact phone match only — an ambiguous or missing match leaves the
@@ -110,6 +118,18 @@ export async function findOrCreateConversation(
     .single();
 
   if (createError || !created) {
+    // 23505 = unique_violation on (wa_id, phone_number_id)
+    // (conversations_wa_phone_unique_idx) -> lost a race: a concurrent
+    // delivery for this exact contact already created the conversation
+    // between our lookup and our insert. Same convention as the leads race
+    // (lib/automations/crm-actions.ts): reuse the winner's row instead of
+    // treating this as a failure. The index is what makes this safe; the
+    // lookup alone could not (two overlapping deliveries can both see "no
+    // conversation yet").
+    if (createError?.code === "23505") {
+      const winner = await findConversationByWaIdAndPhoneNumberId(supabase, message);
+      if (winner) return { conversationId: winner.id, leadId: winner.lead_id };
+    }
     console.error("Failed to create WhatsApp conversation:", createError?.message);
     return null;
   }
