@@ -83,6 +83,22 @@ export function whatsappLink(phone: string): string {
   return `https://wa.me/${normalizeIndianPhone(phone)}`;
 }
 
+// For an avatar-initial circle. Deliberately NOT `name.charAt(0)`: that
+// reads the first UTF-16 *code unit*, not the first character -- for any
+// name starting with an emoji or other supplementary-plane character
+// (common in real WhatsApp contact names, e.g. "🙏🙏", "𝓥𝓲𝓷𝓸𝓭..."), that's
+// only half of a surrogate pair. A lone surrogate can't be represented in
+// UTF-8, so a server-rendered page encodes it as U+FFFD while a client
+// re-render of the same expression reconstructs the original lone
+// surrogate from the untouched string prop -- two different values, a
+// React hydration error (#418) on every page load that lists such a name.
+// Array.from() iterates by Unicode code point, so it always grabs the
+// complete first character on both sides.
+export function firstInitial(name: string): string {
+  const first = Array.from(name)[0] ?? "";
+  return first.toUpperCase();
+}
+
 export function labelize(value: string | null | undefined): string {
   if (!value) return "—";
   return value

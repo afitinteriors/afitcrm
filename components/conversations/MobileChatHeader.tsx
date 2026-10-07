@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { LeadRow } from "@/lib/supabase/types";
+import { firstInitial } from "@/lib/format";
 import { LeadDetailsContent } from "@/components/conversations/LeadDetailsContent";
 
 export function MobileChatHeader({
@@ -46,7 +47,7 @@ export function MobileChatHeader({
           className="flex min-w-0 flex-1 items-center gap-2 rounded-lg py-1 text-left active:bg-white/10"
         >
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/15 text-sm font-semibold">
-            {name.charAt(0).toUpperCase()}
+            {firstInitial(name)}
           </div>
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-semibold">{name}</p>

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { formatRelative } from "@/lib/format";
+import { firstInitial, formatRelative } from "@/lib/format";
 import type { ConversationListItem } from "@/lib/conversations";
 import { useLiveConversationList } from "@/lib/realtime/conversations";
 import { ConnectionIndicator } from "@/components/conversations/ConnectionIndicator";
@@ -107,7 +107,7 @@ export function ConversationListPanel({
                   }`}
                 >
                   <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#14342a] text-base font-semibold text-white">
-                    {name.charAt(0).toUpperCase()}
+                    {firstInitial(name)}
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">

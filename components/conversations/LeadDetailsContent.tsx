@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { StatusBadge } from "@/components/StatusBadge";
-import { telLink, whatsappLink } from "@/lib/format";
+import { firstInitial, telLink, whatsappLink } from "@/lib/format";
 import type { LeadRow } from "@/lib/supabase/types";
 
 export function LeadDetailsContent({ lead }: { lead: Pick<LeadRow, "id" | "customer_name" | "phone" | "status" | "location" | "service_required"> | null }) {
@@ -16,7 +16,7 @@ export function LeadDetailsContent({ lead }: { lead: Pick<LeadRow, "id" | "custo
     <div className="space-y-5 p-4">
       <div className="flex items-center gap-3">
         <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-primary text-xl font-semibold text-primary-foreground">
-          {(lead.customer_name || "?").charAt(0).toUpperCase()}
+          {firstInitial(lead.customer_name || "?")}
         </div>
         <div className="min-w-0">
           <p className="truncate text-base font-semibold text-foreground">{lead.customer_name || "Unnamed lead"}</p>
