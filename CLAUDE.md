@@ -757,26 +757,25 @@ migration `push_subscriptions_and_notifications`), /notifications opt-in UI
 Enable/disable flow verified end to end.
 
 **Push notifications, Phase B (server delivery)** — 2026-09-20, commits `bfb190a`
-and `a9e8b66`. IMPLEMENTATION COMPLETE; REAL DELIVERY NOT YET VERIFIED. Built:
-server-only `web-push` sender with VAPID validation and symbolic diagnostic
-codes (never values), minimal payload validation (internal routes only),
-per-device fan-out, 404/410 revoke, transient failures keep the subscription,
-history/dedupe via `notifications` (`sent_at` = accepted by push service;
-`delivered_at` is never written), and a self-only "Send test notification"
-action (rate-limited, no public endpoint). 256/256 tests at the diagnostic stage
-(257/257 after the card redesign). Production diagnostic deployed and verified,
-but repeated production test sends stopped at the config check with
-`VAPID_SUBJECT_PLACEHOLDER`, so **no real production push has been sent**.
-Push-service delivery, notification appearance, notification-click navigation,
-background and locked-screen delivery are all UNVERIFIED. Do not describe
-Phase B delivery as complete until one real test succeeds. No business
-triggers, cron or scheduled reminders exist (that is Phase C, not started).
+and `a9e8b66`. Server-only `web-push` sender with VAPID validation and symbolic
+diagnostic codes (never values), minimal payload validation (internal routes
+only), per-device fan-out, 404/410 revoke, transient failures keep the
+subscription, history/dedupe via `notifications` (`sent_at` = accepted by push
+service; `delivered_at` is never written), and a self-only "Send test
+notification" action (rate-limited, no public endpoint). No business triggers,
+cron or scheduled reminders exist (that is Phase C, not started).
 
-**Current push blocker** — the Production `VAPID_SUBJECT` was still resolving
-to the placeholder/example value during the latest diagnostic attempts, so the
-server rejects sends. Fix is a Vercel Production config change followed by a
-redeploy and one explicit test send. Never record VAPID keys, the subject
-value, subscription endpoints or tokens in this file.
+**REAL DELIVERY VERIFIED** — 2026-10-07 (this file's earlier "Current push
+blocker" note describing a `VAPID_SUBJECT_PLACEHOLDER` rejection was stale; the
+Production env var was already corrected by some point before 2026-09-21 and
+this file was never updated). Confirmed live end-to-end via "Send test
+notification" on the real admin account: server accepted and sent, and the
+browser's service worker actually received the push and called
+`showNotification()` (verified via `registration.getNotifications()`) — the
+full chain (permission → subscription → DB storage → VAPID auth → push
+provider → service worker → OS notification) works. Unsubscribe also verified
+(subscription correctly `revoked_at`-marked). Never record VAPID keys, the
+subject value, subscription endpoints or tokens in this file.
 
 **Duty Phase 2 (unified canonical Duty architecture)** — 2026-09-25, committed
 `d7e2b4dd39d0de3805a2d4bc641e276f0007fd56`. `buildDutyItems()` in `lib/duty.ts`
