@@ -172,10 +172,8 @@ export type SendMediaMessageResult = { waMessageId: string };
  * focused only on sending the media; a caption/text follow-up is a
  * separate send_text node, not a parameter here. Meta's API shape is
  * identical for all three types (only the top-level key differs), so one
- * function covers them; document support was added for the executor's
- * send_document block (lib/automations/executor.ts) -- automation_media
- * itself still only accepts image/video rows (its own CHECK constraint),
- * so this is exercised by synthetic tests only until that's extended.
+ * function covers them; automation_media accepts image/video/document rows
+ * (Step 8 extended its CHECK constraint to include "document").
  */
 export async function sendMediaMessage(
   phoneNumberId: string,

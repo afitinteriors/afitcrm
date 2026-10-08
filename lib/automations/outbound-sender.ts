@@ -180,15 +180,14 @@ export class RealOutboundSender implements OutboundSender {
   // Sends an asset from the automation_media library as a WhatsApp document
   // message -- same lazy-upload/cache/self-healing-retry mechanics as
   // sendMedia above (see its comment), just a different Meta message type.
-  // automation_media's own CHECK constraint only allows media_type
-  // 'image'/'video' today (no schema change was made for this phase), so in
-  // production this can only ever be reached for an asset stored as one of
-  // those -- sent as a WhatsApp "document" message regardless of its stored
-  // media_type, since the message type a send_document block produces is a
-  // property of the block, not of the asset row. Exercised by synthetic
-  // tests with a fixture asset; see lib/automations/executor.ts's node
-  // comment for the real blocker (no real AFIT document file, and no DB
-  // column value for it yet).
+  // automation_media's CHECK constraint was extended to allow media_type
+  // 'document' in the Step 8 media hardening phase (see lib/actions/
+  // automation-media.ts), so a real PDF can now be uploaded, selected and
+  // sent through this path exactly like image/video. The remaining gap is
+  // not infrastructure -- it's that no genuine AFIT company/service PDF
+  // exists yet to upload (see the Step 8 report); until one is added
+  // through the Builder's media picker, the AFIT flow's Document node stays
+  // unconfigured and this path is only exercised by synthetic tests.
   async sendDocument(conversationId: string, mediaAssetId: string): Promise<void> {
     const { data: conversation, error: conversationError } = await this.supabase
       .from("conversations")

@@ -22,14 +22,21 @@ export type UploadMediaState = { error: string } | { asset: AutomationMediaRow }
 const MEDIA_BUCKET = "whatsapp-media";
 const OUTBOUND_PREFIX = "outbound";
 
-// Meta's current documented Cloud API limits for outbound image/video
-// messages (developers.facebook.com/docs/whatsapp/cloud-api/reference/media,
-// confirmed live before implementing this -- not assumed from memory):
-// images JPEG/PNG only, max 5MB; videos MP4/3GPP only, max 16MB.
+// Meta's current documented Cloud API limits for outbound image/video/
+// document messages (developers.facebook.com/docs/whatsapp/cloud-api/
+// reference/media and developers.facebook.com/docs/whatsapp/cloud-api/
+// messages/document-messages -- confirmed before implementing this, not
+// assumed from memory): images JPEG/PNG only, max 5MB; videos MP4/3GPP
+// only, max 16MB; documents PDF only (Step 8 scope -- Meta also allows
+// other office formats, but this library only needs PDF), max 100MB,
+// which also matches the whatsapp-media storage bucket's own 100MB
+// file_size_limit (confirmed live), so no bucket-level change was needed.
 const IMAGE_MIME_EXTENSIONS: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png" };
 const VIDEO_MIME_EXTENSIONS: Record<string, string> = { "video/mp4": "mp4", "video/3gpp": "3gp" };
+const DOCUMENT_MIME_EXTENSIONS: Record<string, string> = { "application/pdf": "pdf" };
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const MAX_VIDEO_BYTES = 16 * 1024 * 1024;
+const MAX_DOCUMENT_BYTES = 100 * 1024 * 1024;
 
 async function requireAdmin() {
   const profile = await getCurrentProfile();
@@ -40,7 +47,14 @@ async function requireAdmin() {
 function classifyMedia(mimeType: string): { mediaType: AutomationMediaType; extension: string } | null {
   if (IMAGE_MIME_EXTENSIONS[mimeType]) return { mediaType: "image", extension: IMAGE_MIME_EXTENSIONS[mimeType] };
   if (VIDEO_MIME_EXTENSIONS[mimeType]) return { mediaType: "video", extension: VIDEO_MIME_EXTENSIONS[mimeType] };
+  if (DOCUMENT_MIME_EXTENSIONS[mimeType]) return { mediaType: "document", extension: DOCUMENT_MIME_EXTENSIONS[mimeType] };
   return null;
+}
+
+function maxBytesFor(mediaType: AutomationMediaType): number {
+  if (mediaType === "image") return MAX_IMAGE_BYTES;
+  if (mediaType === "video") return MAX_VIDEO_BYTES;
+  return MAX_DOCUMENT_BYTES;
 }
 
 export async function uploadAutomationMedia(
@@ -57,11 +71,13 @@ export async function uploadAutomationMedia(
 
   const classification = classifyMedia(file.type);
   if (!classification) {
-    return { error: "Unsupported file type. Use JPEG or PNG for images, MP4 or 3GPP for videos." };
+    return {
+      error: "Unsupported file type. Use JPEG or PNG for images, MP4 or 3GPP for videos, or PDF for documents.",
+    };
   }
   const { mediaType, extension } = classification;
 
-  const maxBytes = mediaType === "image" ? MAX_IMAGE_BYTES : MAX_VIDEO_BYTES;
+  const maxBytes = maxBytesFor(mediaType);
   if (file.size > maxBytes) {
     const limitMb = Math.round(maxBytes / (1024 * 1024));
     return { error: `File is too large -- WhatsApp's own limit for ${mediaType}s is ${limitMb}MB.` };

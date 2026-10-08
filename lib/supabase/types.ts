@@ -274,12 +274,15 @@ export type AutomationSessionInsert = Partial<Omit<AutomationSessionRow, "id" | 
 
 export type AutomationSessionUpdate = Partial<Omit<AutomationSessionRow, "id" | "started_at">>;
 
-// Media MVP (approved architecture, added 2026-09-01): a minimal,
-// admin-only library of images/videos automation flows can send via
-// send_image/send_video nodes. meta_media_id is null until the first
-// successful send using this asset (lazy upload, cached, self-healing
-// re-upload on rejection -- lib/automations/outbound-sender.ts).
-export type AutomationMediaType = "image" | "video";
+// Media MVP (approved architecture, added 2026-09-01; extended to include
+// "document" in the Step 8 media hardening phase): a minimal, admin-only
+// library of images/videos/documents automation flows can send via
+// send_image/send_video/send_document nodes. meta_media_id is null until the
+// first successful send using this asset (lazy upload, cached, self-healing
+// re-upload on rejection -- lib/automations/outbound-sender.ts). The DB's
+// own CHECK constraint on automation_media.media_type is the real
+// enforcement; this type must stay in sync with it.
+export type AutomationMediaType = "image" | "video" | "document";
 
 export type AutomationMediaRow = {
   id: string;

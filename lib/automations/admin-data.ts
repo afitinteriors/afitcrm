@@ -95,9 +95,10 @@ export async function getAutomationRunsForService(serviceId: string): Promise<Au
   }));
 }
 
-// Read layer for the builder's media picker (send_image/send_video node
-// config). Media MVP, approved architecture -- flat list, no
-// folders/tags/search/pagination, matching the deliberately minimal scope.
+// Read layer for the builder's media picker (send_image/send_video/
+// send_document node config). Media MVP, approved architecture -- flat
+// list, no folders/tags/search/pagination, matching the deliberately
+// minimal scope.
 export async function getAutomationMediaAssets(): Promise<AutomationMediaRow[]> {
   const profile = await getCurrentProfile();
   if (!profile || profile.role !== "admin") return [];

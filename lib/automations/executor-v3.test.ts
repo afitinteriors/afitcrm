@@ -641,4 +641,26 @@ describe("Step 7: AFIT Gypsum Plastering workflow -- synthetic end-to-end", () =
     await triggerAutomationForMessage(db.client(), params({ messageId: "doc1" }));
     expect(db.messages.some((m) => m.message_type === "document")).toBe(true);
   });
+
+  // Step 8 requirement: a media node reaching production with no file
+  // selected must fail the run/session cleanly, like Scenario J above --
+  // never send a broken message, never corrupt state.
+  it("a send_document block with no media selected fails the run safely, with no message sent", async () => {
+    const graph = afitGraph("specific", "staff-azhar");
+    graph.nodes.push({ id: "doc_step", type: "send_document", position: { x: 0, y: 0 }, data: {} } as never);
+    graph.edges = graph.edges.filter((e) => !(e.source === "welcome" && e.target === "project_type"));
+    graph.edges.push(
+      { id: "ed1", source: "welcome", target: "doc_step", sourceHandle: "next" } as never,
+      { id: "ed2", source: "doc_step", target: "project_type", sourceHandle: "next" } as never
+    );
+    db.automations[0].actions = graph;
+
+    const result = await triggerAutomationForMessage(db.client(), params({ messageId: "doc-missing" }));
+
+    expect(result.status).toBe("failed");
+    const run = db.automation_runs.find((r) => r.id === result.runId);
+    expect(String(run?.error_message)).toMatch(/no file selected/);
+    expect(db.automation_sessions[0].status).toBe("failed");
+    expect(db.messages.some((m) => m.message_type === "document")).toBe(false);
+  });
 });

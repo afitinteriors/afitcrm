@@ -124,8 +124,8 @@ export type BuilderNodeData = {
   keywords?: string[];
   matchType?: MatchType;
   caseSensitive?: boolean;
-  mediaAssetId?: string; // image/video, from automation_media
-  mediaName?: string; // audio/document: no backing library yet (mock selection)
+  mediaAssetId?: string; // image/video/document, from automation_media
+  mediaName?: string; // display name of the selected asset; also the raw value for audio (no backing library yet -- mock selection)
   caption?: string;
   templateName?: string;
   answerType?: AnswerType;
@@ -556,10 +556,10 @@ function configProblems(node: BuilderNode, graph: BuilderGraph): { code: FlowIss
       break;
     case "send_image":
     case "send_video":
+    case "send_document":
       if (!d.mediaAssetId) missing("choose a media file.");
       break;
     case "send_audio":
-    case "send_document":
       if (blank(d.mediaName)) missing("choose a file.");
       break;
     case "send_template":

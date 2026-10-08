@@ -25,7 +25,6 @@ import {
   MediaPicker,
   PlaceholderPicker,
   PLACEHOLDER_AUDIO,
-  PLACEHOLDER_DOCUMENTS,
   PLACEHOLDER_TEMPLATES,
 } from "@/components/automation-builder/MediaPicker";
 
@@ -229,17 +228,15 @@ function TypeSettings({
 
     case "send_image":
     case "send_video":
+    case "send_document":
       return (
         <>
           <MediaPicker
             key={node.id}
-            mediaType={type === "send_image" ? "image" : "video"}
+            mediaType={type === "send_image" ? "image" : type === "send_video" ? "video" : "document"}
             mediaAssets={mediaAssets}
             selectedId={data.mediaAssetId}
-            onSelect={(id) => {
-              const name = mediaAssets.find((a) => a.id === id)?.name;
-              patch({ mediaAssetId: id, mediaName: name });
-            }}
+            onSelect={(id, name) => patch({ mediaAssetId: id, mediaName: name })}
             onUploaded={onMediaUploaded}
           />
           <Field label="Caption (optional)">
@@ -262,27 +259,6 @@ function TypeSettings({
           value={data.mediaName}
           onChange={(v) => patch({ mediaName: v })}
         />
-      );
-
-    case "send_document":
-      return (
-        <>
-          <PlaceholderPicker
-            label="Document"
-            options={PLACEHOLDER_DOCUMENTS}
-            value={data.mediaName}
-            onChange={(v) => patch({ mediaName: v })}
-          />
-          <Field label="Caption (optional)">
-            <input
-              type="text"
-              value={data.caption ?? ""}
-              onChange={(e) => patch({ caption: e.target.value }, `caption:${node.id}`)}
-              maxLength={1024}
-              className={INPUT}
-            />
-          </Field>
-        </>
       );
 
     case "send_template":

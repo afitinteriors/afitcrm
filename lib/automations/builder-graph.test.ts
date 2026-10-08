@@ -47,7 +47,7 @@ function specExampleGraph(): BuilderGraph {
     node("q-loc", "ask_question", { text: "Where is your project located?", answerType: "text" }),
     node("clarify", "send_text", { text: "Please share the city name." }),
     node("q-time", "ask_question", { text: "Timeline?" }),
-    node("doc", "send_document", { mediaName: "Company brochure.pdf" }),
+    node("doc", "send_document", { mediaAssetId: "m3", mediaName: "Company brochure.pdf" }),
     node("q-quote", "ask_question", { text: "Need a quotation?" }),
     node("save", "save_to_crm", { fieldKey: "location", valueSource: "customer_reply" }),
     node("stage", "update_stage", { stage: "qualified" }),
@@ -253,7 +253,7 @@ describe("validateBuilderGraph", () => {
     expect(validateBuilderGraph(g).some((i) => i.code === "missing_outgoing" && i.message.includes("Fallback"))).toBe(true);
   });
 
-  it("requires a media file on image blocks and a file name on document blocks", () => {
+  it("requires a media file on both image and document blocks", () => {
     const g = graph(
       [
         node("t", "trigger", { keywords: ["a"] }),
