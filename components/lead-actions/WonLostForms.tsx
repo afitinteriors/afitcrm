@@ -11,7 +11,7 @@ export function MarkWonForm({ leadId, jobValue }: { leadId: string; jobValue: nu
     <form action={formAction} className="space-y-3">
       <input type="hidden" name="lead_id" value={leadId} />
       <div>
-        <label htmlFor="won_job_value" className="block text-xs font-medium text-muted-foreground">
+        <label htmlFor="won_job_value" className="block text-xs font-medium text-surface-foreground-muted">
           Job value (₹)
         </label>
         <input
@@ -22,7 +22,7 @@ export function MarkWonForm({ leadId, jobValue }: { leadId: string; jobValue: nu
           step="1"
           required
           defaultValue={jobValue ?? ""}
-          className="mt-1 block h-11 w-full rounded-md border border-border px-3 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+          className="mt-1 block h-11 w-full rounded-md border border-border bg-card px-3 text-sm text-foreground shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
         />
       </div>
       {state?.error && <p className="text-xs text-danger">{state.error}</p>}
@@ -43,7 +43,7 @@ export function MarkLostForm({ leadId, lostReason }: { leadId: string; lostReaso
     <form action={formAction} className="space-y-3">
       <input type="hidden" name="lead_id" value={leadId} />
       <div>
-        <label htmlFor="lost_reason" className="block text-xs font-medium text-muted-foreground">
+        <label htmlFor="lost_reason" className="block text-xs font-medium text-surface-foreground-muted">
           Lost reason
         </label>
         <textarea
@@ -51,7 +51,7 @@ export function MarkLostForm({ leadId, lostReason }: { leadId: string; lostReaso
           name="lost_reason"
           defaultValue={lostReason ?? ""}
           rows={2}
-          className="mt-1 block w-full rounded-md border border-border px-3 py-2 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+          className="mt-1 block w-full rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
         />
       </div>
       {state?.error && <p className="text-xs text-danger">{state.error}</p>}

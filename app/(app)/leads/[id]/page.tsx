@@ -20,9 +20,22 @@ import { DeleteLeadSection } from "@/components/lead-actions/DeleteLeadSection";
 import { formatCurrency, formatDate, formatDateTime, telLink, whatsappLink } from "@/lib/format";
 import { LEAD_SOURCE_LABELS } from "@/lib/constants";
 import { getStageSections, canMarkWon } from "@/lib/lead-stage-sections";
+import { buildLeadsQueryString } from "@/lib/leads";
 
-export default async function LeadDetailPage({ params }: PageProps<"/leads/[id]">) {
+export default async function LeadDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ search?: string; status?: string; campaign?: string }>;
+}) {
   const { id } = await params;
+  const sp = await searchParams;
+  // Only ever forwarded, never invented here -- the same list-context query
+  // string the lead was opened from (see /leads and LeadRow/LeadCard),
+  // carried through to the Edit link so "Save & Next" resolves against the
+  // right list.
+  const listQuery = buildLeadsQueryString({ search: sp.search, status: sp.status, campaign: sp.campaign });
   const [lead, followUps, engagement] = await Promise.all([
     getLeadById(id),
     getFollowUpsForLead(id),
@@ -49,12 +62,19 @@ export default async function LeadDetailPage({ params }: PageProps<"/leads/[id]"
   const sections = getStageSections(lead.status);
 
   return (
-    <div>
+    // Phase 0a dark-glass surface (CLAUDE.md §2) -- Lead Detail is the
+    // first page to consume --chrome-900/--glass-fill/--gold, while every
+    // sub-component imported below (NextActionCard, FollowUpsCard,
+    // AssignmentCard, QualificationForm, SiteVisitForm, QuotationForm,
+    // WonLostForms, LeadActivity, ConversationCard) keeps its existing
+    // light <Card> styling unchanged -- those are shared components, out of
+    // this phase's scope, and read fine as light cards on the dark canvas.
+    <div className="rounded-2xl bg-gradient-dark-bg p-4 sm:p-6">
       {/* HEADER -- who, current pipeline stage, lead value, contact actions.
           Answers questions 1, 2, 4, 5 of the "first screen" checklist. */}
       <Link
         href="/leads"
-        className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+        className="inline-flex items-center gap-1 text-xs font-medium text-surface-foreground-muted hover:text-surface-foreground"
       >
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true" className="h-3.5 w-3.5">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
@@ -62,10 +82,10 @@ export default async function LeadDetailPage({ params }: PageProps<"/leads/[id]"
         Leads
       </Link>
 
-      <div className="mt-2 flex flex-wrap items-start justify-between gap-4">
+      <div className="mt-3 flex flex-wrap items-start justify-between gap-4 rounded-xl border border-white/10 bg-glass p-4 backdrop-blur-sm">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-3">
-            <h1 className="text-2xl font-semibold text-foreground">{lead.customer_name || "Unnamed lead"}</h1>
+            <h1 className="text-2xl font-semibold text-surface-foreground">{lead.customer_name || "Unnamed lead"}</h1>
             {/* key={lead.status} forces a remount when status changes via a
                 *different* form (Mark as Won/Lost below) -- StatusSelect's
                 own useState(status) otherwise never re-syncs with a prop
@@ -75,12 +95,12 @@ export default async function LeadDetailPage({ params }: PageProps<"/leads/[id]"
                 did not, until this fix. */}
             <StatusSelect key={lead.status} leadId={lead.id} status={lead.status} />
             {leadValue !== null && (
-              <span className="rounded-full border border-border px-3 py-1 text-sm font-semibold tabular-nums text-foreground">
+              <span className="rounded-full bg-gold px-3 py-1 text-sm font-semibold tabular-nums text-gold-foreground">
                 {formatCurrency(leadValue)}
               </span>
             )}
           </div>
-          <p className="mt-1 text-sm text-muted-foreground">{lead.phone}</p>
+          <p className="mt-1 text-sm text-surface-foreground-muted">{lead.phone}</p>
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
@@ -99,7 +119,7 @@ export default async function LeadDetailPage({ params }: PageProps<"/leads/[id]"
           <a
             href={telLink(lead.phone)}
             aria-label={`Call ${lead.customer_name || "lead"}`}
-            className="flex h-11 items-center gap-2 rounded-md border border-border px-4 text-sm font-medium text-foreground hover:bg-secondary"
+            className="flex h-11 items-center gap-2 rounded-md border border-white/15 px-4 text-sm font-medium text-surface-foreground hover:bg-white/10"
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
               <path d="M1.5 4.5a3 3 0 013-3h1.372c.86 0 1.61.586 1.819 1.42l1.105 4.423a1.875 1.875 0 01-.694 1.955l-1.293.97c-.135.101-.164.249-.126.352a11.285 11.285 0 006.697 6.697c.103.038.25.009.352-.126l.97-1.293a1.875 1.875 0 011.955-.694l4.423 1.105c.834.209 1.42.959 1.42 1.82V19.5a3 3 0 01-3 3h-2.25C8.552 22.5 1.5 15.448 1.5 6.75V4.5z" />
@@ -107,10 +127,10 @@ export default async function LeadDetailPage({ params }: PageProps<"/leads/[id]"
             Call
           </a>
           <Link
-            href={`/leads/${lead.id}/edit`}
+            href={listQuery ? `/leads/${lead.id}/edit?${listQuery}` : `/leads/${lead.id}/edit`}
             aria-label="Edit lead"
             title="Edit lead"
-            className="flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"
+            className="flex h-11 w-11 items-center justify-center rounded-md text-surface-foreground-muted hover:bg-white/10 hover:text-surface-foreground"
           >
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true" className="h-5 w-5">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.932Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
@@ -131,7 +151,7 @@ export default async function LeadDetailPage({ params }: PageProps<"/leads/[id]"
           member needs to answer the first-screen questions, so it's tucked
           behind "More details" rather than competing for the same space. */}
       <div className="mt-6">
-        <Card title="Overview">
+        <Card title="Overview" variant="glass">
           <dl className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3 lg:grid-cols-4">
             <Info label="Project type" value={lead.project_type} />
             <Info label="Service required" value={lead.service_required} />
@@ -144,22 +164,22 @@ export default async function LeadDetailPage({ params }: PageProps<"/leads/[id]"
           </dl>
 
           {lead.whatsapp_message && (
-            <div className="mt-4 rounded-md border-l-2 border-border bg-muted px-3 py-2">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <div className="mt-4 rounded-md border-l-2 border-white/15 bg-white/5 px-3 py-2">
+              <p className="text-xs font-medium uppercase tracking-wide text-surface-foreground-muted">
                 Original WhatsApp message
               </p>
-              <p className="mt-1 text-sm text-foreground">{lead.whatsapp_message}</p>
+              <p className="mt-1 text-sm text-surface-foreground">{lead.whatsapp_message}</p>
             </div>
           )}
 
           <details className="group mt-4">
-            <summary className="flex min-h-11 w-fit cursor-pointer list-none items-center gap-1.5 text-xs font-medium text-muted-foreground marker:hidden hover:text-foreground">
+            <summary className="flex min-h-11 w-fit cursor-pointer list-none items-center gap-1.5 text-xs font-medium text-surface-foreground-muted marker:hidden hover:text-surface-foreground">
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true" className="h-3.5 w-3.5 shrink-0 transition-transform group-open:rotate-90">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="m8.25 4.5 7.5 7.5-7.5 7.5" />
               </svg>
               More details
             </summary>
-            <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-4 border-t border-border pt-3 sm:grid-cols-3 lg:grid-cols-4">
+            <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-4 border-t border-white/10 pt-3 sm:grid-cols-3 lg:grid-cols-4">
               <Info label="Source" value={LEAD_SOURCE_LABELS[lead.source ?? ""] ?? lead.source} />
               <Info label="Meta campaign" value={lead.campaign_name} />
               <Info label="Ad set" value={lead.adset_name} />
@@ -183,19 +203,19 @@ export default async function LeadDetailPage({ params }: PageProps<"/leads/[id]"
           <FollowUpsCard leadId={lead.id} followUps={followUps} />
 
           {sections.has("siteVisit") && (
-            <Card title="Site Visit">
-              <p className="mb-3 text-sm text-muted-foreground">
-                Current: <span className="font-medium text-foreground">{formatDateTime(lead.site_visit_date)}</span>
+            <Card title="Site Visit" variant="glass">
+              <p className="mb-3 text-sm text-surface-foreground-muted">
+                Current: <span className="font-medium text-surface-foreground">{formatDateTime(lead.site_visit_date)}</span>
               </p>
               <SiteVisitForm leadId={lead.id} siteVisitDate={lead.site_visit_date} />
-              <p className="mt-2 text-xs text-muted-foreground">Recording a date here does not change the pipeline stage.</p>
+              <p className="mt-2 text-xs text-surface-foreground-muted">Recording a date here does not change the pipeline stage.</p>
             </Card>
           )}
 
           {sections.has("quotation") && (
-            <Card title="Quotation">
+            <Card title="Quotation" variant="glass">
               <QuotationForm leadId={lead.id} quotationAmount={lead.quotation_amount} />
-              <p className="mt-2 text-xs text-muted-foreground">
+              <p className="mt-2 text-xs text-surface-foreground-muted">
                 Recording an amount here does not change the pipeline stage. The current amount is shown under Commercial.
               </p>
             </Card>
@@ -208,13 +228,13 @@ export default async function LeadDetailPage({ params }: PageProps<"/leads/[id]"
           <AssignmentCard leadId={lead.id} assignedToId={lead.assigned_to_id} createdAt={lead.created_at} />
 
           {sections.has("qualification") && (
-            <Card title="Qualification">
+            <Card title="Qualification" variant="glass">
               <QualificationScoreSummary lead={lead} followUps={followUps} engagement={engagement} />
 
-              <div className="mt-4 border-t border-border pt-4">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Staff assessment</p>
-                <p className="mb-3 mt-1 text-sm text-muted-foreground">
-                  Score: <span className="font-medium text-foreground">{lead.qualification_score ?? "—"}</span>
+              <div className="mt-4 border-t border-white/10 pt-4">
+                <p className="text-xs font-medium uppercase tracking-wide text-surface-foreground-muted">Staff assessment</p>
+                <p className="mb-3 mt-1 text-sm text-surface-foreground-muted">
+                  Score: <span className="font-medium text-surface-foreground">{lead.qualification_score ?? "—"}</span>
                 </p>
                 <QualificationForm
                   leadId={lead.id}
@@ -226,7 +246,7 @@ export default async function LeadDetailPage({ params }: PageProps<"/leads/[id]"
           )}
 
           {sections.has("commercial") && (
-            <Card title="Commercial">
+            <Card title="Commercial" variant="glass">
               <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
                 <Info label="Job value" value={lead.job_value !== null ? formatCurrency(lead.job_value) : null} />
                 <Info label="Quotation amount" value={lead.quotation_amount !== null ? formatCurrency(lead.quotation_amount) : null} />
@@ -252,21 +272,21 @@ export default async function LeadDetailPage({ params }: PageProps<"/leads/[id]"
           form -- "Mark Won/Lost" isn't a permanently-visible action, but
           #close-lead itself always exists so StatusSelect's redirect (see
           that component) always has somewhere to open/scroll to. */}
-      <div className="mt-8 border-t border-border pt-6">
+      <div className="mt-8 border-t border-white/10 pt-6">
         {lead.status === "won" && (
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-surface-foreground-muted">
             Won
             {lead.job_value !== null && (
               <>
                 {" · "}
-                <span className="font-medium text-foreground">{formatCurrency(lead.job_value)}</span>
+                <span className="font-medium text-surface-foreground">{formatCurrency(lead.job_value)}</span>
               </>
             )}
           </p>
         )}
         {lead.status === "lost" && lead.lost_reason && (
-          <p className="text-sm text-muted-foreground">
-            Currently marked lost: <span className="text-foreground">{lead.lost_reason}</span>
+          <p className="text-sm text-surface-foreground-muted">
+            Currently marked lost: <span className="text-surface-foreground">{lead.lost_reason}</span>
           </p>
         )}
 
@@ -274,7 +294,7 @@ export default async function LeadDetailPage({ params }: PageProps<"/leads/[id]"
           <LostLeadNotice />
         ) : (
           <details id="close-lead" className={`group ${lead.status === "won" ? "mt-3" : ""}`}>
-            <summary className="flex min-h-11 w-fit cursor-pointer list-none items-center gap-1.5 text-sm font-semibold text-foreground marker:hidden">
+            <summary className="flex min-h-11 w-fit cursor-pointer list-none items-center gap-1.5 text-sm font-semibold text-surface-foreground marker:hidden">
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true" className="h-4 w-4 shrink-0 transition-transform group-open:rotate-90">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="m8.25 4.5 7.5 7.5-7.5 7.5" />
               </svg>
@@ -296,8 +316,8 @@ export default async function LeadDetailPage({ params }: PageProps<"/leads/[id]"
 function Info({ label, value }: { label: string; value: string | null | undefined }) {
   return (
     <div>
-      <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
-      <dd className="mt-0.5 text-sm text-foreground">{value || "—"}</dd>
+      <dt className="text-xs font-medium text-surface-foreground-muted">{label}</dt>
+      <dd className="mt-0.5 text-sm text-surface-foreground">{value || "—"}</dd>
     </div>
   );
 }

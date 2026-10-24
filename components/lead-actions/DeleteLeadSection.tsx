@@ -20,7 +20,7 @@ export async function DeleteLeadSection({
   return (
     <div className="mt-8 border-t border-danger/30 pt-6">
       <p className="text-xs font-semibold uppercase tracking-wide text-danger">Danger Zone</p>
-      <p className="mt-1 text-sm text-muted-foreground">
+      <p className="mt-1 text-sm text-surface-foreground-muted">
         Permanently delete this lead, its conversation, messages, and follow-ups. This cannot be undone.
       </p>
       <div className="mt-3">

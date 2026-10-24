@@ -119,9 +119,14 @@ export function AdminHome({
   const unassignedSummary = summarizeUnassigned(unassigned, new Date());
 
   return (
-    <div>
-      <h1 className="text-xl font-semibold text-foreground">Admin Dashboard</h1>
-      <p className="mt-1 text-sm text-muted-foreground">Complete overview of your business performance and operations.</p>
+    // Phase 0a dark-glass surface (CLAUDE.md §2), same bounded pattern as
+    // Lead Detail: only this page's own shell/local text uses the new
+    // tokens -- every imported widget below (KPI tiles, charts, tables,
+    // lists) keeps its existing light <Card>/bg-card styling unchanged and
+    // reads fine as a light widget on the dark canvas.
+    <div className="rounded-2xl bg-gradient-dark-bg p-4 sm:p-6">
+      <h1 className="text-xl font-semibold text-surface-foreground">Admin Dashboard</h1>
+      <p className="mt-1 text-sm text-surface-foreground-muted">Complete overview of your business performance and operations.</p>
 
       <div className="mt-5">
         <UnassignedSummaryCard summary={unassignedSummary} />
@@ -159,8 +164,8 @@ export function AdminHome({
           <UpcomingSiteVisitsList today={siteVisitsToday} upcoming={siteVisitsUpcoming} />
         </div>
 
-        <div className="mt-6 border-t border-border pt-4">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Alerts &amp; Operational Monitoring</h2>
+        <div className="mt-6 border-t border-white/10 pt-4">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-surface-foreground-muted">Alerts &amp; Operational Monitoring</h2>
           <div className="mt-3 grid grid-cols-3 gap-3">
             <StatCard label="Overdue (Team)" value={queue.counts.overdue} icon={OVERDUE_ICON} tone={queue.counts.overdue > 0 ? "danger" : "neutral"} />
             <StatCard label="No Follow-up" value={queue.counts.noFollowUp} icon={NO_ACTION_ICON} tone={queue.counts.noFollowUp > 0 ? "warning" : "neutral"} />

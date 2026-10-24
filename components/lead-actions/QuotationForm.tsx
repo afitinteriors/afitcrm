@@ -17,7 +17,7 @@ export function QuotationForm({
     <form action={formAction} className="space-y-3">
       <input type="hidden" name="lead_id" value={leadId} />
       <div>
-        <label htmlFor="quotation_amount" className="block text-xs font-medium text-muted-foreground">
+        <label htmlFor="quotation_amount" className="block text-xs font-medium text-surface-foreground-muted">
           Quotation amount (₹)
         </label>
         <input
@@ -27,12 +27,12 @@ export function QuotationForm({
           min="0"
           step="1"
           defaultValue={quotationAmount ?? ""}
-          className="mt-1 block h-11 w-full rounded-md border border-border px-3 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+          className="mt-1 block h-11 w-full rounded-md border border-border bg-card px-3 text-sm text-foreground shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
         />
       </div>
       {state?.error && <p className="text-xs text-danger">{state.error}</p>}
       <SubmitButton
-        className="h-11 rounded-md border border-border px-3 text-xs font-medium text-foreground hover:bg-secondary disabled:opacity-60"
+        className="h-11 rounded-md border border-white/15 px-3 text-xs font-medium text-surface-foreground hover:bg-white/10 disabled:opacity-60"
         pendingLabel="Saving…"
       >
         Save quotation

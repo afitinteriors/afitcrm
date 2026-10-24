@@ -3,7 +3,7 @@ import type { LeadEngagement } from "@/lib/conversations";
 import type { FollowUpRow } from "@/lib/supabase/types";
 
 const BAND_CLASSES: Record<QualificationBand, string> = {
-  Low: "text-muted-foreground",
+  Low: "text-surface-foreground-muted",
   Medium: "text-warning",
   High: "text-success",
   "Very High": "text-success",
@@ -29,16 +29,16 @@ export function QualificationScoreSummary({
 
   return (
     <div>
-      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Auto-computed</p>
+      <p className="text-xs font-medium uppercase tracking-wide text-surface-foreground-muted">Auto-computed</p>
       <div className="mt-1 flex items-baseline gap-1.5">
         <span className={`text-2xl font-semibold tabular-nums ${bandClass}`}>{result.score}</span>
-        <span className="text-sm text-muted-foreground">/ 100</span>
+        <span className="text-sm text-surface-foreground-muted">/ 100</span>
         <span className={`ml-1 text-sm font-medium ${bandClass}`}>{result.band}</span>
       </div>
-      <p className="mt-1 text-sm text-muted-foreground">{result.summary}</p>
+      <p className="mt-1 text-sm text-surface-foreground-muted">{result.summary}</p>
 
       <details className="group mt-3">
-        <summary className="flex min-h-11 w-fit cursor-pointer list-none items-center gap-1.5 text-xs font-medium text-muted-foreground marker:hidden hover:text-foreground">
+        <summary className="flex min-h-11 w-fit cursor-pointer list-none items-center gap-1.5 text-xs font-medium text-surface-foreground-muted marker:hidden hover:text-surface-foreground">
           <svg
             xmlns="http://www.w3.org/2000/svg"
             fill="none"
@@ -51,11 +51,11 @@ export function QualificationScoreSummary({
           </svg>
           View factors
         </summary>
-        <ul className="mt-2 space-y-1.5 border-t border-border pt-2">
+        <ul className="mt-2 space-y-1.5 border-t border-white/10 pt-2">
           {result.factors.map((factor) => (
             <li key={factor.label} className="flex items-center justify-between gap-3 text-xs">
-              <span className={factor.met ? "text-foreground" : "text-muted-foreground"}>{factor.label}</span>
-              <span className="shrink-0 tabular-nums text-muted-foreground">
+              <span className={factor.met ? "text-surface-foreground" : "text-surface-foreground-muted"}>{factor.label}</span>
+              <span className="shrink-0 tabular-nums text-surface-foreground-muted">
                 {factor.points}/{factor.maxPoints}
               </span>
             </li>
