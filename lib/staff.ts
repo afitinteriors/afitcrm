@@ -26,6 +26,25 @@ export async function getAssignableStaff(): Promise<StaffOption[]> {
   return data ?? [];
 }
 
+// Admin + staff directory for the Team & Permissions preview (read-only;
+// no new table/column -- selects the same existing `profiles` columns as
+// getAssignableStaff(), just without the role filter). Mirrors
+// profiles_select_self_or_admin RLS: returns [] for a non-admin caller.
+export async function getAllTeamMembers(): Promise<StaffOption[]> {
+  const profile = await getCurrentProfile();
+  if (!profile || profile.role !== "admin") return [];
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id, display_name, role")
+    .order("role", { ascending: true })
+    .order("display_name", { ascending: true });
+
+  if (error) return [];
+  return data ?? [];
+}
+
 // Resolves a single profile's display name for showing the current
 // assignee. Relies on the same profiles RLS: a staff caller can only ever
 // pass their own id here (the only assignee they're allowed to see per
