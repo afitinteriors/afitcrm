@@ -9,6 +9,7 @@ import { recordAuditEvent } from "@/lib/audit";
 import type { Database, LeadStatus, LeadUpdate } from "@/lib/supabase/types";
 import { LEAD_STATUSES } from "@/lib/constants";
 import { toCanonicalPhone } from "@/lib/phone";
+import { getLeadIdsInListOrder, buildLeadsQueryString, type LeadFilters } from "@/lib/leads";
 import { parseBusinessDateTime } from "@/lib/business-time";
 
 export type ActionState = { error: string } | null;
@@ -165,8 +166,15 @@ export async function createLead(_prevState: ActionState, formData: FormData): P
   redirect(`/leads/${data.id}`);
 }
 
-export async function updateLead(_prevState: ActionState, formData: FormData): Promise<ActionState> {
-  const leadId = str(formData, "lead_id");
+// Everything updateLead does except deciding where to navigate afterward --
+// shared with updateLeadAndNext so both actions validate/persist/audit
+// identically and can never drift apart. Returns an error to show inline
+// (form stays put), or null on success.
+async function performLeadUpdate(
+  supabase: SupabaseClient<Database>,
+  leadId: string,
+  formData: FormData
+): Promise<ActionState> {
   const rawPhone = str(formData, "phone");
   if (!rawPhone) return { error: "Phone number is required." };
 
@@ -176,7 +184,6 @@ export async function updateLead(_prevState: ActionState, formData: FormData): P
   }
   const phone = canonicalPhone.e164;
 
-  const supabase = await createClient();
   const accessError = await checkLeadAccess(supabase, leadId);
   if (accessError) return accessError;
 
@@ -215,8 +222,60 @@ export async function updateLead(_prevState: ActionState, formData: FormData): P
     });
   }
 
+  return null;
+}
+
+export async function updateLead(_prevState: ActionState, formData: FormData): Promise<ActionState> {
+  const leadId = str(formData, "lead_id");
+  const supabase = await createClient();
+
+  const result = await performLeadUpdate(supabase, leadId, formData);
+  if (result) return result;
+
   revalidateLead(leadId);
   redirect(`/leads/${leadId}`);
+}
+
+// "Save & Next": same save as updateLead, then advances to the next lead in
+// the exact Leads-list order/filters the user opened this lead from (hidden
+// list_search/list_status/list_campaign fields -- see LeadForm/EditLeadPage).
+// The next-lead id is resolved BEFORE the update runs, from the list as it
+// stood pre-save -- so a field change that drops this lead out of its own
+// active filter (e.g. editing Campaign while filtered by campaign) can never
+// corrupt which lead comes "next". A failed save never navigates. On the
+// last (or only) lead in the list, this redirects back to the same lead's
+// edit page with ?noNext=1 rather than wrapping around or going anywhere
+// unrelated.
+export async function updateLeadAndNext(_prevState: ActionState, formData: FormData): Promise<ActionState> {
+  const leadId = str(formData, "lead_id");
+  const filters: LeadFilters = {
+    search: optionalStr(formData, "list_search") ?? undefined,
+    status: optionalStr(formData, "list_status") ?? undefined,
+    campaign: optionalStr(formData, "list_campaign") ?? undefined,
+  };
+
+  const orderedIds = await getLeadIdsInListOrder(filters);
+  const currentIndex = orderedIds.indexOf(leadId);
+  const nextLeadId = currentIndex >= 0 && currentIndex < orderedIds.length - 1 ? orderedIds[currentIndex + 1] : null;
+
+  const supabase = await createClient();
+  const result = await performLeadUpdate(supabase, leadId, formData);
+  if (result) return result;
+
+  revalidateLead(leadId);
+  if (nextLeadId) revalidatePath(`/leads/${nextLeadId}`);
+
+  const qs = buildLeadsQueryString(filters);
+  const suffix = qs ? `?${qs}` : "";
+  // if/else, not two sequential redirect() calls -- real Next.js redirect()
+  // throws and never falls through, but this keeps the branch unambiguous
+  // (and correctly testable, since a mocked redirect() in tests doesn't
+  // throw) regardless.
+  if (nextLeadId) {
+    redirect(`/leads/${nextLeadId}/edit${suffix}`);
+  } else {
+    redirect(`/leads/${leadId}/edit${suffix}${suffix ? "&" : "?"}noNext=1`);
+  }
 }
 
 // Admin-only by design -- staff must never reassign a lead. This check is

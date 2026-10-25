@@ -1,6 +1,7 @@
 // Service worker. Two jobs, both deliberately small:
 //  1. Keeps the app installable (install/activate below).
-//  2. Shows a notification when a Web Push message arrives and routes the tap
+//  2. Shows an OS notification when a Web Push message arrives while no CRM
+//     window is visible (otherwise hands it to the page), and routes the tap
 //     into the CRM (push / notificationclick).
 // It caches nothing and never handles "fetch": every page, API and Supabase
 // call goes straight to the network, so no authenticated data is stored here.
@@ -25,18 +26,43 @@ function parsePayload(event) {
   }
 }
 
+// A visible CRM window presents the event itself (in-app toast + chime, via
+// the page), so no OS banner is shown on top of it. With no visible window --
+// backgrounded, minimised or the phone locked -- the OS notification is shown,
+// and its sound / lock-screen behaviour is up to the browser and OS.
+function isVisibleCrmWindow(client) {
+  return new URL(client.url).origin === self.location.origin && client.visibilityState === "visible";
+}
+
 self.addEventListener("push", (event) => {
   const data = parsePayload(event);
   const title = typeof data.title === "string" && data.title ? data.title : DEFAULT_TITLE;
+  const route = safeRoute(data.route);
+  const notificationId = typeof data.notificationId === "string" ? data.notificationId : null;
+  const body = typeof data.body === "string" ? data.body : "";
   const options = {
-    body: typeof data.body === "string" ? data.body : "",
+    body,
     icon: "/icon-192.png",
     badge: "/icon-192.png",
     // Same tag replaces instead of stacking a second copy of the same event.
-    tag: typeof data.tag === "string" ? data.tag : undefined,
-    data: { route: safeRoute(data.route), notificationId: typeof data.notificationId === "string" ? data.notificationId : null },
+    tag: typeof data.tag === "string" ? data.tag : notificationId || undefined,
+    data: { route, notificationId },
   };
-  event.waitUntil(self.registration.showNotification(title, options));
+  const show = () => self.registration.showNotification(title, options);
+
+  event.waitUntil(
+    self.clients
+      .matchAll({ type: "window", includeUncontrolled: true })
+      .then((windows) => {
+        const visible = windows.filter(isVisibleCrmWindow);
+        if (visible.length === 0) return show();
+        // Only what the push already carried -- title/body/route, no customer data.
+        visible.forEach((client) => client.postMessage({ type: "crm-push", notificationId, title, body, route }));
+        return undefined;
+      })
+      // If the windows cannot be inspected, fall back to showing the OS notification.
+      .catch(show),
+  );
 });
 
 self.addEventListener("notificationclick", (event) => {

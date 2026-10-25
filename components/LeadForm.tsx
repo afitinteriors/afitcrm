@@ -13,16 +13,34 @@ export function LeadForm({
   action,
   lead,
   submitLabel,
+  saveAndNextAction,
+  listContext,
 }: {
   action: LeadFormAction;
   lead?: LeadRow;
   submitLabel: string;
+  // Edit context only (never passed on the Create Lead form): renders a
+  // second "Save & Next" button bound to its own Server Action/state, so a
+  // save failure on either button only ever shows on that button's own
+  // attempt and never blocks the other.
+  saveAndNextAction?: LeadFormAction;
+  listContext?: { search?: string; status?: string; campaign?: string };
 }) {
   const [state, formAction] = useActionState(action, null);
+  // Rules of Hooks: always called. Falls back to `action` when
+  // saveAndNextAction isn't provided -- harmless, since the second button
+  // (the only thing that could ever dispatch it) then isn't rendered either.
+  const [nextState, saveAndNextFormAction] = useActionState(saveAndNextAction ?? action, null);
+  const error = state?.error ?? nextState?.error;
 
   return (
     <form action={formAction} className="space-y-6">
       {lead && <input type="hidden" name="lead_id" value={lead.id} />}
+      {saveAndNextAction && listContext?.search && <input type="hidden" name="list_search" value={listContext.search} />}
+      {saveAndNextAction && listContext?.status && <input type="hidden" name="list_status" value={listContext.status} />}
+      {saveAndNextAction && listContext?.campaign && (
+        <input type="hidden" name="list_campaign" value={listContext.campaign} />
+      )}
 
       <Card title="Customer">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -94,11 +112,20 @@ export function LeadForm({
         </div>
       </Card>
 
-      {state?.error && (
-        <p className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">{state.error}</p>
-      )}
+      {error && <p className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
 
-      <SubmitButton>{submitLabel}</SubmitButton>
+      <div className="flex flex-wrap gap-3">
+        <SubmitButton>{submitLabel}</SubmitButton>
+        {saveAndNextAction && (
+          <SubmitButton
+            formAction={saveAndNextFormAction}
+            pendingLabel="Saving…"
+            className="h-11 rounded-md border border-border bg-secondary px-4 text-sm font-medium text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Save &amp; Next
+          </SubmitButton>
+        )}
+      </div>
     </form>
   );
 }

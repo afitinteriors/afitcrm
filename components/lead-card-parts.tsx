@@ -147,10 +147,10 @@ export function LeadAvatar({ leadId, name }: { leadId: string; name: string }) {
   );
 }
 
-export function LeadNameLink({ leadId, name }: { leadId: string; name: string }) {
+export function LeadNameLink({ leadId, name, listQuery }: { leadId: string; name: string; listQuery?: string }) {
   return (
     <Link
-      href={`/leads/${leadId}`}
+      href={listQuery ? `/leads/${leadId}?${listQuery}` : `/leads/${leadId}`}
       className="min-w-0 max-w-full break-words text-base font-semibold leading-snug text-foreground after:absolute after:inset-0 after:rounded-2xl after:content-[''] focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-ring"
     >
       {name}

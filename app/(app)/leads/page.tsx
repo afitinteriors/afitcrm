@@ -134,7 +134,7 @@ export default async function LeadsPage({
               </thead>
               <tbody className="divide-y divide-border">
                 {leads.map((lead) => (
-                  <LeadRow key={lead.id} lead={lead} />
+                  <LeadRow key={lead.id} lead={lead} listQuery={listQuery} />
                 ))}
               </tbody>
             </table>
@@ -142,7 +142,7 @@ export default async function LeadsPage({
 
           <ul className="-mx-2 mt-1 lg:hidden">
             {leads.map((lead) => (
-              <LeadCard key={lead.id} lead={lead} showAssignee={profile?.role === "admin"} />
+              <LeadCard key={lead.id} lead={lead} showAssignee={profile?.role === "admin"} listQuery={listQuery} />
             ))}
           </ul>
         </>

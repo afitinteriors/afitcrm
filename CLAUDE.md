@@ -802,7 +802,49 @@ clean. Production `dpl_EUiZhEUtcbb9XhNkj2TLkR3TZpai` Ready, SHA exactly matches
 `a95d120`. A real production WABIS message exercising the assignment is still
 pending.
 
+**Phase 1 — Staff Home** — 2026-09-25, committed
+`868de388ce3793fe5958b0772b215bde8f8af757`. Staff `/dashboard` simplified to
+Follow up now → Follow up today → New leads → Also check (compact cards,
+Call/WhatsApp), grouped from the canonical `DutyItem[]` (`lib/staff-home.ts`);
+one card per lead; no Duty wording. `getUnansweredConversations()` now
+excludes closed leads (Won/Lost/Invalid), so they no longer show as work.
+Admin Home unchanged. Production `dpl_GLfDNeYSLnuFSr72a4jrsVHoVRb1` Ready, SHA
+matches; production Staff and Admin smoke tests passed, 0 server errors.
+
+**Staff Tasks / Follow-ups** — 2026-09-25, committed
+`d5e226ac764411b12311afd860e871df8a166406`. Staff `/follow-ups` now shows only
+Follow up now → Follow up today → Upcoming (old "My Duty Now" card, "Needs a
+Next Step" and Duty wording removed; new leads stay on Home). Existing
+follow-up rows and their Complete action preserved (not seen live: 0 pending
+rows). Admin Follow-ups unchanged. Verified locally at 1440/360/390/414
+(Staff); production `dpl_AcFFMFhFiysqumNrTLyzRoaPHaFj` Ready, SHA matches;
+production Staff and Admin `/follow-ups` passed (Admin at desktop and mobile
+widths), 0 server errors.
+
 **2026-09-05** — This file restructured from 215k+ to under the 100k
 limit per explicit instruction: verbose per-session narratives compacted
 into the summary above, permanent rules deduplicated and reorganized under
 topic headings. No application code touched.
+
+**Lead Edit "Save & Next" + in-app push suppression** — 2026-10-25,
+NOT COMMITTED (picked up uncommitted from a prior session, verified this
+session). `updateLeadAndNext()` (`lib/actions/leads.ts`) resolves the next
+lead in the current list order/filters *before* saving, so a field edit
+that drops the lead out of its own filter can't corrupt "next"; last-lead
+case redirects back with `?noNext=1` instead of wrapping. `LeadForm`/
+`SubmitButton` gained a second independent `useActionState`-bound button
+so a failed save on either button only shows its own error. Fixed a real
+gap while verifying: `app/(app)/leads/page.tsx`'s List view (table rows +
+mobile cards) wasn't passing the already-computed `listQuery` into
+`LeadRow`/`LeadCard`, so entering Edit from List view (as opposed to
+Pipeline view, which already had it) silently lost the filter context —
+now threaded through. Separately, `public/sw.js` now suppresses the OS
+push banner and `postMessage`s the page instead when a same-origin CRM
+window is visible; unit-verified only (6 new cases in `lib/push/sw.test.ts`
+against the real shipped file) — Playwright can't simulate a real
+backgrounded-tab Web Push delivery, so that path has no live check.
+Verified: tsc/lint/build clean, 1227/1227 tests pass. Live-verified against
+production data (non-mutating same-value saves only) as both Admin and
+Staff at 1440×900/390×844/375×812: filtered-list → Save & Next → next lead
+with filters preserved; single-result list → Save & Next → same lead with
+the "no next lead" message; no horizontal overflow; 0 console errors.

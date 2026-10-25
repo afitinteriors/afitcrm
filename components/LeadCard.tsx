@@ -15,7 +15,15 @@ import {
 // pieces in lead-card-parts), not a squeezed table. The customer name is the
 // stretched link to Lead Detail; Call / WhatsApp sit above it and never
 // navigate. `showAssignee` is admin-only, matching /today.
-export function LeadCard({ lead, showAssignee }: { lead: LeadListRow; showAssignee: boolean }) {
+export function LeadCard({
+  lead,
+  showAssignee,
+  listQuery,
+}: {
+  lead: LeadListRow;
+  showAssignee: boolean;
+  listQuery?: string;
+}) {
   // Won's actual closed value takes precedence once it exists (see
   // leads/[id]/page.tsx) -- keeps this card consistent with Lead Detail.
   const value = lead.job_value ?? lead.quotation_amount;
@@ -27,7 +35,7 @@ export function LeadCard({ lead, showAssignee }: { lead: LeadListRow; showAssign
 
       <div className="[grid-area:1/2/2/3] min-w-0">
         <div className="flex flex-col items-start gap-1 lg:flex-row lg:flex-wrap lg:items-center lg:gap-x-2">
-          <LeadNameLink leadId={lead.id} name={name} />
+          <LeadNameLink leadId={lead.id} name={name} listQuery={listQuery} />
           <StageBadge stage={lead.status} />
         </div>
       </div>

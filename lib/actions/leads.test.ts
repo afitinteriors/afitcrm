@@ -6,8 +6,10 @@ type QueryResult = { data?: unknown; error?: { code?: string; message?: string }
 
 // Same minimal chainable/thenable query-builder stand-in used across this
 // project's other Supabase-backed tests (lib/whatsapp/ingest.test.ts,
-// lib/automations/crm-actions.test.ts) -- extended with .neq(), which
-// updateLead's duplicate check uses to exclude the lead being edited.
+// lib/automations/crm-actions.test.ts) -- extended with .neq() (updateLead's
+// duplicate check, to exclude the lead being edited) and .order()/.or()
+// (updateLeadAndNext calls the real lib/leads.ts getLeadIdsInListOrder(),
+// which needs both -- same chain shape as lib/leads.test.ts's own builder).
 function makeBuilder(result: QueryResult) {
   const builder: Record<string, unknown> = {};
   const chain = () => builder;
@@ -15,6 +17,8 @@ function makeBuilder(result: QueryResult) {
   builder.eq = vi.fn(chain);
   builder.neq = vi.fn(chain);
   builder.is = vi.fn(chain);
+  builder.or = vi.fn(chain);
+  builder.order = vi.fn(chain);
   builder.insert = vi.fn(chain);
   builder.update = vi.fn(chain);
   builder.delete = vi.fn(chain);
@@ -66,7 +70,16 @@ vi.mock("next/cache", () => ({
   revalidatePath: vi.fn(),
 }));
 
-import { createLead, updateLead, setLeadStatus, markLeadWon, markLeadLost, setSiteVisitDate, deleteLead } from "./leads";
+import {
+  createLead,
+  updateLead,
+  updateLeadAndNext,
+  setLeadStatus,
+  markLeadWon,
+  markLeadLost,
+  setSiteVisitDate,
+  deleteLead,
+} from "./leads";
 
 function formDataWith(fields: Record<string, string>): FormData {
   const fd = new FormData();
@@ -317,6 +330,173 @@ describe("updateLead", () => {
 
     expect(result).toEqual({ error: expect.stringContaining("valid phone number") });
     expect(from).not.toHaveBeenCalled();
+  });
+});
+
+// "Save & Next" -- Lead Detail phase. The next-lead id always comes from a
+// query run BEFORE the save (see updateLeadAndNext's own comment), so every
+// test here queues that id-listing query as the FIRST "leads" result,
+// ahead of whatever performLeadUpdate's own leads calls need.
+describe("updateLeadAndNext", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getCurrentProfileMock.mockResolvedValue(ADMIN_PROFILE);
+  });
+
+  it("middle lead: saves, then navigates to the immediate next lead in list order", async () => {
+    const { stub } = createFakeSupabase({
+      leads: [
+        { data: [{ id: "lead-1" }, { id: "lead-2" }, { id: "lead-3" }], error: null }, // getLeadIdsInListOrder
+        { data: [], error: null }, // duplicate check (canonical phone already, one query)
+        { error: null }, // update
+      ],
+    });
+    fakeSupabase = stub;
+
+    await updateLeadAndNext(null, formDataWith({ lead_id: "lead-2", phone: "+919876543210" }));
+
+    expect(redirectMock).toHaveBeenCalledWith("/leads/lead-3/edit");
+  });
+
+  it("first lead: navigates to the second lead", async () => {
+    const { stub } = createFakeSupabase({
+      leads: [
+        { data: [{ id: "lead-1" }, { id: "lead-2" }, { id: "lead-3" }], error: null },
+        { data: [], error: null },
+        { error: null },
+      ],
+    });
+    fakeSupabase = stub;
+
+    await updateLeadAndNext(null, formDataWith({ lead_id: "lead-1", phone: "+919876543210" }));
+
+    expect(redirectMock).toHaveBeenCalledWith("/leads/lead-2/edit");
+  });
+
+  it("last lead: saves, does not wrap to the first lead, stays on the current lead with a no-next signal", async () => {
+    const { stub } = createFakeSupabase({
+      leads: [
+        { data: [{ id: "lead-1" }, { id: "lead-2" }, { id: "lead-3" }], error: null },
+        { data: [], error: null },
+        { error: null },
+      ],
+    });
+    fakeSupabase = stub;
+
+    await updateLeadAndNext(null, formDataWith({ lead_id: "lead-3", phone: "+919876543210" }));
+
+    expect(redirectMock).toHaveBeenCalledWith("/leads/lead-3/edit?noNext=1");
+    expect(redirectMock).not.toHaveBeenCalledWith("/leads/lead-1/edit"); // never wraps to the first lead
+  });
+
+  it("single-item list: saves and stays on the current (only) lead", async () => {
+    const { stub } = createFakeSupabase({
+      leads: [
+        { data: [{ id: "lead-1" }], error: null },
+        { data: [], error: null },
+        { error: null },
+      ],
+    });
+    fakeSupabase = stub;
+
+    await updateLeadAndNext(null, formDataWith({ lead_id: "lead-1", phone: "+919876543210" }));
+
+    expect(redirectMock).toHaveBeenCalledWith("/leads/lead-1/edit?noNext=1");
+  });
+
+  it("save failure: does not advance or navigate anywhere", async () => {
+    const { stub } = createFakeSupabase({
+      leads: [{ data: [{ id: "lead-1" }, { id: "lead-2" }], error: null }], // getLeadIdsInListOrder only
+    });
+    fakeSupabase = stub;
+
+    const result = await updateLeadAndNext(null, formDataWith({ lead_id: "lead-1", phone: "garbage" }));
+
+    expect(result).toEqual({ error: expect.stringContaining("valid phone number") });
+    expect(redirectMock).not.toHaveBeenCalled();
+  });
+
+  it("active search/filter context: the next lead comes from the filtered list, not every lead", async () => {
+    const { stub, from } = createFakeSupabase({
+      leads: [
+        { data: [{ id: "lead-2" }, { id: "lead-5" }], error: null }, // only the filtered subset
+        { data: [], error: null },
+        { error: null },
+      ],
+    });
+    fakeSupabase = stub;
+
+    await updateLeadAndNext(
+      null,
+      formDataWith({
+        lead_id: "lead-2",
+        phone: "+919876543210",
+        list_search: "vinod",
+        list_status: "new",
+        list_campaign: "traffic ad",
+      })
+    );
+
+    const listBuilder = from.mock.results[0].value as {
+      or: ReturnType<typeof vi.fn>;
+      eq: ReturnType<typeof vi.fn>;
+    };
+    expect(listBuilder.or).toHaveBeenCalledWith("customer_name.ilike.%vinod%,phone.ilike.%vinod%");
+    expect(listBuilder.eq).toHaveBeenCalledWith("status", "new");
+    expect(listBuilder.eq).toHaveBeenCalledWith("campaign_name", "traffic ad");
+    // Next lead is lead-5 (the filtered list's own next item), and the same
+    // filter context is carried forward so the chain can continue.
+    expect(redirectMock).toHaveBeenCalledWith("/leads/lead-5/edit?search=vinod&status=new&campaign=traffic+ad");
+  });
+
+  it("follows the list's real ordering clause (created_at desc) -- not an invented order", async () => {
+    const { stub, from } = createFakeSupabase({
+      leads: [
+        { data: [{ id: "lead-1" }, { id: "lead-2" }], error: null },
+        { data: [], error: null },
+        { error: null },
+      ],
+    });
+    fakeSupabase = stub;
+
+    await updateLeadAndNext(null, formDataWith({ lead_id: "lead-1", phone: "+919876543210" }));
+
+    const listBuilder = from.mock.results[0].value as { order: ReturnType<typeof vi.fn> };
+    expect(listBuilder.order).toHaveBeenCalledWith("created_at", { ascending: false });
+  });
+
+  it("current lead falls out of the active filter after the update: next lead still comes from the ORIGINAL pre-save list, not a re-fetch", async () => {
+    const { stub, from } = createFakeSupabase({
+      leads: [
+        // The list as it stood BEFORE the save -- lead-1 is still in it
+        // (its campaign hasn't changed yet from this query's point of view).
+        { data: [{ id: "lead-1" }, { id: "lead-2" }], error: null },
+        { data: [], error: null }, // duplicate check
+        { error: null }, // update -- this is what would drop lead-1 out of a campaign filter
+      ],
+    });
+    fakeSupabase = stub;
+
+    // Editing campaign_name to something that would no longer match
+    // list_campaign="traffic ad" if the list were re-fetched afterward.
+    await updateLeadAndNext(
+      null,
+      formDataWith({
+        lead_id: "lead-1",
+        phone: "+919876543210",
+        campaign_name: "a totally different campaign",
+        list_campaign: "traffic ad",
+      })
+    );
+
+    // The id-listing query is the very first "leads" call this action makes
+    // -- structurally before performLeadUpdate's own calls -- so its result
+    // can only reflect pre-update state.
+    const listBuilder = from.mock.results[0].value as { select: ReturnType<typeof vi.fn> };
+    expect(listBuilder.select).toHaveBeenCalledWith("id");
+    // "Next" is still lead-2, resolved from the original list, unaffected
+    // by the campaign_name change just persisted.
+    expect(redirectMock).toHaveBeenCalledWith("/leads/lead-2/edit?campaign=traffic+ad");
   });
 });
 

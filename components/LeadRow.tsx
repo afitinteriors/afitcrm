@@ -6,18 +6,19 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { formatCurrency, formatDate, formatRelative } from "@/lib/format";
 import type { LeadListRow } from "@/lib/leads";
 
-export function LeadRow({ lead }: { lead: LeadListRow }) {
+export function LeadRow({ lead, listQuery }: { lead: LeadListRow; listQuery?: string }) {
   const router = useRouter();
   // Won's actual closed value takes precedence once it exists (see
   // leads/[id]/page.tsx) -- keeps this list consistent with Lead Detail.
   const value = lead.job_value ?? lead.quotation_amount;
   const wasUpdated = new Date(lead.updated_at).getTime() - new Date(lead.created_at).getTime() > 60_000;
+  const href = listQuery ? `/leads/${lead.id}?${listQuery}` : `/leads/${lead.id}`;
 
   return (
-    <tr className="cursor-pointer hover:bg-secondary" onClick={() => router.push(`/leads/${lead.id}`)}>
+    <tr className="cursor-pointer hover:bg-secondary" onClick={() => router.push(href)}>
       <td className="px-4 py-3">
         <Link
-          href={`/leads/${lead.id}`}
+          href={href}
           className="font-medium text-foreground hover:underline"
           onClick={(e) => e.stopPropagation()}
         >
