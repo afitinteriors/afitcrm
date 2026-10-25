@@ -1,14 +1,14 @@
 ---
 name: afit-verify
-description: "Explicit-invocation-only verification procedure for AFIT CRM phase work. Runs this project's standard Admin/Staff, multi-viewport Playwright checks per CLAUDE.md §17/§18 for whatever the current phase actually changed. Invoke by name ('run afit-verify' / '/afit-verify') after implementing a phase, before reporting. Do not auto-trigger on generic build/test/fix requests."
+description: "Explicit-invocation-only verification procedure for AFIT CRM phase work. Runs this project's standard Admin/Staff, multi-viewport Playwright checks per CLAUDE.md's Testing Rules and Deployment Rules sections for whatever the current phase actually changed. Invoke by name ('run afit-verify' / '/afit-verify') after implementing a phase, before reporting. Do not auto-trigger on generic build/test/fix requests."
 ---
 
 # AFIT Verify
 
 Explicit-invocation only. This is *how* to run this project's required
-verification, not *what* to verify — CLAUDE.md §17 (viewport/Playwright
-requirements) and §18 (quality gates) are the governing spec. Read those,
-don't restate them here.
+verification, not *what* to verify — CLAUDE.md's Testing Rules section
+(viewport/Playwright requirements) and Deployment Rules section (quality
+gates) are the governing spec. Read those, don't restate them here.
 
 ## Scope first
 

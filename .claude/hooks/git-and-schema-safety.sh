@@ -2,8 +2,9 @@
 # git-and-schema-safety — PreToolUse hook for afit-lead-crm.
 #
 # Mechanical safeguard only. Does NOT enforce phase boundaries, UI-vs-backend
-# ordering, or scope discipline — those stay behavioral (CLAUDE.md §21/§27/
-# §28/§29). This hook has exactly one job: never let a git commit/push/
+# ordering, or scope discipline — those stay behavioral (CLAUDE.md's
+# Development Workflow, UI/UX Rules & Design System, and Token / Context
+# Efficiency sections). This hook has exactly one job: never let a git commit/push/
 # destructive-git or a Supabase schema/lifecycle-mutating MCP call go through
 # silently. It never hard-blocks — it asks, so a genuinely user-approved
 # operation can still proceed through Claude Code's normal permission flow.
