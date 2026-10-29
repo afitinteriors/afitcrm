@@ -1,13 +1,13 @@
-// UI/UX prototype only (this phase is design-first, per CLAUDE.md workflow) --
-// no `whatsapp_numbers` table exists yet (CLAUDE.md §3 lists the real tables;
-// this isn't one of them). Every number here lives in the workspace
-// component's own state for this visit, the same deliberate choice already
-// made for the Automation prototype (lib/automation/types.ts). Persisting
-// this for real is a backend decision that needs explicit approval before a
-// table gets created -- see the Phase completion report for what that would
-// require.
+// Display helpers and static option lists for Settings -> WhatsApp
+// Numbers. The data itself is now real, backed by public.whatsapp_numbers
+// (supabase/migrations/20261029130000_whatsapp_numbers.sql) -- see
+// lib/actions/whatsapp-numbers.ts for the reads/writes and that file's own
+// WhatsAppNumber type (this module no longer defines one, to avoid two
+// copies drifting apart).
+import type { WhatsAppNumberPurpose, WhatsAppNumberStatus } from "@/lib/supabase/types";
 
-export type NumberStatus = "connected" | "needs_attention" | "disconnected";
+export type NumberStatus = WhatsAppNumberStatus;
+export type NumberPurpose = WhatsAppNumberPurpose;
 
 export const NUMBER_STATUS_LABELS: Record<NumberStatus, string> = {
   connected: "Connected",
@@ -21,48 +21,11 @@ export const NUMBER_STATUS_BADGE_CLASSES: Record<NumberStatus, string> = {
   disconnected: "bg-danger-soft text-danger",
 };
 
-export const NUMBER_PURPOSES = ["Sales", "Support", "General"] as const;
-export type NumberPurpose = (typeof NUMBER_PURPOSES)[number];
-
-export type WhatsAppNumber = {
-  id: string;
-  label: string;
-  phoneNumber: string;
-  status: NumberStatus;
-  purpose: NumberPurpose;
-  // Empty array = "All staff can use this number" -- kept as an explicit
-  // choice rather than null/undefined so the UI never has to guess what an
-  // absent value means.
-  assignedStaffIds: string[];
-  isDefault: boolean;
-};
+export const NUMBER_PURPOSES: NumberPurpose[] = ["Sales", "Support", "General"];
 
 export function formatPhoneForDisplay(raw: string): string {
   const digits = raw.replace(/\D/g, "");
   if (digits.length === 10) return `+91 ${digits.slice(0, 5)} ${digits.slice(5)}`;
   if (digits.length > 10) return `+${digits.slice(0, digits.length - 10)} ${digits.slice(-10, -5)} ${digits.slice(-5)}`;
   return raw;
-}
-
-export function seedWhatsAppNumbers(): WhatsAppNumber[] {
-  return [
-    {
-      id: "seed-1",
-      label: "Main Business Line",
-      phoneNumber: "+91 80752 87437",
-      status: "connected",
-      purpose: "General",
-      assignedStaffIds: [],
-      isDefault: true,
-    },
-    {
-      id: "seed-2",
-      label: "Support Line",
-      phoneNumber: "+91 96336 03670",
-      status: "needs_attention",
-      purpose: "Support",
-      assignedStaffIds: [],
-      isDefault: false,
-    },
-  ];
 }

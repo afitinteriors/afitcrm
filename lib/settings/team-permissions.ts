@@ -1,24 +1,19 @@
-// UI/UX prototype only (this phase is design-first, per CLAUDE.md workflow) --
-// no `permissions` table or `mobile` column exists yet (see CLAUDE.md's
-// Current Database Reality / this project's Team & Permissions audit).
-// Checkbox state here lives in the workspace component's own state for this
-// visit, the same deliberate choice already made for WhatsApp Numbers
-// (lib/settings/whatsapp-numbers.ts). Team MEMBERS shown are real
-// (read from `profiles` via getAllTeamMembers()) -- only the PERMISSION
-// grants are a local-only preview. Persisting permissions for real is a
-// backend decision that needs its own explicit approval before a migration
-// runs -- see the proposed migration plan from this phase's audit.
-
-export type PermissionKey =
-  | "leads_view_all"
-  | "leads_reassign"
-  | "leads_bulk_export"
-  | "conversations_view_all"
-  | "reports_view"
-  | "automation_access"
-  | "audit_log_view"
-  | "settings_manage_whatsapp"
-  | "settings_manage_team";
+// The PERMISSION GRANTS half of this page is now real, backed by
+// public.profile_permissions (supabase/migrations/
+// 20261029140000_profile_permissions.sql) -- see lib/actions/
+// team-permissions.ts for the reads/writes. PermissionKey itself now comes
+// from lib/supabase/types.ts (generated against that table's CHECK
+// constraint) rather than being redeclared here, so the two can't drift.
+//
+// Still a deliberate, documented UI-only draft: TeamMemberFormModal's "Add
+// member" flow. Creating a real account needs Supabase Auth's Admin API /
+// an invite-email mechanism -- a genuinely different, more security-
+// sensitive piece of work than persisting a checkbox grid for EXISTING
+// real profiles (getAllTeamMembers() already reads real `profiles` rows).
+// That flow needs its own separate approval before it writes anything real
+// -- nothing about it changed in this phase.
+import type { PermissionKey } from "@/lib/supabase/types";
+export type { PermissionKey };
 
 export type PermissionGroup = {
   label: string;

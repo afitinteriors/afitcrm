@@ -2,12 +2,8 @@
 
 import { useEffect, useState } from "react";
 import type { StaffOption } from "@/lib/staff";
-import {
-  NUMBER_PURPOSES,
-  formatPhoneForDisplay,
-  type NumberPurpose,
-  type WhatsAppNumber,
-} from "@/lib/settings/whatsapp-numbers";
+import { NUMBER_PURPOSES, formatPhoneForDisplay, type NumberPurpose } from "@/lib/settings/whatsapp-numbers";
+import type { WhatsAppNumber } from "@/lib/actions/whatsapp-numbers";
 
 const ADD_STEPS = ["Connect", "Purpose", "Assign", "Default", "Review"] as const;
 

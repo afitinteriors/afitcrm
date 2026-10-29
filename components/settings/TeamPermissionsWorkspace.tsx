@@ -1,30 +1,75 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import type { StaffOption } from "@/lib/staff";
 import { PERMISSION_GROUPS, type PermissionKey, type TeamMemberDraft } from "@/lib/settings/team-permissions";
+import { setPermissionGrant } from "@/lib/actions/team-permissions";
 import { TeamMemberFormModal } from "@/components/settings/TeamMemberFormModal";
 
 type Row = { id: string; name: string; role: "admin" | "staff" | "draft" };
 
-export function TeamPermissionsWorkspace({ team }: { team: StaffOption[] }) {
+function toPermissionSets(grants: Record<string, PermissionKey[]>): Record<string, Set<PermissionKey>> {
+  const sets: Record<string, Set<PermissionKey>> = {};
+  for (const [id, keys] of Object.entries(grants)) sets[id] = new Set(keys);
+  return sets;
+}
+
+// `grants` comes from the server (getAllPermissionGrants() -> the real
+// profile_permissions table, supabase/migrations/20261029140000_
+// profile_permissions.sql) for every REAL team member (`team`, from
+// profiles). A draft member (added via "+ Add team member" below) has no
+// real profile id to persist a grant against -- it stays exactly the
+// local-only preview it already was and already says it is; toggling its
+// checkboxes updates only this component's own state, never calls
+// setPermissionGrant(). See lib/settings/team-permissions.ts's header
+// comment for why real account creation is deliberately out of scope here.
+export function TeamPermissionsWorkspace({ team, grants }: { team: StaffOption[]; grants: Record<string, PermissionKey[]> }) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
   const [drafts, setDrafts] = useState<TeamMemberDraft[]>([]);
-  const [permissions, setPermissions] = useState<Record<string, Set<PermissionKey>>>({});
+  const [permissions, setPermissions] = useState<Record<string, Set<PermissionKey>>>(() => toPermissionSets(grants));
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [showAddModal, setShowAddModal] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
+  const realIds = new Set(team.map((m) => m.id));
   const rows: Row[] = [
     ...team.map((m) => ({ id: m.id, name: m.display_name || "Unnamed", role: m.role })),
     ...drafts.map((d) => ({ id: d.id, name: d.name, role: "draft" as const })),
   ];
 
   function togglePermission(memberId: string, key: PermissionKey) {
+    const current = permissions[memberId] ?? new Set<PermissionKey>();
+    const willGrant = !current.has(key);
+
+    // Optimistic: flip it locally right away so the checkbox never lags
+    // behind the click, matching this project's other admin write flows.
     setPermissions((prev) => {
-      const current = new Set(prev[memberId] ?? []);
-      if (current.has(key)) current.delete(key);
-      else current.add(key);
-      return { ...prev, [memberId]: current };
+      const next = new Set(prev[memberId] ?? []);
+      if (willGrant) next.add(key);
+      else next.delete(key);
+      return { ...prev, [memberId]: next };
+    });
+
+    if (!realIds.has(memberId)) return; // draft member -- local preview only, nothing to persist
+
+    setError(null);
+    startTransition(async () => {
+      const result = await setPermissionGrant(memberId, key, willGrant);
+      if ("error" in result) {
+        // Revert the optimistic flip on failure.
+        setPermissions((prev) => {
+          const next = new Set(prev[memberId] ?? []);
+          if (willGrant) next.delete(key);
+          else next.add(key);
+          return { ...prev, [memberId]: next };
+        });
+        setError(result.error);
+        return;
+      }
+      router.refresh();
     });
   }
 
@@ -53,12 +98,20 @@ export function TeamPermissionsWorkspace({ team }: { team: StaffOption[] }) {
           </button>
         </div>
       )}
+      {error && (
+        <div className="mb-4 flex items-center justify-between rounded-lg border border-danger/30 bg-danger-soft px-4 py-2.5 text-sm font-medium text-danger">
+          {error}
+          <button type="button" onClick={() => setError(null)} aria-label="Dismiss" className="text-danger/70 hover:text-danger">
+            &times;
+          </button>
+        </div>
+      )}
 
       <div className="flex items-center justify-between gap-3">
         <p className="text-xs text-muted-foreground">
-          This view is a preview of team management and checkbox-level permissions — nothing here is saved yet.
-          Admins already have full access by default; checkboxes here would grant staff extra capabilities beyond
-          their assigned leads.
+          Admins already have full access by default; checkboxes here grant an existing staff member extra
+          capabilities beyond their assigned leads. Adding a new team member here is still a preview — it doesn&apos;t
+          create a real account.
         </p>
         <button
           type="button"
@@ -112,6 +165,7 @@ export function TeamPermissionsWorkspace({ team }: { team: StaffOption[] }) {
                             <input
                               type="checkbox"
                               className="mt-0.5"
+                              disabled={isPending}
                               checked={permissions[row.id]?.has(item.key) ?? false}
                               onChange={() => togglePermission(row.id, item.key)}
                             />

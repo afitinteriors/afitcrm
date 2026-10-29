@@ -148,9 +148,10 @@ export type AuditAction =
   | "follow_up_created"
   | "follow_up_completed"
   | "lead_assigned"
-  | "call_logged";
+  | "call_logged"
+  | "setting_changed";
 
-export type AuditTargetType = "lead" | "conversation" | "message" | "follow_up";
+export type AuditTargetType = "lead" | "conversation" | "message" | "follow_up" | "setting";
 
 export type AuditLogRow = {
   id: string;
@@ -400,6 +401,60 @@ export type CallLogUpdate = {
   resolved_at: string;
 };
 
+// Settings -> WhatsApp Numbers (supabase/migrations/20261029130000_whatsapp_numbers.sql).
+export type WhatsAppNumberStatus = "connected" | "needs_attention" | "disconnected";
+export type WhatsAppNumberPurpose = "Sales" | "Support" | "General";
+
+export type WhatsAppNumberRow = {
+  id: string;
+  label: string;
+  phone_number: string;
+  status: WhatsAppNumberStatus;
+  purpose: WhatsAppNumberPurpose;
+  assigned_staff_ids: string[];
+  is_default: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type WhatsAppNumberInsert = {
+  label: string;
+  phone_number: string;
+  status?: WhatsAppNumberStatus;
+  purpose?: WhatsAppNumberPurpose;
+  assigned_staff_ids?: string[];
+  is_default?: boolean;
+};
+
+export type WhatsAppNumberUpdate = Partial<WhatsAppNumberInsert>;
+
+// Settings -> Team & Permissions grants (supabase/migrations/20261029140000_profile_permissions.sql).
+export type PermissionKey =
+  | "leads_view_all"
+  | "leads_reassign"
+  | "leads_bulk_export"
+  | "conversations_view_all"
+  | "reports_view"
+  | "automation_access"
+  | "audit_log_view"
+  | "settings_manage_whatsapp"
+  | "settings_manage_team";
+
+export type ProfilePermissionRow = {
+  profile_id: string;
+  permission_key: PermissionKey;
+  granted_at: string;
+  granted_by: string | null;
+};
+
+export type ProfilePermissionInsert = {
+  profile_id: string;
+  permission_key: PermissionKey;
+  granted_by?: string | null;
+};
+
+export type ProfilePermissionUpdate = Partial<ProfilePermissionInsert>;
+
 export type Database = {
   public: {
     Tables: {
@@ -491,6 +546,18 @@ export type Database = {
         Row: CallLogRow;
         Insert: CallLogInsert;
         Update: CallLogUpdate;
+        Relationships: [];
+      };
+      whatsapp_numbers: {
+        Row: WhatsAppNumberRow;
+        Insert: WhatsAppNumberInsert;
+        Update: WhatsAppNumberUpdate;
+        Relationships: [];
+      };
+      profile_permissions: {
+        Row: ProfilePermissionRow;
+        Insert: ProfilePermissionInsert;
+        Update: ProfilePermissionUpdate;
         Relationships: [];
       };
     };

@@ -1,13 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import type { StaffOption } from "@/lib/staff";
-import {
-  NUMBER_STATUS_BADGE_CLASSES,
-  NUMBER_STATUS_LABELS,
-  seedWhatsAppNumbers,
-  type WhatsAppNumber,
-} from "@/lib/settings/whatsapp-numbers";
+import { NUMBER_STATUS_BADGE_CLASSES, NUMBER_STATUS_LABELS } from "@/lib/settings/whatsapp-numbers";
+import { saveWhatsAppNumber, setDefaultWhatsAppNumber, type WhatsAppNumber } from "@/lib/actions/whatsapp-numbers";
 import { NumberFormModal } from "@/components/settings/NumberFormModal";
 
 function staffNames(staffIds: string[], staff: StaffOption[]): string {
@@ -18,26 +15,63 @@ function staffNames(staffIds: string[], staff: StaffOption[]): string {
   return names.length > 0 ? names.join(", ") : "All staff";
 }
 
-export function WhatsAppNumbersWorkspace({ staff }: { staff: StaffOption[] }) {
-  const [numbers, setNumbers] = useState<WhatsAppNumber[]>(seedWhatsAppNumbers);
+// `numbers` comes from the server (getWhatsAppNumbers() -> the real
+// whatsapp_numbers table, supabase/migrations/20261029130000_
+// whatsapp_numbers.sql) -- this used to seed its own local-only copy
+// (seedWhatsAppNumbers()) that reset on every reload; every write below
+// now goes through a real server action and router.refresh() re-fetches
+// the authoritative list from the server afterwards, the same pattern
+// components/assignments/UnassignedLeadsView.tsx already uses. The local
+// `numbers` state here is optimistic-UI only (so the list updates the
+// instant a save succeeds, without waiting a full round trip) -- it is
+// always overwritten by the next server-provided `numbers` prop once the
+// page re-renders.
+export function WhatsAppNumbersWorkspace({ staff, numbers: initialNumbers }: { staff: StaffOption[]; numbers: WhatsAppNumber[] }) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [numbers, setNumbers] = useState<WhatsAppNumber[]>(initialNumbers);
   const [modal, setModal] = useState<{ mode: "add" } | { mode: "edit"; number: WhatsAppNumber } | null>(null);
   const [banner, setBanner] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   function handleSave(number: WhatsAppNumber) {
     const isNew = !numbers.some((n) => n.id === number.id);
-
-    setNumbers((prev) => {
-      const next = isNew ? [...prev, number] : prev.map((n) => (n.id === number.id ? number : n));
-      // Only one default at a time -- picking a new default clears the old one.
-      return number.isDefault ? next.map((n) => (n.id === number.id ? n : { ...n, isDefault: false })) : next;
+    setError(null);
+    startTransition(async () => {
+      const result = await saveWhatsAppNumber({
+        id: isNew ? null : number.id,
+        label: number.label,
+        phoneNumber: number.phoneNumber,
+        purpose: number.purpose,
+        assignedStaffIds: number.assignedStaffIds,
+        isDefault: number.isDefault,
+      });
+      if ("error" in result) {
+        setError(result.error);
+        return;
+      }
+      setNumbers((prev) => {
+        const next = isNew ? [...prev, result.number] : prev.map((n) => (n.id === result.number.id ? result.number : n));
+        return result.number.isDefault ? next.map((n) => (n.id === result.number.id ? n : { ...n, isDefault: false })) : next;
+      });
+      setModal(null);
+      setBanner(isNew ? "WhatsApp number added." : "Number updated.");
+      router.refresh();
     });
-    setModal(null);
-    setBanner(isNew ? "WhatsApp number added." : "Number updated.");
   }
 
   function handleSetDefault(id: string) {
-    setNumbers((prev) => prev.map((n) => ({ ...n, isDefault: n.id === id })));
-    setBanner("Default number updated.");
+    setError(null);
+    startTransition(async () => {
+      const result = await setDefaultWhatsAppNumber(id);
+      if ("error" in result) {
+        setError(result.error);
+        return;
+      }
+      setNumbers((prev) => prev.map((n) => ({ ...n, isDefault: n.id === id })));
+      setBanner("Default number updated.");
+      router.refresh();
+    });
   }
 
   return (
@@ -50,15 +84,24 @@ export function WhatsAppNumbersWorkspace({ staff }: { staff: StaffOption[] }) {
           </button>
         </div>
       )}
+      {error && (
+        <div className="mb-4 flex items-center justify-between rounded-lg border border-danger/30 bg-danger-soft px-4 py-2.5 text-sm font-medium text-danger">
+          {error}
+          <button type="button" onClick={() => setError(null)} aria-label="Dismiss" className="text-danger/70 hover:text-danger">
+            &times;
+          </button>
+        </div>
+      )}
 
       <div className="flex items-center justify-between gap-3">
         <p className="text-xs text-muted-foreground">
-          This view is a preview of the number management experience — nothing here is connected to Meta yet.
+          Connecting a number with Meta is completed separately — this manages what&apos;s registered here.
         </p>
         <button
           type="button"
           onClick={() => setModal({ mode: "add" })}
-          className="flex h-11 shrink-0 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+          disabled={isPending}
+          className="flex h-11 shrink-0 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
         >
           + Add WhatsApp Number
         </button>
@@ -100,7 +143,8 @@ export function WhatsAppNumbersWorkspace({ staff }: { staff: StaffOption[] }) {
                     <button
                       type="button"
                       onClick={() => handleSetDefault(number.id)}
-                      className="flex h-11 items-center rounded-md border border-border px-3 text-xs font-medium text-foreground hover:bg-secondary"
+                      disabled={isPending}
+                      className="flex h-11 items-center rounded-md border border-border px-3 text-xs font-medium text-foreground hover:bg-secondary disabled:opacity-60"
                     >
                       Set as default
                     </button>
@@ -108,7 +152,8 @@ export function WhatsAppNumbersWorkspace({ staff }: { staff: StaffOption[] }) {
                   <button
                     type="button"
                     onClick={() => setModal({ mode: "edit", number })}
-                    className="flex h-11 items-center rounded-md border border-border px-3 text-xs font-medium text-foreground hover:bg-secondary"
+                    disabled={isPending}
+                    className="flex h-11 items-center rounded-md border border-border px-3 text-xs font-medium text-foreground hover:bg-secondary disabled:opacity-60"
                   >
                     Manage
                   </button>
