@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { LEAD_STATUS_LABELS } from "@/lib/constants";
 import { telLink, whatsappLink } from "@/lib/format";
+import { CallButton } from "@/components/lead-actions/CallButton";
 import type { LeadStatus } from "@/lib/supabase/types";
 
 // Shared lead-card visual system, extracted from the Today card so /today and
@@ -158,10 +159,42 @@ export function LeadNameLink({ leadId, name, listQuery }: { leadId: string; name
   );
 }
 
-export function LeadContactActions({ phone }: { phone: string | null }) {
+// leadId is nullable: a few call sites (unanswered-conversation "duty"
+// items with no linked lead yet) render this with no lead to attach a
+// call outcome to. R-CALL-001's mandatory popup needs a lead_id
+// (call_logs.lead_id is NOT NULL) -- those stay a plain tel: link rather
+// than inventing a lead as a side effect of tapping Call.
+export function LeadContactActions({
+  leadId,
+  phone,
+  customerName,
+  leadStatus,
+}: {
+  leadId: string | null;
+  phone: string | null;
+  customerName?: string;
+  // R-CALL-002: passed straight through to CallButton so a Lost lead's
+  // popup waives the next-follow-up-date requirement, same as Wrong
+  // number. Optional -- callers that don't have it on hand simply don't
+  // get that convenience; the server-side rule is unaffected either way.
+  leadStatus?: string | null;
+}) {
   return (
     <div className="relative z-10 flex items-center gap-2 self-end [grid-area:3/3/4/4] lg:gap-2 lg:self-center lg:[grid-area:1/3/4/4]">
-      {phone && (
+      {phone && leadId && (
+        <CallButton
+          leadId={leadId}
+          phone={phone}
+          customerName={customerName}
+          leadStatus={leadStatus}
+          aria-label="Call customer"
+          title="Call customer"
+          className={CALL_BUTTON}
+        >
+          <PhoneIcon />
+        </CallButton>
+      )}
+      {phone && !leadId && (
         <a href={telLink(phone)} aria-label="Call customer" title="Call customer" className={CALL_BUTTON}>
           <PhoneIcon />
         </a>

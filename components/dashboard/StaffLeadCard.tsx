@@ -47,7 +47,7 @@ export function StaffLeadCard({ item }: { item: StaffHomeItem }) {
         {item.serviceRequired && <p className="mt-0.5 break-words text-sm text-muted-foreground">{item.serviceRequired}</p>}
       </div>
 
-      <LeadContactActions phone={item.phone} />
+      <LeadContactActions leadId={item.leadId} phone={item.phone} customerName={item.customerName} leadStatus={item.stage} />
       <LeadChevron />
 
       <div className="flex flex-wrap items-center gap-1.5 [grid-area:2/1/3/3] lg:[grid-area:2/2/3/3]">

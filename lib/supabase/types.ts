@@ -147,7 +147,8 @@ export type AuditAction =
   | "audit_log_viewed"
   | "follow_up_created"
   | "follow_up_completed"
-  | "lead_assigned";
+  | "lead_assigned"
+  | "call_logged";
 
 export type AuditTargetType = "lead" | "conversation" | "message" | "follow_up";
 
@@ -365,6 +366,40 @@ export type NotificationInsert = {
 // Owners may only mark their own notifications read (column grant).
 export type NotificationUpdate = Partial<NotificationInsert>;
 
+// Phase "Call outcome popup" (docs/BLUEPRINT_V1.md Phase 3): R-CALL-001 /
+// R-CALL-002. A row is PENDING while outcome/resolved_at are both null
+// (the caller pressed "Call now" but hasn't logged an outcome yet) and
+// RESOLVED once both are set -- see
+// supabase/migrations/20261025120000_call_logs.sql for the DB-level
+// constraint that keeps those two states in sync and the RLS that makes
+// a resolved row immutable.
+export type CallOutcome = "answered" | "no_answer" | "busy" | "wrong_number" | "not_interested";
+
+export type CallLogRow = {
+  id: string;
+  lead_id: string;
+  caller_id: string;
+  outcome: CallOutcome | null;
+  notes: string | null;
+  next_follow_up_date: string | null;
+  started_at: string;
+  resolved_at: string | null;
+  created_at: string;
+};
+
+export type CallLogInsert = {
+  lead_id: string;
+  caller_id: string;
+};
+
+// Only the four columns the resolve-call RLS policy grants UPDATE on.
+export type CallLogUpdate = {
+  outcome: CallOutcome;
+  notes: string | null;
+  next_follow_up_date: string | null;
+  resolved_at: string;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -450,6 +485,12 @@ export type Database = {
         Row: NotificationRow;
         Insert: NotificationInsert;
         Update: NotificationUpdate;
+        Relationships: [];
+      };
+      call_logs: {
+        Row: CallLogRow;
+        Insert: CallLogInsert;
+        Update: CallLogUpdate;
         Relationships: [];
       };
     };

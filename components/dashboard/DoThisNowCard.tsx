@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { DutyItem } from "@/lib/dashboard-brain";
 import { CompleteFollowUpButton } from "@/components/lead-actions/CompleteFollowUpButton";
+import { CallButton } from "@/components/lead-actions/CallButton";
 import { telLink, whatsappLink } from "@/lib/format";
 import { LEAD_STATUS_LABELS } from "@/lib/constants";
 
@@ -60,7 +61,21 @@ export function DoThisNowCard({ item }: { item: DutyItem | null }) {
       </p>
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
-        {item.phone && (
+        {/* leadId is null for an unanswered conversation not yet linked to
+            a lead -- R-CALL-001's popup needs a lead to attach the
+            outcome to, so that case keeps the plain tel: link. */}
+        {item.phone && item.leadId && (
+          <CallButton
+            leadId={item.leadId}
+            phone={item.phone}
+            customerName={item.customerName}
+            leadStatus={item.stage}
+            className="inline-flex min-h-11 items-center gap-1.5 rounded-md border border-border bg-secondary px-3 text-sm font-medium text-foreground hover:bg-muted"
+          >
+            Call
+          </CallButton>
+        )}
+        {item.phone && !item.leadId && (
           <a
             href={telLink(item.phone)}
             className="inline-flex min-h-11 items-center gap-1.5 rounded-md border border-border bg-secondary px-3 text-sm font-medium text-foreground hover:bg-muted"

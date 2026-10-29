@@ -2,6 +2,7 @@ import Link from "next/link";
 import { telLink, whatsappLink, formatRelative } from "@/lib/format";
 import { LEAD_SOURCE_LABELS } from "@/lib/constants";
 import { avatarFor, initialsFor, Glyph, ICON } from "@/components/lead-card-parts";
+import { CallButton } from "@/components/lead-actions/CallButton";
 import type { StaffHomeItem, StaffHomeTone } from "@/lib/staff-home";
 
 const PILL_CLASSES: Record<StaffHomeTone, string> = {
@@ -62,7 +63,22 @@ export function StaffFollowUpCard({ item }: { item: StaffHomeItem }) {
         {item.note && <p className="mt-1 truncate text-sm font-medium text-foreground">{item.note}</p>}
 
         <div className="relative z-10 mt-2 flex items-center gap-2">
-          {item.phone && (
+          {/* leadId is null for an unanswered conversation not yet linked to
+              a lead -- R-CALL-001's popup needs a lead to attach the
+              outcome to, so that case keeps the plain tel: link. */}
+          {item.phone && item.leadId && (
+            <CallButton
+              leadId={item.leadId}
+              phone={item.phone}
+              customerName={item.customerName}
+              leadStatus={item.stage}
+              aria-label="Call customer"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600 ring-1 ring-inset ring-blue-100 hover:bg-blue-100 lg:h-9 lg:w-9"
+            >
+              <Glyph d={ICON.phone} className="h-4 w-4" />
+            </CallButton>
+          )}
+          {item.phone && !item.leadId && (
             <a
               href={telLink(item.phone)}
               aria-label="Call customer"

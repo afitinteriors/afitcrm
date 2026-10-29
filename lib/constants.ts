@@ -1,4 +1,4 @@
-import type { FollowUpType, LeadStatus } from "@/lib/supabase/types";
+import type { CallOutcome, FollowUpType, LeadStatus } from "@/lib/supabase/types";
 
 // Every value the `leads.status` column can hold. Used for schema-level
 // validation (e.g. isLeadStatus()) and internal bookkeeping -- NOT for
@@ -136,3 +136,19 @@ export const FOLLOW_UP_TYPE_LABELS: Record<FollowUpType, string> = {
   quotation: "Quotation",
   meeting: "Meeting",
 };
+
+// R-CALL-001 (docs/BLUEPRINT_V1.md Phase 3) -- the fixed 5-outcome set the
+// mandatory call popup offers. Order matches the blueprint's own example.
+export const CALL_OUTCOMES: CallOutcome[] = ["answered", "no_answer", "busy", "wrong_number", "not_interested"];
+
+export const CALL_OUTCOME_LABELS: Record<CallOutcome, string> = {
+  answered: "Answered",
+  no_answer: "No answer",
+  busy: "Busy",
+  wrong_number: "Wrong number",
+  not_interested: "Not interested",
+};
+
+// R-CALL-002: every outcome needs a next follow-up date except Wrong
+// number.
+export const CALL_OUTCOME_EXEMPT_FROM_FOLLOWUP: CallOutcome = "wrong_number";

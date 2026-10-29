@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { StatusBadge } from "@/components/StatusBadge";
+import { CallButton } from "@/components/lead-actions/CallButton";
 import { firstInitial, telLink, whatsappLink } from "@/lib/format";
 import type { LeadRow } from "@/lib/supabase/types";
 
@@ -42,8 +43,11 @@ export function LeadDetailsContent({ lead }: { lead: Pick<LeadRow, "id" | "custo
       </dl>
 
       <div className="grid grid-cols-2 gap-2 pt-1">
-        <a
-          href={telLink(lead.phone)}
+        <CallButton
+          leadId={lead.id}
+          phone={lead.phone}
+          customerName={lead.customer_name}
+          leadStatus={lead.status}
           aria-label={`Call ${lead.customer_name || "lead"}`}
           title="Call"
           className="flex h-11 items-center justify-center gap-2 rounded-lg border border-border text-sm font-medium text-foreground active:bg-secondary"
@@ -52,7 +56,7 @@ export function LeadDetailsContent({ lead }: { lead: Pick<LeadRow, "id" | "custo
             <path d="M1.5 4.5a3 3 0 013-3h1.372c.86 0 1.61.586 1.819 1.42l1.105 4.423a1.875 1.875 0 01-.694 1.955l-1.293.97c-.135.101-.164.249-.126.352a11.285 11.285 0 006.697 6.697c.103.038.25.009.352-.126l.97-1.293a1.875 1.875 0 011.955-.694l4.423 1.105c.834.209 1.42.959 1.42 1.82V19.5a3 3 0 01-3 3h-2.25C8.552 22.5 1.5 15.448 1.5 6.75V4.5z" />
           </svg>
           Call
-        </a>
+        </CallButton>
         <a
           href={whatsappLink(lead.phone)}
           target="_blank"

@@ -40,7 +40,7 @@ export function LeadCard({
         </div>
       </div>
 
-      <LeadContactActions phone={lead.phone} />
+      <LeadContactActions leadId={lead.id} phone={lead.phone} customerName={name} leadStatus={lead.status} />
       <LeadChevron />
 
       <p className="mt-1 flex items-start gap-1.5 text-xs leading-snug text-foreground/80 [grid-area:2/1/3/4] lg:mt-0 lg:[grid-area:2/2/3/3]">
