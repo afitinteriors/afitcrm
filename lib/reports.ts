@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentProfile } from "@/lib/auth";
 import { getAssignableStaff } from "@/lib/staff";
 import { isFollowUpOverdue } from "@/lib/follow-up-status";
-import { LEAD_STATUSES, FOLLOW_UP_TYPES, OPEN_LEAD_STATUSES, LEAD_SOURCE_LABELS } from "@/lib/constants";
+import { LEAD_STATUSES, FOLLOW_UP_TYPES, OPEN_LEAD_STATUSES, LEAD_SOURCE_LABELS, UNPAGINATED_LIST_QUERY_LIMIT } from "@/lib/constants";
 import { businessDateOf, businessDayRangeToUtcBounds } from "@/lib/business-time";
 import { resolveReportDateRange, type ReportDateFilterInput, type ReportDatePreset } from "@/lib/report-date-filters";
 import type { LeadStatus, FollowUpType, FollowUpStatus } from "@/lib/supabase/types";
@@ -55,22 +55,34 @@ type Bounds = { startIso: string; endExclusiveIso: string };
 // own assigned_to_id in addition to RLS. `bounds`, when given, scopes to
 // leads created within the reporting period -- the same [gte, lt) pattern
 // the Leads list's own date filter uses (lib/business-time.ts).
-async function getReportLeads(bounds: Bounds | null): Promise<ReportLead[]> {
+// capped(): true when a query returned exactly the safety-cap row count --
+// the one observable signal (short of a second COUNT query) that the real
+// result may have been larger and this report is therefore an undercount,
+// not a complete one. Surfaced to the caller rather than silently
+// swallowed, per this project's own "no fake/silently-wrong numbers" rule
+// (CLAUDE.md) -- a capped report must say so, not just look normal.
+function capped<T>(rows: T[]): boolean {
+  return rows.length >= UNPAGINATED_LIST_QUERY_LIMIT;
+}
+
+async function getReportLeads(bounds: Bounds | null): Promise<{ rows: ReportLead[]; capped: boolean }> {
   const profile = await getCurrentProfile();
-  if (!profile) return [];
+  if (!profile) return { rows: [], capped: false };
 
   const supabase = await createClient();
   let query = supabase
     .from("leads")
     .select("id, status, job_value, quotation_amount, assigned_to_id, qualification_score, service_required, lost_reason, source, created_at")
-    .is("merged_into_id", null);
+    .is("merged_into_id", null)
+    .limit(UNPAGINATED_LIST_QUERY_LIMIT);
 
   if (bounds) query = query.gte("created_at", bounds.startIso).lt("created_at", bounds.endExclusiveIso);
   if (profile.role === "staff") query = query.eq("assigned_to_id", profile.id);
 
   const { data, error } = await query;
   if (error) throw new Error(error.message);
-  return (data ?? []) as ReportLead[];
+  const rows = (data ?? []) as ReportLead[];
+  return { rows, capped: capped(rows) };
 }
 
 // follow_ups_select_admin_or_owner (RLS) already scopes by the linked
@@ -79,17 +91,21 @@ async function getReportLeads(bounds: Bounds | null): Promise<ReportLead[]> {
 // finding) -- no extra .eq() needed here, matching lib/follow-ups.ts's
 // existing functions. `bounds` scopes to follow-ups created within the
 // reporting period, same as leads above.
-async function getReportFollowUps(bounds: Bounds | null): Promise<ReportFollowUp[]> {
+async function getReportFollowUps(bounds: Bounds | null): Promise<{ rows: ReportFollowUp[]; capped: boolean }> {
   const profile = await getCurrentProfile();
-  if (!profile) return [];
+  if (!profile) return { rows: [], capped: false };
 
   const supabase = await createClient();
-  let query = supabase.from("follow_ups").select("status, due_date, completed_at, created_at, type, lead:leads(assigned_to_id)");
+  let query = supabase
+    .from("follow_ups")
+    .select("status, due_date, completed_at, created_at, type, lead:leads(assigned_to_id)")
+    .limit(UNPAGINATED_LIST_QUERY_LIMIT);
   if (bounds) query = query.gte("created_at", bounds.startIso).lt("created_at", bounds.endExclusiveIso);
 
   const { data, error } = await query;
   if (error) throw new Error(error.message);
-  return (data ?? []) as unknown as ReportFollowUp[];
+  const rows = (data ?? []) as unknown as ReportFollowUp[];
+  return { rows, capped: capped(rows) };
 }
 
 export type PipelineDistribution = {
@@ -440,6 +456,11 @@ export type ReportsData = {
   followUpPerformance: FollowUpPerformance;
   leadSourceBreakdown: LeadSourceSlice[];
   trend: TrendPoint[];
+  // true when the lead or follow-up fetch behind this report hit
+  // UNPAGINATED_LIST_QUERY_LIMIT -- every number above may be an
+  // undercount, not the real total for the period. The Reports page must
+  // show this, never report a capped result as if it were complete.
+  possiblyIncomplete: boolean;
 };
 
 function emptyReportsData(period: ReportPeriod): ReportsData {
@@ -467,6 +488,7 @@ function emptyReportsData(period: ReportPeriod): ReportsData {
     followUpPerformance: { completionRate: null, overdueCount: 0, byType: [], avgTimeToCompleteHours: null },
     leadSourceBreakdown: [],
     trend: [],
+    possiblyIncomplete: false,
   };
 }
 
@@ -489,11 +511,21 @@ export async function getReportsData(filters: ReportDateFilterInput = {}): Promi
   const previousFrom = shiftDay(previousTo, -(spanDays - 1));
   const previousBounds = businessDayRangeToUtcBounds(previousFrom, previousTo);
 
-  const [leads, followUps, previousLeads] = await Promise.all([
+  const emptyCappedLeads = { rows: [] as ReportLead[], capped: false };
+  const [leadsResult, followUpsResult, previousLeadsResult] = await Promise.all([
     getReportLeads(bounds),
     getReportFollowUps(bounds),
-    previousBounds ? getReportLeads(previousBounds) : Promise.resolve([]),
+    previousBounds ? getReportLeads(previousBounds) : Promise.resolve(emptyCappedLeads),
   ]);
+  const leads = leadsResult.rows;
+  const followUps = followUpsResult.rows;
+  const previousLeads = previousLeadsResult.rows;
+  // The previous-period fetch only backs the executive summary's deltas --
+  // if IT was capped, those specific deltas may be off even though the
+  // current period's own totals are fine, so it counts toward the same
+  // single possiblyIncomplete flag rather than a separate one nothing in
+  // the UI would otherwise surface.
+  const possiblyIncomplete = leadsResult.capped || followUpsResult.capped || previousLeadsResult.capped;
 
   return {
     period,
@@ -507,6 +539,7 @@ export async function getReportsData(filters: ReportDateFilterInput = {}): Promi
     followUpPerformance: computeFollowUpPerformance(followUps),
     leadSourceBreakdown: computeLeadSourceBreakdown(leads),
     trend: computeTrendByDay(leads, resolved.from, resolved.to),
+    possiblyIncomplete,
   };
 }
 

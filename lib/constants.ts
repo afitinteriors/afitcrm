@@ -152,3 +152,15 @@ export const CALL_OUTCOME_LABELS: Record<CallOutcome, string> = {
 // R-CALL-002: every outcome needs a next follow-up date except Wrong
 // number.
 export const CALL_OUTCOME_EXEMPT_FROM_FOLLOWUP: CallOutcome = "wrong_number";
+
+// Safety cap for list/report queries that have no pagination yet
+// (getLeads(), getFollowUps(), the Reports aggregation queries). Matches
+// this project's own configured PostgREST max_rows (supabase/config.toml
+// [api] max_rows = 1000) -- without an explicit .limit(), those queries
+// were silently relying on that server-side default, so a result past row
+// 1000 would already be truncated with no error and no indication
+// anywhere in the app. This makes that boundary explicit and intentional
+// instead of an invisible accident, but it is a stopgap, not a fix: real
+// pagination (or, for Reports, moving aggregation into SQL) is needed
+// before lead/follow-up volume actually approaches this number.
+export const UNPAGINATED_LIST_QUERY_LIMIT = 1000;

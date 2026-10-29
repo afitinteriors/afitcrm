@@ -55,6 +55,12 @@ function dateFilteredBuilder<T extends { created_at: string; assigned_to_id?: st
     ltVal = val;
     return b;
   });
+  // Pass-through only -- these tests exercise filter logic against small
+  // seeded tables, well under UNPAGINATED_LIST_QUERY_LIMIT, so .limit()
+  // here never actually truncates anything; it just needs to exist on the
+  // chain so getReportLeads()/getReportFollowUps() (lib/reports.ts) can
+  // call it.
+  b.limit = vi.fn(chain);
   b.then = (resolve: (v: { data: T[]; error: null }) => unknown) => {
     let filtered = rows;
     if (gteVal) filtered = filtered.filter((r) => r.created_at >= gteVal!);
@@ -68,7 +74,7 @@ function dateFilteredBuilder<T extends { created_at: string; assigned_to_id?: st
 function staticBuilder(rows: unknown[]) {
   const b: Record<string, unknown> = {};
   const chain = () => b;
-  for (const m of ["select", "eq", "order"]) b[m] = vi.fn(chain);
+  for (const m of ["select", "eq", "order", "limit"]) b[m] = vi.fn(chain);
   b.then = (resolve: (v: { data: unknown[]; error: null }) => unknown) => Promise.resolve({ data: rows, error: null }).then(resolve);
   return b;
 }
@@ -87,6 +93,7 @@ vi.mock("@/lib/supabase/server", () => ({
 vi.mock("@/lib/auth", () => ({ getCurrentProfile: async () => currentProfile }));
 
 import { getReportsData } from "@/lib/reports";
+import { UNPAGINATED_LIST_QUERY_LIMIT } from "@/lib/constants";
 
 const lead = (over: Partial<LeadRow>): LeadRow => ({
   id: "l1",
@@ -135,6 +142,44 @@ describe("getReportsData -- period resolution and scoping", () => {
     ];
     const data = await getReportsData({ datePreset: "today" });
     expect(data.pipelineDistribution.totalLeads).toBe(1);
+  });
+});
+
+describe("getReportsData -- possiblyIncomplete (UNPAGINATED_LIST_QUERY_LIMIT)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-27T10:00:00Z"));
+    leadsTable = [];
+    followUpsTable = [];
+    profilesTable = [];
+    currentProfile = { id: "admin-1", role: "admin", displayName: "Admin" };
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it("is false for a normal-sized result", async () => {
+    leadsTable = [lead({ id: "l1", created_at: "2026-09-27T05:00:00.000Z" })];
+    const data = await getReportsData({ datePreset: "today" });
+    expect(data.possiblyIncomplete).toBe(false);
+  });
+
+  it("is true when the leads fetch returns exactly the cap -- the one observable signal that the real total may be larger", async () => {
+    leadsTable = Array.from({ length: UNPAGINATED_LIST_QUERY_LIMIT }, (_, i) =>
+      lead({ id: `l${i}`, created_at: "2026-09-27T05:00:00.000Z" }),
+    );
+    const data = await getReportsData({ datePreset: "today" });
+    expect(data.possiblyIncomplete).toBe(true);
+    // The report still returns its best-effort numbers from what it did
+    // fetch -- capped is a caveat the UI must show, not a reason to return
+    // nothing.
+    expect(data.pipelineDistribution.totalLeads).toBe(UNPAGINATED_LIST_QUERY_LIMIT);
+  });
+
+  it("is false again one row under the cap", async () => {
+    leadsTable = Array.from({ length: UNPAGINATED_LIST_QUERY_LIMIT - 1 }, (_, i) =>
+      lead({ id: `l${i}`, created_at: "2026-09-27T05:00:00.000Z" }),
+    );
+    const data = await getReportsData({ datePreset: "today" });
+    expect(data.possiblyIncomplete).toBe(false);
   });
 });
 

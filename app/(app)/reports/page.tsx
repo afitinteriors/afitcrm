@@ -95,6 +95,31 @@ export default async function ReportsPage({
         />
       </div>
 
+      {/* Every number below is computed from a capped fetch
+          (UNPAGINATED_LIST_QUERY_LIMIT, lib/constants.ts) -- there is no
+          pagination yet on the underlying lead/follow-up queries. This
+          project's own rule is no fake or silently-wrong numbers, so a
+          capped result says so here rather than reporting totals that may
+          be an undercount as if they were complete. */}
+      {data.possiblyIncomplete && (
+        <div
+          role="alert"
+          className="mt-4 flex items-start gap-2 rounded-lg border border-warning/40 bg-warning-soft px-4 py-3 text-sm text-warning"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true">
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"
+            />
+          </svg>
+          <span>
+            This period has more leads or follow-ups than this report can fully total at once. The numbers below may be an
+            undercount -- narrow the date range for an exact figure.
+          </span>
+        </div>
+      )}
+
       {/* Mobile: an intentionally compact management view -- executive KPIs,
           the trend line, and the export actions -- not the full multi-
           section desktop workspace shrunk down. Reuses the exact same

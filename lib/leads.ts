@@ -2,7 +2,7 @@ import { cache } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import type { Database, LeadRow, LeadStatus } from "@/lib/supabase/types";
-import { LEAD_STATUSES, OPEN_LEAD_STATUSES } from "@/lib/constants";
+import { LEAD_STATUSES, OPEN_LEAD_STATUSES, UNPAGINATED_LIST_QUERY_LIMIT } from "@/lib/constants";
 import { getCurrentProfile, type CurrentProfile } from "@/lib/auth";
 import { recordAuditEvent } from "@/lib/audit";
 import { businessDate, businessDateOf, businessDayRangeToUtcBounds } from "@/lib/business-time";
@@ -83,7 +83,8 @@ function buildLeadsQuery(
     }
   }
 
-  return query;
+  // Applied last, after every filter above -- see UNPAGINATED_LIST_QUERY_LIMIT.
+  return query.limit(UNPAGINATED_LIST_QUERY_LIMIT);
 }
 
 // Same assigned:profiles(display_name) embed as getUncontactedLeads() below --
