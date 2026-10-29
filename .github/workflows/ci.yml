@@ -1,0 +1,64 @@
+name: CI
+
+# Runs this project's own Deployment Rules gate (CLAUDE.md) on every push
+# and pull request: lint, build, typecheck, test. No deployment step here --
+# this only verifies the gate, per CLAUDE.md's "no commit/push/deploy
+# without explicit instruction" (a human still decides when to ship).
+#
+# Step order is build -> typecheck, not typecheck -> build as CLAUDE.md's
+# prose lists it: `tsc --noEmit` depends on Next's typed-route globals
+# (.next/types/**/*.ts, referenced from tsconfig.json's "include"), which
+# only exist after a build has run at least once. On a clean checkout (this
+# runner, every time) typecheck-before-build fails with "Cannot find name
+# 'PageProps'"/"'LayoutProps'" -- confirmed by running it in that order
+# here. Building first produces .next/types as a side effect, so typecheck
+# then has what it needs; this is the same gate, reordered to actually
+# pass on a fresh checkout.
+#
+# No database is needed: every test here mocks @/lib/supabase/server and
+# @/lib/supabase/admin (see e.g. lib/leads.test.ts, lib/reports.test.ts) --
+# none of them open a real connection. The NEXT_PUBLIC_SUPABASE_* values
+# below are placeholders satisfying `process.env.X!` at build time only
+# (every page in this app is server-rendered on demand, not statically
+# generated, so none of them actually call Supabase during `next build`);
+# they are not secrets and must never be replaced with real project values
+# here -- a real deploy's env vars belong in the hosting platform's own
+# environment configuration, not in this workflow.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  NEXT_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
+  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ci-placeholder-publishable-key
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Test
+        run: npm run test
