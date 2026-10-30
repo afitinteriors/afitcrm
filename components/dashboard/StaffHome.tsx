@@ -8,7 +8,7 @@ import { StaffMonthStats } from "@/components/dashboard/StaffMonthStats";
 import { StaffPipelineValue } from "@/components/dashboard/StaffPipelineValue";
 import { StaffQuickLinks } from "@/components/dashboard/StaffQuickLinks";
 import type { StaffHomeBoard, StaffHomeItem } from "@/lib/staff-home";
-import type { TodayFollowUpProgress } from "@/lib/dashboard-brain";
+import type { TodayActivityCounts, TodayFollowUpProgress } from "@/lib/dashboard-brain";
 import type { StaffOverview } from "@/lib/leads";
 
 const DATE_FORMATTER = new Intl.DateTimeFormat("en-IN", {
@@ -128,22 +128,35 @@ function ListSection({
   );
 }
 
-// Staff Dashboard -- rebuilt to match the approved reference design
-// (design/staff-dashboard-reference*.png) while staying on the same
-// canonical data every other staff surface uses: board comes from
-// buildStaffHome() (lib/staff-home.ts, itself grouping getMyDutyQueue()'s
-// deduped DutyItem[]), so a lead can never appear here disagreeing with
-// what /follow-ups or /today would show for it.
+// Staff Dashboard. Desktop keeps the original approved reference layout
+// (design/staff-dashboard-reference*.png) unchanged: KPI tiles, quick
+// actions, then a two-column grid (follow-up/new-lead lists on the left,
+// today's-progress/pipeline/month-stats/quick-links on the right).
+//
+// Mobile is a SEPARATE layout tree (not the desktop grid collapsed to one
+// column), matching the approved mobile reference: KPI tiles -> Today's
+// Progress -> Pipeline Value -> Quick Actions, full stop -- the detailed
+// follow-up/new-lead lists that used to render below Quick Actions on
+// mobile now live on their natural home, /follow-ups (same place the
+// bottom nav's "Tasks" tab already points to; every KPI tile's own link
+// already goes there too), so Home stays a short, glanceable overview
+// instead of the entire task list repeated on both screens. Both trees
+// share the exact same canonical `board` (buildStaffHome() ->
+// getMyDutyQueue()'s deduped DutyItem[]) -- nothing here recomputes which
+// leads need attention; mobile simply doesn't render that list a second
+// time on this page.
 export function StaffHome({
   firstName,
   board,
   todayProgress,
+  todayActivity,
   siteVisitsToday,
   overview,
 }: {
   firstName: string | null;
   board: StaffHomeBoard;
   todayProgress: TodayFollowUpProgress;
+  todayActivity: TodayActivityCounts;
   siteVisitsToday: number;
   overview: StaffOverview;
 }) {
@@ -156,11 +169,6 @@ export function StaffHome({
     newLeadsOverlap > 0
       ? `Excludes ${newLeadsOverlap} lead${newLeadsOverlap === 1 ? "" : "s"} already in Follow up. "View all" opens every new lead, including ${newLeadsOverlap === 1 ? "that one" : "those"}.`
       : undefined;
-  const newLeadsToday = board.newLeads.filter((item) => {
-    const created = new Date(item.createdAt);
-    const now = new Date();
-    return created.toDateString() === now.toDateString();
-  }).length;
 
   return (
     <div className="space-y-5">
@@ -186,28 +194,34 @@ export function StaffHome({
         other={board.other.length}
       />
 
-      <StaffQuickActions />
+      {/* ---------- Mobile: overview only (KPI tiles above apply to both).
+          Today's Progress -> Pipeline Value -> Quick Actions, nothing
+          else -- the task lists live on /follow-ups. ---------- */}
+      <div className="space-y-5 lg:hidden">
+        <StaffTodayProgress
+          done={todayProgress.done}
+          pending={todayProgress.pending}
+          target={todayProgress.dueToday}
+          calls={todayActivity.calls}
+          whatsapp={todayActivity.whatsapp}
+          siteVisitsToday={siteVisitsToday}
+          estimates={todayActivity.estimates}
+        />
+        <StaffPipelineValue value={overview.pipelineValue} />
+        <StaffQuickActions />
+      </div>
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
+      {/* ---------- Desktop: unchanged from the approved reference --
+          quick actions, then a two-column grid (lists left, today's
+          progress/pipeline/month-stats/quick-links right). ---------- */}
+      <div className="hidden lg:block">
+        <StaffQuickActions />
+      </div>
+
+      <div className="hidden gap-5 lg:grid lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0 space-y-5">
           <ListSection id="follow-up-now" title="Follow up now" tone="now" items={board.followUpNow} empty="No overdue follow-ups." viewAllHref="/follow-ups" />
           <ListSection id="follow-up-today" title="Follow up today" tone="today" items={board.followUpToday} empty="Nothing due today." viewAllHref="/follow-ups" />
-
-          {/* Mobile only: New leads sits in the main column; on desktop it moves to the right rail below.
-              Capped to a short preview (same 5-item cap as the desktop panel below) -- the dashboard is a
-              summary, not the full Leads list; "View all" (real total in the header) goes to /leads?status=new. */}
-          <div className="lg:hidden">
-            <ListSection
-              id="new-leads"
-              title="New leads"
-              tone="new"
-              items={board.newLeads.slice(0, 5)}
-              totalCount={board.newLeads.length}
-              empty="No new leads right now."
-              viewAllHref="/leads?status=new"
-              note={newLeadsNote}
-            />
-          </div>
 
           {board.other.length > 0 && (
             <section aria-labelledby="also-check-title" className="border-t border-border pt-4" data-testid="staff-section-also-check">
@@ -228,33 +242,29 @@ export function StaffHome({
             done={todayProgress.done}
             pending={todayProgress.pending}
             target={todayProgress.dueToday}
+            calls={todayActivity.calls}
+            whatsapp={todayActivity.whatsapp}
             siteVisitsToday={siteVisitsToday}
-            newLeadsToday={newLeadsToday}
+            estimates={todayActivity.estimates}
           />
           <StaffPipelineValue value={overview.pipelineValue} />
-          <div className="hidden lg:block">
-            <StaffMonthStats
-              totalLeads={overview.totalLeadsThisMonth}
-              siteVisits={overview.siteVisitsThisMonth}
-              quotations={overview.quotationsThisMonth}
-              won={overview.wonThisMonth}
-            />
-          </div>
-          <div className="hidden lg:block">
-            <StaffQuickLinks />
-          </div>
-          <div className="hidden lg:block">
-            <ListSection
-              id="new-leads-desktop"
-              title="New leads"
-              tone="new"
-              items={board.newLeads.slice(0, 5)}
-              totalCount={board.newLeads.length}
-              empty="No new leads right now."
-              viewAllHref="/leads?status=new"
-              note={newLeadsNote}
-            />
-          </div>
+          <StaffMonthStats
+            totalLeads={overview.totalLeadsThisMonth}
+            siteVisits={overview.siteVisitsThisMonth}
+            quotations={overview.quotationsThisMonth}
+            won={overview.wonThisMonth}
+          />
+          <StaffQuickLinks />
+          <ListSection
+            id="new-leads-desktop"
+            title="New leads"
+            tone="new"
+            items={board.newLeads.slice(0, 5)}
+            totalCount={board.newLeads.length}
+            empty="No new leads right now."
+            viewAllHref="/leads?status=new"
+            note={newLeadsNote}
+          />
         </div>
       </div>
     </div>

@@ -571,3 +571,69 @@ export async function getTodaysSchedule(): Promise<ScheduleItem[]> {
     return a.time.localeCompare(b.time);
   });
 }
+
+export type TodayActivityCounts = {
+  calls: number;
+  whatsapp: number;
+  estimates: number;
+};
+
+const EMPTY_TODAY_ACTIVITY: TodayActivityCounts = { calls: 0, whatsapp: 0, estimates: 0 };
+
+// Staff Home's "Today's Progress" tiles -- calls/whatsapp/estimates only;
+// the fourth tile (site visits today) reuses the same computation
+// DashboardPage already does for siteVisitsToday elsewhere on this page,
+// rather than a second, slightly different query for the same fact.
+//
+// All three counts here are real, not invented:
+//  - calls: call_logs this caller personally RESOLVED today
+//    (call_logs.caller_id, resolved_at) -- the call-logging feature this
+//    is built on didn't exist when this dashboard's own comments said "no
+//    call telemetry" (CLAUDE.md's Calling scope rule); it does now.
+//  - whatsapp: outbound messages sent today. No explicit staff filter is
+//    applied -- messages_select_admin_or_owner (RLS) already scopes a
+//    staff caller to only messages in conversations linked to a lead
+//    assigned to them, same as every other message query in this app.
+//  - estimates: leads with a quotation_amount that were touched today.
+//    There is no dedicated "quoted at" timestamp in this schema (same gap
+//    getRevenueOverview()'s own comment documents for "quoted/won this
+//    month") -- updated_at is the one reliable per-row timestamp
+//    available, so this is the same kind of approximation already used
+//    elsewhere, not a new kind of guess.
+export async function getTodayActivityCounts(): Promise<TodayActivityCounts> {
+  const profile = await getCurrentProfile();
+  if (!profile) return EMPTY_TODAY_ACTIVITY;
+
+  const supabase = await createClient();
+  const today = todayIso();
+  const bounds = businessDayRangeToUtcBounds(today, today);
+  if (!bounds) return EMPTY_TODAY_ACTIVITY;
+
+  const [callsResult, whatsappResult, estimatesResult] = await Promise.all([
+    supabase
+      .from("call_logs")
+      .select("id", { count: "exact", head: true })
+      .eq("caller_id", profile.id)
+      .gte("resolved_at", bounds.startIso)
+      .lt("resolved_at", bounds.endExclusiveIso),
+    supabase
+      .from("messages")
+      .select("id", { count: "exact", head: true })
+      .eq("direction", "outbound")
+      .gte("created_at", bounds.startIso)
+      .lt("created_at", bounds.endExclusiveIso),
+    supabase
+      .from("leads")
+      .select("id", { count: "exact", head: true })
+      .is("merged_into_id", null)
+      .not("quotation_amount", "is", null)
+      .gte("updated_at", bounds.startIso)
+      .lt("updated_at", bounds.endExclusiveIso),
+  ]);
+
+  return {
+    calls: callsResult.count ?? 0,
+    whatsapp: whatsappResult.count ?? 0,
+    estimates: estimatesResult.count ?? 0,
+  };
+}

@@ -1,6 +1,6 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
-import type { FollowUpRow, FollowUpStatus, FollowUpType } from "@/lib/supabase/types";
+import type { FollowUpRow, FollowUpStatus, FollowUpType, LeadStatus } from "@/lib/supabase/types";
 import { FOLLOW_UP_TYPES, UNPAGINATED_LIST_QUERY_LIMIT } from "@/lib/constants";
 import { businessDatePlusDays } from "@/lib/business-time";
 
@@ -54,7 +54,18 @@ export async function getUpcomingFollowUps(): Promise<UpcomingFollowUp[]> {
 }
 
 export type FollowUpListItem = FollowUpRow & {
-  lead: { customer_name: string | null } | null;
+  lead:
+    | {
+        customer_name: string | null;
+        phone: string;
+        status: LeadStatus;
+        service_required: string | null;
+        location: string | null;
+        estimated_sqft: number | null;
+        job_value: number | null;
+        quotation_amount: number | null;
+      }
+    | null;
   assigned: { display_name: string | null } | null;
 };
 
@@ -87,7 +98,9 @@ export async function getFollowUps(filters: FollowUpFilters): Promise<FollowUpLi
 
   let query = supabase
     .from("follow_ups")
-    .select("*, lead:leads(customer_name), assigned:profiles(display_name)")
+    .select(
+      "*, lead:leads(customer_name, phone, status, service_required, location, estimated_sqft, job_value, quotation_amount), assigned:profiles(display_name)"
+    )
     .order("due_date", { ascending: true })
     .order("due_time", { ascending: true, nullsFirst: false })
     .limit(UNPAGINATED_LIST_QUERY_LIMIT);
