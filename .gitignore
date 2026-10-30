@@ -41,3 +41,10 @@ yarn-error.log*
 next-env.d.ts
 
 .vercel
+
+# playwright test artifacts (screenshots, reports, logs -- generated, not source)
+.playwright-mcp/
+
+# python bytecode cache
+__pycache__/
+*.pyc

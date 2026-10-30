@@ -96,7 +96,11 @@ always renders; `Management` (Automation, Audit Log) and `System`
 **Unconfirmed / deprioritized nav modules** — do not start a build phase
 for any of these without asking again first; a prior master planning brief
 omitted them entirely from the intended nav:
-Customers, Services, Team, Mission Control, Documents.
+Customers, Services, Mission Control, Documents.
+
+**Team is no longer on this list** — Team & Permissions is approved scope
+as of 2026-10-25 (Blueprint V1 §2/§12; UI preview already committed,
+`6e655cc`). See Blueprint V1 Decisions below.
 
 ---
 
@@ -346,6 +350,29 @@ unrelated historical regression suites.
 
 ---
 
+## Live Data Safety
+
+Added 2026-10-25, per explicit owner instruction. Non-negotiable; sits
+alongside Deployment Rules and Auth/RLS/Security above, and wins over
+convenience in any conflict.
+
+- **Never change** the WABIS webhook route (`app/api/webhooks/wabis/
+  [secret]/route.ts`), its secret, or `lib/whatsapp/ingest.ts`,
+  `lib/whatsapp/parse-wabis.ts`, `lib/whatsapp/wabis-auth.ts`. These carry
+  real live inbound leads today — touching them risks silently losing
+  them.
+- **Backup first, before any migration.** Migrations are additive only:
+  add columns, tables, or enum values. Never drop, rename, or delete an
+  existing column, enum value, or row.
+- **Test on a staging Supabase project and a Vercel preview deployment —
+  never on live data.** Production is not a test environment.
+- **Production deploy only with the owner's explicit approval.** After a
+  production deploy, confirm a real test WhatsApp message still creates a
+  lead before the deploy is considered done.
+- **Keep a one-click rollback path available at all times.**
+
+---
+
 ## Deployment Rules
 
 ```
@@ -488,20 +515,38 @@ layout.
 
 ## Current Phase
 
-All of the original 10 build phases (design tokens → AppShell → Dashboard
-→ Leads list → stage-aware Lead Detail → Follow-ups → Site Visits/
-Quotations → Deals → Reports → Admin/Settings/Automation/Audit Log
-foundation) are complete. WhatsApp live integration (webhook, outbound
-sender, Realtime, Conversations UI) is built. The keyword-triggered
-automation track is extensively built (see Completed Work Log) but mostly
-**uncommitted** and has a real live-Meta-send gap (recipient authorization
-unresolved).
+Blueprint V1 (`docs/BLUEPRINT_V1.md`) is the active plan. Build its phases
+in order, one per session.
 
-**Do not start the WABIS/Meta live-webhook phase without explicit
-instruction.** Before picking a next phase, ask, or pick from the still-open
-items in the Completed Work Log's automation-track and WhatsApp-integration
-entries (all explicitly flagged there as not-yet-done), rather than
-inventing new scope.
+---
+
+## Blueprint V1 Decisions (Recorded)
+
+Decisions below are binding (owner-approved, 2026-10-25). This was a
+docs-only session — none of these are implemented in code or schema yet.
+Whoever builds the relevant phase implements them then, not before.
+
+- **Pipeline status values**: keep all existing stored status values
+  as-is. Add a new `visit_scheduled` value when Blueprint Phase 2/7 is
+  actually built (not yet added to schema or to this file's "Exactly 8
+  user-facing pipeline stages" table — that table still describes current
+  live reality and must be updated in the same change that adds the
+  column value). Relabel only the *display label* of `site_visit` →
+  "Visit done" and `quotation` → "Quote sent" — the underlying stored
+  values/enum do not change. `ai_talking` is added later, in the AI agent
+  phase (Blueprint §6) — do not add it now. "Nurture" is a UI-level date
+  filter over existing leads, not a new status. "Junk" maps to the
+  existing `Invalid` status — no new status is created for it.
+- **Mobile bottom bar stays at exactly 4 tabs** — re-confirms the existing
+  Product Strategy rule above; no change needed.
+- **Team & Permissions is now approved scope** (previously listed as
+  deprioritized/unconfirmed in Desktop vs Mobile — Navigation above, now
+  corrected). A UI preview already exists (commit `6e655cc`).
+- The Ollama-based lead assistant (`app/api/ai/lead-assistant/route.ts`,
+  already committed but previously undocumented in this file) will be
+  **replaced**, in Blueprint's AI agent phase (§6/§12), by a
+  provider-setting-driven AI client (Gemini default, switchable without
+  code). Do not extend the Ollama path further in the meantime.
 
 ---
 
@@ -848,3 +893,10 @@ production data (non-mutating same-value saves only) as both Admin and
 Staff at 1440×900/390×844/375×812: filtered-list → Save & Next → next lead
 with filters preserved; single-result list → Save & Next → same lead with
 the "no next lead" message; no horizontal overflow; 0 console errors.
+
+**Blueprint V1 adoption (docs-only)** — 2026-10-25, NOT application code.
+Added the Live Data Safety section, pointed Current Phase at
+`docs/BLUEPRINT_V1.md`, recorded four Blueprint decisions (pipeline status
+values, 4-tab bottom bar reconfirmed, Team & Permissions now approved,
+Ollama lead-assistant to be replaced by a provider setting), and removed
+Team from the deprioritized-nav list. No schema, RLS, or app code touched.
