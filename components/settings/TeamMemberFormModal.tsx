@@ -1,19 +1,24 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { TeamMemberDraft } from "@/lib/settings/team-permissions";
+import type { TeamMemberFormValues } from "@/lib/settings/team-permissions";
 
 export function TeamMemberFormModal({
+  isPending,
+  error,
   onSave,
   onClose,
 }: {
-  onSave: (member: TeamMemberDraft) => void;
+  isPending: boolean;
+  error: string | null;
+  onSave: (member: TeamMemberFormValues) => void;
   onClose: () => void;
 }) {
   const [name, setName] = useState("");
-  const [mobile, setMobile] = useState("");
   const [email, setEmail] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [role, setRole] = useState<"admin" | "staff">("staff");
+  const [telegramUsername, setTelegramUsername] = useState("");
+  const [localError, setLocalError] = useState<string | null>(null);
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -24,12 +29,13 @@ export function TeamMemberFormModal({
   }, [onClose]);
 
   function submit() {
-    if (!name.trim()) return setError("Enter a name.");
-    if (mobile.replace(/\D/g, "").length < 10) return setError("Enter a valid mobile number.");
-    if (!email.trim().includes("@")) return setError("Enter a valid email.");
-    setError(null);
-    onSave({ id: crypto.randomUUID(), name: name.trim(), mobile: mobile.trim(), email: email.trim() });
+    if (!name.trim()) return setLocalError("Enter a name.");
+    if (!email.trim().includes("@")) return setLocalError("Enter a valid email.");
+    setLocalError(null);
+    onSave({ name: name.trim(), email: email.trim(), role, telegramUsername: telegramUsername.trim() });
   }
+
+  const shownError = localError ?? error;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4">
@@ -52,8 +58,7 @@ export function TeamMemberFormModal({
         </div>
 
         <p className="mt-3 text-xs text-muted-foreground">
-          This is a preview — it does not create a real sign-in account yet. Real staff creation needs its own
-          separate approval.
+          This sends a real sign-in invite to this email and creates their account.
         </p>
 
         <div className="mt-4 space-y-4">
@@ -63,14 +68,7 @@ export function TeamMemberFormModal({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. Rahul K."
-              className="block h-11 w-full rounded-md border border-border px-3 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-            />
-          </Field>
-          <Field label="Mobile">
-            <input
-              value={mobile}
-              onChange={(e) => setMobile(e.target.value)}
-              placeholder="e.g. 91 98765 43210"
+              disabled={isPending}
               className="block h-11 w-full rounded-md border border-border px-3 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
             />
           </Field>
@@ -80,16 +78,38 @@ export function TeamMemberFormModal({
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="name@example.com"
+              disabled={isPending}
               className="block h-11 w-full rounded-md border border-border px-3 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
             />
           </Field>
-          {error && <p className="text-xs font-medium text-danger">{error}</p>}
+          <Field label="Role">
+            <select
+              value={role}
+              onChange={(e) => setRole(e.target.value as "admin" | "staff")}
+              disabled={isPending}
+              className="block h-11 w-full rounded-md border border-border bg-card px-3 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+            >
+              <option value="staff">Staff</option>
+              <option value="admin">Admin</option>
+            </select>
+          </Field>
+          <Field label="Telegram username (optional)">
+            <input
+              value={telegramUsername}
+              onChange={(e) => setTelegramUsername(e.target.value)}
+              placeholder="e.g. rahul_afit"
+              disabled={isPending}
+              className="block h-11 w-full rounded-md border border-border px-3 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+          </Field>
+          {shownError && <p className="text-xs font-medium text-danger">{shownError}</p>}
         </div>
 
         <div className="mt-5 flex justify-between gap-2">
           <button
             type="button"
             onClick={onClose}
+            disabled={isPending}
             className="flex h-11 items-center rounded-md border border-border px-4 text-sm font-medium text-foreground hover:bg-secondary"
           >
             Cancel
@@ -97,9 +117,10 @@ export function TeamMemberFormModal({
           <button
             type="button"
             onClick={submit}
-            className="flex h-11 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+            disabled={isPending}
+            className="flex h-11 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
           >
-            Add to preview
+            {isPending ? "Inviting…" : "Send invite"}
           </button>
         </div>
       </div>

@@ -13,6 +13,10 @@ export type LeadStatus =
   | "lost"
   | "invalid";
 
+// R-LOST-001 (docs/BLUEPRINT_V1.md Section 8): the fixed reason set a
+// lead marked Lost must be categorized under.
+export type LostReasonCategory = "price" | "chose_another" | "plan_cancelled" | "no_response" | "out_of_area" | "other";
+
 export type LeadRow = {
   id: string;
   customer_name: string | null;
@@ -37,6 +41,7 @@ export type LeadRow = {
   quotation_amount: number | null;
   job_value: number | null;
   lost_reason: string | null;
+  lost_reason_category: LostReasonCategory | null;
   assigned_to: string | null;
   assigned_to_id: string | null;
   // Soft-retirement marker for the legacy phone-duplicate merge process
@@ -63,9 +68,21 @@ export type ProfileRow = {
   id: string;
   role: ProfileRole;
   display_name: string | null;
+  telegram_username: string | null;
+  active: boolean;
   created_at: string;
   updated_at: string;
 };
+
+export type ProfileInsert = {
+  id: string;
+  role: ProfileRole;
+  display_name?: string | null;
+  telegram_username?: string | null;
+  active?: boolean;
+};
+
+export type ProfileUpdate = Partial<Pick<ProfileRow, "role" | "display_name" | "telegram_username" | "active">>;
 
 export type ConversationStatus = "open" | "closed";
 
@@ -149,9 +166,12 @@ export type AuditAction =
   | "follow_up_completed"
   | "lead_assigned"
   | "call_logged"
-  | "setting_changed";
+  | "setting_changed"
+  | "team_member_invited"
+  | "team_member_deactivated"
+  | "team_member_reactivated";
 
-export type AuditTargetType = "lead" | "conversation" | "message" | "follow_up" | "setting";
+export type AuditTargetType = "lead" | "conversation" | "message" | "follow_up" | "setting" | "profile";
 
 export type AuditLogRow = {
   id: string;
@@ -466,8 +486,8 @@ export type Database = {
       };
       profiles: {
         Row: ProfileRow;
-        Insert: never;
-        Update: never;
+        Insert: ProfileInsert;
+        Update: ProfileUpdate;
         Relationships: [];
       };
       conversations: {

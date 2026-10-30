@@ -19,7 +19,7 @@ import { LeadActivity } from "@/components/lead-actions/LeadActivity";
 import { DeleteLeadSection } from "@/components/lead-actions/DeleteLeadSection";
 import { CallButton } from "@/components/lead-actions/CallButton";
 import { formatCurrency, formatDate, formatDateTime, telLink, whatsappLink } from "@/lib/format";
-import { LEAD_SOURCE_LABELS } from "@/lib/constants";
+import { LEAD_SOURCE_LABELS, LOST_REASON_CATEGORY_LABELS } from "@/lib/constants";
 import { getStageSections, canMarkWon } from "@/lib/lead-stage-sections";
 import { buildLeadsQueryString } from "@/lib/leads";
 
@@ -288,9 +288,14 @@ export default async function LeadDetailPage({
             )}
           </p>
         )}
-        {lead.status === "lost" && lead.lost_reason && (
+        {lead.status === "lost" && (lead.lost_reason_category || lead.lost_reason) && (
           <p className="text-sm text-surface-foreground-muted">
-            Currently marked lost: <span className="text-surface-foreground">{lead.lost_reason}</span>
+            Currently marked lost:{" "}
+            <span className="text-surface-foreground">
+              {lead.lost_reason_category ? LOST_REASON_CATEGORY_LABELS[lead.lost_reason_category] : null}
+              {lead.lost_reason_category && lead.lost_reason ? " — " : null}
+              {lead.lost_reason}
+            </span>
           </p>
         )}
 
@@ -306,7 +311,7 @@ export default async function LeadDetailPage({
             </summary>
             <div className="mt-3 grid grid-cols-1 gap-6 sm:grid-cols-2">
               {canMarkWon(lead.status) && <MarkWonForm leadId={lead.id} jobValue={lead.job_value} />}
-              <MarkLostForm leadId={lead.id} lostReason={lead.lost_reason} />
+              <MarkLostForm leadId={lead.id} lostReason={lead.lost_reason} lostReasonCategory={lead.lost_reason_category} />
             </div>
           </details>
         )}

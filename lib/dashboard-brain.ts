@@ -475,13 +475,21 @@ export async function getTeamPerformance(): Promise<TeamPerformanceRow[]> {
       const won = own.filter((l) => l.status === "won").length;
       const siteVisits = own.filter((l) => l.site_visit_date !== null).length;
       const totalLeads = own.length;
+      // R-LOST-002 (docs/BLUEPRINT_V1.md Section 8): "Junk ... kept out of
+      // conversion reports." "invalid" is the Junk disposition (CLAUDE.md
+      // Blueprint V1 Decisions). totalLeads itself stays the full count
+      // (matches lib/reports.ts's own ConversionReport.totalLeads
+      // precedent -- "leads ever assigned" is a volume metric, not a
+      // conversion one), but the conversion rate's denominator excludes
+      // invalid, same as lib/reports.ts's computeConversion().
+      const nonInvalid = own.filter((l) => l.status !== "invalid");
       return {
         staffId: p.id,
         displayName: p.display_name,
         totalLeads,
         siteVisits,
         won,
-        conversionPct: totalLeads === 0 ? 0 : Math.round((won / totalLeads) * 1000) / 10,
+        conversionPct: nonInvalid.length === 0 ? 0 : Math.round((won / nonInvalid.length) * 1000) / 10,
       };
     })
     .sort((a, b) => b.totalLeads - a.totalLeads);

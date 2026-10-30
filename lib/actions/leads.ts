@@ -6,8 +6,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentProfile } from "@/lib/auth";
 import { recordAuditEvent } from "@/lib/audit";
-import type { Database, LeadStatus, LeadUpdate } from "@/lib/supabase/types";
-import { LEAD_STATUSES } from "@/lib/constants";
+import type { Database, LeadStatus, LeadUpdate, LostReasonCategory } from "@/lib/supabase/types";
+import { LEAD_STATUSES, LOST_REASON_CATEGORIES, MIN_CALLS_BEFORE_LOST } from "@/lib/constants";
 import { toCanonicalPhone } from "@/lib/phone";
 import { getLeadIdsInListOrder, buildLeadsQueryString, type LeadFilters } from "@/lib/leads";
 import { parseBusinessDateTime } from "@/lib/business-time";
@@ -418,16 +418,42 @@ export async function markLeadWon(_prevState: ActionState, formData: FormData): 
   return null;
 }
 
+function isLostReasonCategory(value: string): value is LostReasonCategory {
+  return (LOST_REASON_CATEGORIES as string[]).includes(value);
+}
+
+// R-LOST-001 (docs/BLUEPRINT_V1.md Section 8): "Lost needs at least 3
+// logged call attempts and a reason." lost_reason_category is the
+// required fixed-set reason (supabase/migrations/
+// 20261030180000_lost_reason_category.sql); lost_reason stays the
+// existing free-text column, now an optional supplementary note rather
+// than the required field it was before this rule existed.
 export async function markLeadLost(_prevState: ActionState, formData: FormData): Promise<ActionState> {
   const leadId = str(formData, "lead_id");
-  const reason = str(formData, "lost_reason");
-  if (!reason) return { error: "A lost reason is required." };
+  const reasonCategory = str(formData, "lost_reason_category");
+  const reasonNote = optionalStr(formData, "lost_reason");
+  if (!isLostReasonCategory(reasonCategory)) return { error: "Pick a lost reason." };
 
   const supabase = await createClient();
   const accessError = await checkLeadAccess(supabase, leadId);
   if (accessError) return accessError;
 
-  const lostUpdate: LeadUpdate = { status: "lost", lost_reason: reason };
+  // A "logged" attempt is a call_logs row whose outcome has actually been
+  // recorded (R-CALL-001's compulsory outcome popup resolves it) -- a
+  // call that was started but never resolved doesn't count.
+  const { count: callCount, error: countError } = await supabase
+    .from("call_logs")
+    .select("id", { count: "exact", head: true })
+    .eq("lead_id", leadId)
+    .not("resolved_at", "is", null);
+  if (countError) return { error: "Could not verify call history." };
+  if ((callCount ?? 0) < MIN_CALLS_BEFORE_LOST) {
+    return {
+      error: `At least ${MIN_CALLS_BEFORE_LOST} logged calls are required before marking a lead Lost (${callCount ?? 0} logged so far).`,
+    };
+  }
+
+  const lostUpdate: LeadUpdate = { status: "lost", lost_reason_category: reasonCategory, lost_reason: reasonNote };
   const { error } = await supabase.from("leads").update(lostUpdate).eq("id", leadId);
 
   revalidateLead(leadId);

@@ -1,4 +1,4 @@
-import type { CallOutcome, FollowUpType, LeadStatus } from "@/lib/supabase/types";
+import type { CallOutcome, FollowUpType, LeadStatus, LostReasonCategory } from "@/lib/supabase/types";
 
 // Every value the `leads.status` column can hold. Used for schema-level
 // validation (e.g. isLeadStatus()) and internal bookkeeping -- NOT for
@@ -40,6 +40,28 @@ export const PIPELINE_STATUSES: LeadStatus[] = [...OPEN_LEAD_STATUSES, "won", "l
 export function isClosedLeadStatus(status: LeadStatus): boolean {
   return status === "won" || status === "lost";
 }
+
+// R-LOST-001 (docs/BLUEPRINT_V1.md Section 8): the only reasons a lead
+// can be marked Lost under. Minimum-3-logged-calls is enforced in
+// lib/actions/leads.ts's markLeadLost(), not here -- this list is just the
+// fixed category set.
+export const LOST_REASON_CATEGORIES: LostReasonCategory[] = [
+  "price",
+  "chose_another",
+  "plan_cancelled",
+  "no_response",
+  "out_of_area",
+  "other",
+];
+
+export const LOST_REASON_CATEGORY_LABELS: Record<LostReasonCategory, string> = {
+  price: "Price",
+  chose_another: "Chose another provider",
+  plan_cancelled: "Plan cancelled",
+  no_response: "No response",
+  out_of_area: "Out of area",
+  other: "Other",
+};
 
 export const LEAD_STATUS_LABELS: Record<LeadStatus, string> = {
   new: "New",
@@ -164,3 +186,7 @@ export const CALL_OUTCOME_EXEMPT_FROM_FOLLOWUP: CallOutcome = "wrong_number";
 // pagination (or, for Reports, moving aggregation into SQL) is needed
 // before lead/follow-up volume actually approaches this number.
 export const UNPAGINATED_LIST_QUERY_LIMIT = 1000;
+
+// R-LOST-001 (docs/BLUEPRINT_V1.md Section 8): minimum resolved call_logs
+// rows a lead must have before it can be marked Lost.
+export const MIN_CALLS_BEFORE_LOST = 3;

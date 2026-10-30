@@ -37,10 +37,14 @@ export const getCurrentProfile = cache(async (): Promise<CurrentProfile | null> 
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("id, role, display_name")
+    .select("id, role, display_name, active")
     .eq("id", userId)
     .single();
-  if (!profile) return null;
+  // Deactivated (Blueprint Section 2: "deactivated, never deleted") -- the
+  // profiles row and their history stay, but they lose app access exactly
+  // like "no profile row yet" above: fails closed to null, which the
+  // existing redirect-to-login handling for a null profile already covers.
+  if (!profile || !profile.active) return null;
 
   return { id: profile.id, role: profile.role, displayName: profile.display_name };
 });

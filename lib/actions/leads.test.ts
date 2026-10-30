@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 
-type QueryResult = { data?: unknown; error?: { code?: string; message?: string } | null };
+type QueryResult = { data?: unknown; error?: { code?: string; message?: string } | null; count?: number | null };
 
 // Same minimal chainable/thenable query-builder stand-in used across this
 // project's other Supabase-backed tests (lib/whatsapp/ingest.test.ts,
@@ -19,6 +19,7 @@ function makeBuilder(result: QueryResult) {
   builder.is = vi.fn(chain);
   builder.or = vi.fn(chain);
   builder.order = vi.fn(chain);
+  builder.not = vi.fn(chain);
   builder.insert = vi.fn(chain);
   builder.update = vi.fn(chain);
   builder.delete = vi.fn(chain);
@@ -747,35 +748,67 @@ describe("markLeadLost", () => {
     getCurrentProfileMock.mockResolvedValue(ADMIN_PROFILE);
   });
 
-  // Confirms markLeadLost's pre-existing behavior is unchanged by the
-  // markLeadWon fix above -- same validate-before-access-check shape, but
-  // its own required field (lost_reason) and success path are untouched.
+  // R-LOST-001 (docs/BLUEPRINT_V1.md Section 8): a fixed reason category
+  // is required, and a lead needs at least MIN_CALLS_BEFORE_LOST resolved
+  // call_logs rows before it can be marked Lost. lost_reason (free text)
+  // is now optional supplementary detail, not the required field it used
+  // to be.
 
-  it("still rejects marking Lost with no lost_reason -- no database access whatsoever", async () => {
+  it("rejects marking Lost with no (or an invalid) lost_reason_category -- no database access whatsoever", async () => {
     const { stub, from } = createFakeSupabase({});
     fakeSupabase = stub;
 
-    const result = await markLeadLost(null, formDataWith({ lead_id: "lead-1" }));
-
-    expect(result).toEqual({ error: "A lost reason is required." });
+    expect(await markLeadLost(null, formDataWith({ lead_id: "lead-1" }))).toEqual({ error: "Pick a lost reason." });
+    expect(await markLeadLost(null, formDataWith({ lead_id: "lead-1", lost_reason_category: "not_a_real_reason" }))).toEqual({
+      error: "Pick a lost reason.",
+    });
     expect(from).not.toHaveBeenCalled();
   });
 
-  it("still succeeds with a valid lost_reason, setting status lost", async () => {
+  it("rejects marking Lost with fewer than 3 logged calls, before any write, naming how many were logged", async () => {
     const { stub, from } = createFakeSupabase({
+      call_logs: [{ count: 2, error: null }],
+    });
+    fakeSupabase = stub;
+
+    const result = await markLeadLost(null, formDataWith({ lead_id: "lead-1", lost_reason_category: "price" }));
+
+    expect(result).toEqual({
+      error: "At least 3 logged calls are required before marking a lead Lost (2 logged so far).",
+    });
+    expect(from.mock.calls.filter(([table]) => table === "leads")).toHaveLength(0);
+  });
+
+  it("only counts resolved call_logs rows (filters resolved_at is not null)", async () => {
+    const { stub, from } = createFakeSupabase({
+      call_logs: [{ count: 3, error: null }],
+      leads: [{ error: null }], // update
+    });
+    fakeSupabase = stub;
+
+    await markLeadLost(null, formDataWith({ lead_id: "lead-1", lost_reason_category: "price" }));
+
+    const callLogsBuilder = from.mock.results[0].value as { not: ReturnType<typeof vi.fn> };
+    expect(callLogsBuilder.not).toHaveBeenCalledWith("resolved_at", "is", null);
+  });
+
+  it("succeeds with a valid category and >= 3 logged calls, setting status lost and the category, with lost_reason optional", async () => {
+    const { stub, from } = createFakeSupabase({
+      call_logs: [{ count: 3, error: null }],
       leads: [{ error: null }], // update
     });
     fakeSupabase = stub;
 
     const result = await markLeadLost(
       null,
-      formDataWith({ lead_id: "lead-1", lost_reason: "Went with a competitor" })
+      formDataWith({ lead_id: "lead-1", lost_reason_category: "chose_another", lost_reason: "Went with a competitor" }),
     );
 
     expect(result).toBeNull();
-    const updateBuilder = from.mock.results[0].value as { update: ReturnType<typeof vi.fn> };
+    const updateBuilder = from.mock.results[1].value as { update: ReturnType<typeof vi.fn> };
     expect(updateBuilder.update).toHaveBeenCalledWith({
       status: "lost",
+      lost_reason_category: "chose_another",
       lost_reason: "Went with a competitor",
     });
   });
@@ -787,10 +820,11 @@ describe("markLeadLost", () => {
     });
     fakeSupabase = stub;
 
-    const result = await markLeadLost(null, formDataWith({ lead_id: "lead-1", lost_reason: "Budget" }));
+    const result = await markLeadLost(null, formDataWith({ lead_id: "lead-1", lost_reason_category: "price" }));
 
     expect(result).toEqual({ error: "You do not have access to this lead." });
     expect(from.mock.calls.filter(([table]) => table === "leads")).toHaveLength(1);
+    expect(from.mock.calls.filter(([table]) => table === "call_logs")).toHaveLength(0);
   });
 });
 
