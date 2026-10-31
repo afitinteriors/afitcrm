@@ -204,6 +204,27 @@ export const RESPONSE_ALERT_OWNER_MINUTES = 30;
 export const BUSINESS_HOURS_START_HOUR = 9;
 export const BUSINESS_HOURS_END_HOUR = 20;
 
+// Blueprint V1 Section 7 (docs/BLUEPRINT_V1.md): "Win chances are starting
+// values; adjust them once real conversion data exists." Same Settings-later
+// caveat as the rule timers above -- hard-coded here as the default until a
+// Settings page for pipeline configuration exists. The blueprint's own
+// stage list (New/AI talking/Contacted/Qualified/Visit scheduled/Visit
+// done/Quote sent/Negotiation/Won) doesn't match this app's actual 8-stage
+// pipeline (PIPELINE_STATUSES) 1:1 -- no "AI talking" or separate
+// scheduled/done split exists -- so values are mapped onto the stages that
+// actually exist, keeping the blueprint's relative ordering and magnitudes.
+export const STAGE_WIN_CHANCE: Record<LeadStatus, number> = {
+  new: 0.05,
+  contacted: 0.1,
+  qualified: 0.2,
+  site_visit: 0.35,
+  quotation: 0.6,
+  negotiation: 0.75,
+  won: 1,
+  lost: 0,
+  invalid: 0,
+};
+
 // R-QUOTE-002 (docs/BLUEPRINT_V1.md Section 8): "Discount above the
 // owner's limit needs owner approval ... Limit 5%, Azhar enters 8% ->
 // approval request." Same Settings-later caveat as above. Measured against

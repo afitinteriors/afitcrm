@@ -65,6 +65,12 @@ export type LeadRow = {
   // "photo" half of "photo or reference" is not built -- see
   // supabase/migrations/20261031120000_leads_advance_proof_reference.sql.
   advance_proof_reference: string | null;
+  // Blueprint V1 Section 7: recorded once the "Visit done" step happens --
+  // see supabase/migrations/20261031150000_leads_site_visit_measurements.sql.
+  // "Photos" is a free-text reference for the same reason
+  // advance_proof_reference is: no staff-upload storage flow exists yet.
+  site_visit_measurements: string | null;
+  site_visit_photo_reference: string | null;
   wa_message_id: string | null;
   wa_phone_number_id: string | null;
   wa_message_timestamp: string | null;
@@ -200,6 +206,27 @@ export type AuditLogRow = {
 export type AuditLogInsert = Partial<Omit<AuditLogRow, "id" | "created_at">> & {
   actor_id: string;
   action: AuditAction;
+};
+
+// Blueprint V1 Section 11: "What Hermes read, sent and created." See
+// supabase/migrations/20261031160000_agent_events.sql -- written only by
+// the Phase 5 CRM tool server's service-role client, never by Hermes
+// directly (it has no database access, only a limited HERMES_API_KEY).
+export type AgentEventType = "read" | "send" | "create";
+
+export type AgentEventRow = {
+  id: string;
+  event_type: AgentEventType;
+  tool_name: string;
+  summary: string;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+};
+
+export type AgentEventInsert = Partial<Omit<AgentEventRow, "id" | "created_at">> & {
+  event_type: AgentEventType;
+  tool_name: string;
+  summary: string;
 };
 
 // Phase 1 (schema + RLS only) of keyword-triggered, service-specific
@@ -562,6 +589,12 @@ export type Database = {
       audit_logs: {
         Row: AuditLogRow;
         Insert: AuditLogInsert;
+        Update: never;
+        Relationships: [];
+      };
+      agent_events: {
+        Row: AgentEventRow;
+        Insert: AgentEventInsert;
         Update: never;
         Relationships: [];
       };

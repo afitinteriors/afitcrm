@@ -79,6 +79,7 @@ import {
   markLeadWon,
   markLeadLost,
   setSiteVisitDate,
+  setSiteVisitDetails,
   deleteLead,
 } from "./leads";
 
@@ -918,6 +919,61 @@ describe("setSiteVisitDate -- entered time is IST wall-clock (A/B/C)", () => {
     fakeSupabase = stub;
 
     const result = await setSiteVisitDate(null, formDataWith({ lead_id: "lead-1", site_visit_date: "2026-10-05T11:00" }));
+
+    expect(result).toEqual({ error: "You do not have access to this lead." });
+    expect(from).toHaveBeenCalledTimes(1); // the access check only, never an update
+  });
+});
+
+describe("setSiteVisitDetails", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getCurrentProfileMock.mockResolvedValue(ADMIN_PROFILE);
+  });
+
+  it("saves measurements and photo reference together", async () => {
+    const { stub, from } = createFakeSupabase({ leads: [{ error: null }] });
+    fakeSupabase = stub;
+
+    const result = await setSiteVisitDetails(
+      null,
+      formDataWith({ lead_id: "lead-1", site_visit_measurements: "1500 sqft, 3 rooms", site_visit_photo_reference: "https://photos.example/visit-1" }),
+    );
+
+    expect(result).toBeNull();
+    const builder = from.mock.results[0].value as { update: ReturnType<typeof vi.fn> };
+    expect(builder.update).toHaveBeenCalledWith({
+      site_visit_measurements: "1500 sqft, 3 rooms",
+      site_visit_photo_reference: "https://photos.example/visit-1",
+    });
+  });
+
+  it("accepts just one of the two fields", async () => {
+    const { stub, from } = createFakeSupabase({ leads: [{ error: null }] });
+    fakeSupabase = stub;
+
+    await setSiteVisitDetails(null, formDataWith({ lead_id: "lead-1", site_visit_measurements: "1500 sqft" }));
+
+    const builder = from.mock.results[0].value as { update: ReturnType<typeof vi.fn> };
+    expect(builder.update).toHaveBeenCalledWith({ site_visit_measurements: "1500 sqft", site_visit_photo_reference: null });
+  });
+
+  it("rejects an empty submission without touching the database", async () => {
+    const { stub, from } = createFakeSupabase({});
+    fakeSupabase = stub;
+
+    expect(await setSiteVisitDetails(null, formDataWith({ lead_id: "lead-1" }))).toEqual({
+      error: "Add measurements or a photo reference for the visit.",
+    });
+    expect(from).not.toHaveBeenCalled();
+  });
+
+  it("preserves authorization: staff cannot set visit details on a lead not assigned to them", async () => {
+    getCurrentProfileMock.mockResolvedValue(STAFF_PROFILE);
+    const { stub, from } = createFakeSupabase({ leads: [{ data: { assigned_to_id: "someone-else" } }] });
+    fakeSupabase = stub;
+
+    const result = await setSiteVisitDetails(null, formDataWith({ lead_id: "lead-1", site_visit_measurements: "1500 sqft" }));
 
     expect(result).toEqual({ error: "You do not have access to this lead." });
     expect(from).toHaveBeenCalledTimes(1); // the access check only, never an update

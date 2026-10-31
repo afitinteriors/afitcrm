@@ -15,6 +15,7 @@ import { AssignmentCard } from "@/components/lead-actions/AssignmentCard";
 import { QualificationForm } from "@/components/lead-actions/QualificationForm";
 import { QualificationScoreSummary } from "@/components/lead-actions/QualificationScoreCard";
 import { SiteVisitForm } from "@/components/lead-actions/SiteVisitForm";
+import { SiteVisitDetailsForm } from "@/components/lead-actions/SiteVisitDetailsForm";
 import { QuotationManager } from "@/components/lead-actions/QuotationManager";
 import { CloseLeadActions } from "@/components/lead-actions/CloseLeadActions";
 import { FollowUpsCard } from "@/components/lead-actions/FollowUpsCard";
@@ -310,6 +311,14 @@ export default async function LeadDetailPage({
               </p>
               <SiteVisitForm leadId={lead.id} siteVisitDate={lead.site_visit_date} />
               <p className="mt-2 text-xs text-surface-foreground-muted">Recording a date here does not change the pipeline stage.</p>
+              <div className="mt-4 border-t border-white/10 pt-4">
+                <p className="mb-3 text-sm font-medium text-surface-foreground">Visit done</p>
+                <SiteVisitDetailsForm
+                  leadId={lead.id}
+                  measurements={lead.site_visit_measurements}
+                  photoReference={lead.site_visit_photo_reference}
+                />
+              </div>
             </Card>
           )}
 

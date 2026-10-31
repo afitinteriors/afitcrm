@@ -32,7 +32,7 @@ vi.mock("@/lib/auth", () => ({
   getCurrentProfile: () => getCurrentProfileMock(),
 }));
 
-import { getLeads, getLeadIdsInListOrder, buildLeadsQueryString, getDashboardStats } from "./leads";
+import { getLeads, getLeadIdsInListOrder, buildLeadsQueryString, getDashboardStats, calculateExpectedBusiness } from "./leads";
 
 describe("getLeads", () => {
   beforeEach(() => {
@@ -245,5 +245,32 @@ describe("buildLeadsQueryString", () => {
 
   it("drops an unrecognised preset id", () => {
     expect(buildLeadsQueryString({ datePreset: "not-a-real-preset" })).toBe("");
+  });
+});
+
+describe("calculateExpectedBusiness", () => {
+  it("sums (value x stage win chance) across open leads only", () => {
+    const result = calculateExpectedBusiness([
+      { status: "new", quotation_amount: null, job_value: null },
+      { status: "qualified", quotation_amount: 100_000, job_value: null }, // 0.2 -> 20,000
+      { status: "quotation", quotation_amount: 200_000, job_value: null }, // 0.6 -> 120,000
+      { status: "won", quotation_amount: null, job_value: 500_000 }, // excluded: not open
+      { status: "lost", quotation_amount: 300_000, job_value: null }, // excluded: not open
+    ]);
+    expect(result).toBe(140_000);
+  });
+
+  it("prefers quotation_amount over job_value, same as the dashboard's other pipeline-value totals", () => {
+    const result = calculateExpectedBusiness([{ status: "negotiation", quotation_amount: 100_000, job_value: 90_000 }]);
+    expect(result).toBe(75_000); // 100,000 x 0.75
+  });
+
+  it("falls back to job_value when quotation_amount is null, and to 0 when both are", () => {
+    expect(calculateExpectedBusiness([{ status: "site_visit", quotation_amount: null, job_value: 40_000 }])).toBe(14_000); // 0.35
+    expect(calculateExpectedBusiness([{ status: "contacted", quotation_amount: null, job_value: null }])).toBe(0);
+  });
+
+  it("returns 0 for an empty list", () => {
+    expect(calculateExpectedBusiness([])).toBe(0);
   });
 });

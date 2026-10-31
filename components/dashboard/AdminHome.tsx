@@ -35,6 +35,7 @@ import { formatCurrency } from "@/lib/format";
 const OVERDUE_ICON = <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M12 6v6l4 2m6-2a10 10 0 11-20 0 10 10 0 0120 0z" />;
 const RISK_ICON = <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.947-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007" />;
 const NO_ACTION_ICON = <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />;
+const FORECAST_ICON = <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M3 13.125L7.5 8.625l3.75 3.75 6.75-6.75M18 5.625h3v3" />;
 
 function StaffWorkloadTable({ rows }: { rows: StaffWorkloadRow[] }) {
   if (rows.length === 0) return <p className="px-4 py-6 text-center text-sm text-muted-foreground">No staff accounts yet.</p>;
@@ -98,6 +99,7 @@ export function AdminHome({
   activeDeals,
   siteVisitsToday,
   siteVisitsUpcoming,
+  expectedBusiness,
 }: {
   queue: DutyQueue;
   unassigned: UnassignedLead[];
@@ -113,6 +115,7 @@ export function AdminHome({
   activeDeals: LeadListRow[];
   siteVisitsToday: SiteVisitLead[];
   siteVisitsUpcoming: SiteVisitLead[];
+  expectedBusiness: number;
 }) {
   const overdueItems = queue.items.filter((i) => i.reasonKind === "overdue_follow_up" || i.reasonKind === "due_today_follow_up");
   const stalledValue = stalled.reduce((sum, l) => sum + (l.quotation_amount ?? l.job_value ?? 0), 0);
@@ -166,10 +169,11 @@ export function AdminHome({
 
         <div className="mt-6 border-t border-white/10 pt-4">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-surface-foreground-muted">Alerts &amp; Operational Monitoring</h2>
-          <div className="mt-3 grid grid-cols-3 gap-3">
+          <div className="mt-3 grid grid-cols-2 gap-3 lg:grid-cols-4">
             <StatCard label="Overdue (Team)" value={queue.counts.overdue} icon={OVERDUE_ICON} tone={queue.counts.overdue > 0 ? "danger" : "neutral"} />
             <StatCard label="No Follow-up" value={queue.counts.noFollowUp} icon={NO_ACTION_ICON} tone={queue.counts.noFollowUp > 0 ? "warning" : "neutral"} />
             <StatCard label="Pipeline at Risk" value={formatCurrency(stalledValue)} icon={RISK_ICON} tone={stalledValue > 0 ? "danger" : "neutral"} />
+            <StatCard label="Expected This Month" value={formatCurrency(expectedBusiness)} icon={FORECAST_ICON} tone="accent" href="/reports" />
           </div>
 
           <div className="mt-4 grid grid-cols-2 gap-4">

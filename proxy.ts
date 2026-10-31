@@ -17,7 +17,10 @@ export const config = {
      * - api/cron (Vercel Cron invocations -- no staff session either; its
      *   own CRON_SECRET bearer-token check, not this middleware, is the
      *   real guard -- see lib/cron-auth.ts)
+     * - api/hermes (Blueprint V1 Phase 5's CRM tool server -- Hermes has no
+     *   staff session either; its own HERMES_API_KEY bearer-token check,
+     *   not this middleware, is the real guard -- see lib/hermes-auth.ts)
      */
-    "/((?!_next/static|_next/image|api/webhooks|api/cron|manifest\\.webmanifest$|sw\\.js$|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    "/((?!_next/static|_next/image|api/webhooks|api/cron|api/hermes|manifest\\.webmanifest$|sw\\.js$|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
   ],
 };
