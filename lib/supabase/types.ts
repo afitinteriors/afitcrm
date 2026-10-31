@@ -435,6 +435,37 @@ export type CallLogUpdate = {
   resolved_at: string;
 };
 
+// R-QUOTE-001 (docs/BLUEPRINT_V1.md Section 8): versioned quotations --
+// supabase/migrations/20261031130000_quotations.sql. A 'draft' row is
+// freely editable; once 'sent' it is locked (app-level enforcement in
+// lib/actions/quotations.ts) and any further change creates version + 1
+// instead of updating it.
+export type QuotationStatus = "draft" | "sent";
+
+export type QuotationRow = {
+  id: string;
+  lead_id: string;
+  version: number;
+  amount: number;
+  status: QuotationStatus;
+  notes: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  sent_at: string | null;
+};
+
+export type QuotationInsert = {
+  lead_id: string;
+  version: number;
+  amount: number;
+  status?: QuotationStatus;
+  notes?: string | null;
+  created_by?: string | null;
+};
+
+export type QuotationUpdate = Partial<Omit<QuotationRow, "id" | "lead_id" | "version" | "created_at" | "updated_at">>;
+
 // Settings -> WhatsApp Numbers (supabase/migrations/20261029130000_whatsapp_numbers.sql).
 export type WhatsAppNumberStatus = "connected" | "needs_attention" | "disconnected";
 export type WhatsAppNumberPurpose = "Sales" | "Support" | "General";
@@ -580,6 +611,12 @@ export type Database = {
         Row: CallLogRow;
         Insert: CallLogInsert;
         Update: CallLogUpdate;
+        Relationships: [];
+      };
+      quotations: {
+        Row: QuotationRow;
+        Insert: QuotationInsert;
+        Update: QuotationUpdate;
         Relationships: [];
       };
       whatsapp_numbers: {

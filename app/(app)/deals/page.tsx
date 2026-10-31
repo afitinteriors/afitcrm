@@ -8,7 +8,7 @@ import { DealCard } from "@/components/deals/DealCard";
 // scoping (RLS plus the existing app-level filter in lib/leads.ts) as the
 // Leads page; this just narrows that same result to the two "active deal"
 // statuses. Editing still happens on Lead Detail via the existing
-// QuotationForm/WonLostForms -- this page is read-only.
+// QuotationManager/WonLostForms -- this page is read-only.
 //
 // Deliberately different from /quotations (a ledger of every lead ever
 // quoted, filtered by quotation_amount presence): this is a live pipeline

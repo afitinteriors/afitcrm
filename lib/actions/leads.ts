@@ -565,40 +565,6 @@ export async function setSiteVisitDate(_prevState: ActionState, formData: FormDa
   return null;
 }
 
-export async function setQuotationAmount(
-  _prevState: ActionState,
-  formData: FormData
-): Promise<ActionState> {
-  const leadId = str(formData, "lead_id");
-  const amount = optionalNumber(formData, "quotation_amount");
-  if (amount === null || amount < 0) return { error: "Enter a valid quotation amount." };
-
-  const supabase = await createClient();
-  const accessError = await checkLeadAccess(supabase, leadId);
-  if (accessError) return accessError;
-
-  // Same rule as setSiteVisitDate: recording an amount is an activity
-  // record, not a stage transition.
-  const quotationUpdate: LeadUpdate = { quotation_amount: amount };
-  const { error } = await supabase.from("leads").update(quotationUpdate).eq("id", leadId);
-
-  revalidateLead(leadId);
-  if (error) return { error: error.message };
-
-  const profile = await getCurrentProfile();
-  if (profile) {
-    await recordAuditEvent({
-      actorId: profile.id,
-      action: "lead_updated",
-      targetType: "lead",
-      targetId: leadId,
-      metadata: { fields_changed: Object.keys(quotationUpdate) },
-    });
-  }
-
-  return null;
-}
-
 // Admin-only, hard delete -- no soft-delete/archive concept exists in this
 // schema (unlike the merge system's merged_into_id soft-retirement), so
 // this is a real, irreversible row removal. leads_delete_admin_only (RLS)
