@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentProfile } from "@/lib/auth";
 import { recordAuditEvent } from "@/lib/audit";
 import { CALL_OUTCOME_EXEMPT_FROM_FOLLOWUP, CALL_OUTCOMES } from "@/lib/constants";
+import { needsMissedCallTemplate, sendMissedCallTemplate } from "@/lib/whatsapp/missed-call-template";
 import type { CallOutcome } from "@/lib/supabase/types";
 
 export type PendingCall = {
@@ -189,6 +190,24 @@ export async function resolveCallOutcome(
   if (updateError || !updated) return { error: "Could not log this call outcome. You may not have access to it." };
 
   const leadId = updated.lead_id;
+
+  // R-FUP-002 (docs/BLUEPRINT_V1.md Section 8): "If a call is not
+  // answered, the customer gets an approved WhatsApp template." Best-effort
+  // and non-blocking -- the call outcome itself is already durably
+  // recorded above regardless of whether this send succeeds; a missing
+  // WHATSAPP_MISSED_CALL_TEMPLATE_NAME (not yet configured) or missing
+  // conversation is an expected, silent no-op here, not something to
+  // surface as an error on the call-logging form.
+  if (needsMissedCallTemplate(outcome)) {
+    try {
+      const result = await sendMissedCallTemplate(supabase, leadId);
+      if (result.status === "failed") {
+        console.error("Missed-call template send failed:", result.reason);
+      }
+    } catch (err) {
+      console.error("Missed-call template send failed unexpectedly:", err instanceof Error ? err.message : err);
+    }
+  }
 
   // Requirement: don't let completed calls pile up pending follow-ups --
   // complete every still-pending "call" follow-up on this lead before

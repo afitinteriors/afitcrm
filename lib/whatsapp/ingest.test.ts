@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 import { ingestInboundMessage, findLeadByExactPhone, type InboundWhatsAppMessage } from "./ingest";
 import { createOrLinkLeadForConversation } from "@/lib/automations/crm-actions";
+import { triggerAutomationForMessage } from "@/lib/automations/trigger";
 import { parseWabisMessage } from "./parse-wabis";
 
 // Automation matching/execution is a separate, already-covered concern with
@@ -522,5 +523,63 @@ describe("ingestInboundMessage", () => {
     expect(from.mock.calls.filter(([table]) => table === "messages")).toHaveLength(1);
     expect(from.mock.calls.filter(([table]) => table === "conversations")).toHaveLength(3);
     consoleErrorSpy.mockRestore();
+  });
+
+  describe("R-MSG-002: opt-out ('stop')", () => {
+    it("an exact 'stop' message, with a matched lead, records opted_out_at and skips automation", async () => {
+      const { stub, from } = createFakeSupabase({
+        conversations: [
+          { data: null, error: null }, // no existing conversation
+          { data: { id: "conv-opt-1" }, error: null }, // created
+          { error: null }, // updated_at touch
+        ],
+        leads: [
+          { data: [{ id: "lead-opt-1" }], error: null }, // findLeadByExactPhone
+          { error: null }, // opted_out_at update
+        ],
+        messages: [{ data: { id: "msg-opt-1" }, error: null }],
+      });
+
+      const result = await ingestInboundMessage(stub, { ...BASE_MESSAGE, body: "stop" });
+
+      expect(result).toEqual({ status: "ingested" });
+
+      // Global from() order: 0 conversations.select, 1 leads.select, 2
+      // conversations.insert, 3 messages.insert, 4 conversations.update
+      // (touch), 5 leads.update (opt-out).
+      const leadsUpdateBuilder = from.mock.results[5].value;
+      expect(leadsUpdateBuilder.update).toHaveBeenCalledWith(expect.objectContaining({ opted_out_at: expect.any(String) }));
+      expect(leadsUpdateBuilder.eq).toHaveBeenCalledWith("id", "lead-opt-1");
+      expect(leadsUpdateBuilder.is).toHaveBeenCalledWith("opted_out_at", null);
+
+      expect(triggerAutomationForMessage).not.toHaveBeenCalled();
+    });
+
+    it("'stop' with no matched lead still persists the message, with nothing to flag and no crash", async () => {
+      const { stub } = createFakeSupabase({
+        conversations: [{ data: null, error: null }, { data: { id: "conv-opt-2" }, error: null }, { error: null }],
+        leads: [{ data: [], error: null }],
+        messages: [{ data: { id: "msg-opt-2" }, error: null }],
+      });
+
+      const result = await ingestInboundMessage(stub, { ...BASE_MESSAGE, body: "stop" });
+
+      expect(result).toEqual({ status: "ingested" });
+      expect(triggerAutomationForMessage).not.toHaveBeenCalled();
+    });
+
+    it("an ordinary message is never treated as an opt-out -- automation still runs, no leads.update attempted", async () => {
+      const { stub, from } = createFakeSupabase({
+        conversations: [{ data: null, error: null }, { data: { id: "conv-opt-3" }, error: null }, { error: null }],
+        leads: [{ data: [{ id: "lead-opt-3" }], error: null }],
+        messages: [{ data: { id: "msg-opt-3" }, error: null }],
+      });
+
+      await ingestInboundMessage(stub, { ...BASE_MESSAGE, body: "I need gypsum plastering" });
+
+      expect(triggerAutomationForMessage).toHaveBeenCalledTimes(1);
+      // Only ONE leads.from() call (the phone lookup) -- no opt-out update attempted.
+      expect(from.mock.calls.filter(([table]) => table === "leads")).toHaveLength(1);
+    });
   });
 });

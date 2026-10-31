@@ -532,6 +532,25 @@ in order, one per session.
 
 Decisions below are binding (owner-approved, 2026-10-25 unless noted).
 
+- **Phase 4 rules engine, R-FUP-002 + R-MSG-002 (owner-approved
+  2026-10-31)**: R-FUP-002 -- `resolveCallOutcome()` (lib/actions/calls.ts)
+  best-effort-triggers `lib/whatsapp/missed-call-template.ts` on a
+  `no_answer`/`busy` outcome, which always sends a Meta WhatsApp TEMPLATE
+  (never free-form text -- a missed call almost certainly means the
+  24-hour window is closed). The template itself must be created and
+  approved in Meta Business Manager first; `WHATSAPP_MISSED_CALL_TEMPLATE_NAME`
+  (not committed) is required, and this returns `not_configured` rather
+  than guessing a name Meta would reject. R-MSG-002 -- an exact
+  (case-insensitive) "stop" in an inbound message
+  (`lib/whatsapp/opt-out.ts`) sets `leads.opted_out_at` (new column,
+  additive migration) and skips that message's own automation trigger;
+  `sendMissedCallTemplate` checks it and refuses to send. Scope: this
+  gates only the new missed-call template send -- the pre-existing
+  Automation Builder's own outbound-sending nodes do NOT check
+  `opted_out_at` yet (separate, deferred follow-up), and a human staff
+  reply via the Conversation UI is never blocked (R-MSG-002 is "follow-up
+  and marketing messages", not a ban on a person replying).
+
 - **Phase 4 rules engine, R-LEAD-003 + R-STAGE-002 only (owner-approved
   2026-10-31)**: Vercel Cron (`vercel.json`) drives two routes --
   `/api/cron/response-timer` (every 5 min: R-LEAD-003, no call logged/no
@@ -545,9 +564,10 @@ Decisions below are binding (owner-approved, 2026-10-25 unless noted).
   outside the window" rather than a true pause/resume per-lead timer.
   `leads.status_changed_at` (new column + trigger,
   `supabase/migrations/20261031100000_leads_status_changed_at.sql`) backs
-  the stage timer. R-LEAD-004 (needs the unbuilt AI agent), R-FUP-002, and
-  R-MSG-002 are still not built. Requires a `CRON_SECRET` env var in
-  Vercel (not committed) before this works in production.
+  the stage timer. R-LEAD-004 (needs the unbuilt AI agent) is still not
+  built; R-FUP-002 and R-MSG-002 are covered separately below. Requires a
+  `CRON_SECRET` env var in Vercel (not committed) before this works in
+  production.
 
 - **Lead Detail redesign (owner-approved 2026-10-31)**: two-column layout
   (HubSpot/Pipedrive style) replacing the previous stacked single-column

@@ -58,6 +58,12 @@ vi.mock("@/lib/audit", () => ({ recordAuditEvent: (input: Record<string, unknown
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
+const sendMissedCallTemplateMock = vi.fn<(...args: unknown[]) => Promise<{ status: string; reason?: string }>>();
+vi.mock("@/lib/whatsapp/missed-call-template", () => ({
+  needsMissedCallTemplate: (outcome: string) => outcome === "no_answer" || outcome === "busy",
+  sendMissedCallTemplate: (...args: unknown[]) => sendMissedCallTemplateMock(...args),
+}));
+
 import { getMyPendingCall, startCall, resolveCallOutcome } from "./calls";
 
 const ADMIN = { id: "admin-1", role: "admin" as const };
@@ -69,6 +75,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   getCurrentProfileMock.mockResolvedValue(STAFF);
   client = createFake([]);
+  sendMissedCallTemplateMock.mockResolvedValue({ status: "sent" });
 });
 
 describe("getMyPendingCall", () => {
@@ -299,5 +306,51 @@ describe("resolveCallOutcome", () => {
     getCurrentProfileMock.mockResolvedValue(ADMIN);
     client = createFake([pendingCallResult("lost"), { data: { id: CALL_LOG, lead_id: LEAD }, error: null }, { error: null }]);
     expect(await resolveCallOutcome(CALL_LOG, "busy", "", "")).toEqual({ ok: true });
+  });
+
+  describe("R-FUP-002: missed-call template trigger", () => {
+    function resolveSuccess(outcome: string, date = "2026-11-05") {
+      client = createFake([
+        pendingCallResult("qualified"),
+        { data: { id: CALL_LOG, lead_id: LEAD }, error: null },
+        { error: null }, // follow_ups.update
+        { error: null }, // follow_ups.insert
+      ]);
+      return resolveCallOutcome(CALL_LOG, outcome, "", date);
+    }
+
+    it("no_answer triggers the missed-call template, for this lead", async () => {
+      expect(await resolveSuccess("no_answer")).toEqual({ ok: true });
+      expect(sendMissedCallTemplateMock).toHaveBeenCalledTimes(1);
+      expect(sendMissedCallTemplateMock).toHaveBeenCalledWith(expect.anything(), LEAD);
+    });
+
+    it("busy also triggers it", async () => {
+      expect(await resolveSuccess("busy")).toEqual({ ok: true });
+      expect(sendMissedCallTemplateMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("answered, wrong_number, and not_interested do NOT trigger it", async () => {
+      await resolveSuccess("answered");
+      expect(sendMissedCallTemplateMock).not.toHaveBeenCalled();
+
+      client = createFake([pendingCallResult("lost"), { data: { id: CALL_LOG, lead_id: LEAD }, error: null }, { error: null }]);
+      await resolveCallOutcome(CALL_LOG, "wrong_number", "", "");
+      expect(sendMissedCallTemplateMock).not.toHaveBeenCalled();
+
+      client = createFake([pendingCallResult("qualified"), { data: { id: CALL_LOG, lead_id: LEAD }, error: null }, { error: null }, { error: null }]);
+      await resolveCallOutcome(CALL_LOG, "not_interested", "", "2026-11-05");
+      expect(sendMissedCallTemplateMock).not.toHaveBeenCalled();
+    });
+
+    it("a send failure never fails the call-logging action itself -- the outcome is already durably recorded", async () => {
+      sendMissedCallTemplateMock.mockResolvedValue({ status: "failed", reason: "WhatsApp did not accept this template message" });
+      expect(await resolveSuccess("no_answer")).toEqual({ ok: true });
+    });
+
+    it("sendMissedCallTemplate throwing unexpectedly also never fails the call-logging action", async () => {
+      sendMissedCallTemplateMock.mockRejectedValue(new Error("network blip"));
+      expect(await resolveSuccess("no_answer")).toEqual({ ok: true });
+    });
   });
 });

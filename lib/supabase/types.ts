@@ -56,6 +56,10 @@ export type LeadRow = {
   // (supabase/migrations/20261031100000_leads_status_changed_at.sql), never
   // written directly by application code.
   status_changed_at: string;
+  // R-MSG-002 (docs/BLUEPRINT_V1.md Section 8): set once, the first time
+  // this lead's phone sends an opt-out message ("stop") -- see
+  // lib/whatsapp/opt-out.ts. Null means never opted out.
+  opted_out_at: string | null;
   wa_message_id: string | null;
   wa_phone_number_id: string | null;
   wa_message_timestamp: string | null;
