@@ -1,0 +1,48 @@
+name: Rules engine cron
+
+# Triggers R-LEAD-003 (lib/rules/response-timer.ts) and R-STAGE-002
+# (lib/rules/stage-timer.ts) on a schedule, via the same two routes
+# vercel.json's "crons" array used to call -- moved here because Vercel's
+# Hobby (free) plan only allows daily cron jobs, and this project is
+# committed to zero-cost hosting (CLAUDE.md, the deploy skill). This repo
+# is public, so scheduled Actions runs are free and unbounded, unlike a
+# private repo's limited minutes.
+#
+# Both routes are idempotent and already gate themselves on business hours
+# and CRON_SECRET (lib/cron-auth.ts) -- this workflow is just the trigger,
+# identical in spirit to what vercel.json's crons array did, with both
+# routes on the same 5-minute cadence now (stage-timer's own day-scale
+# overdue checks don't need a coarser schedule than this to stay correct,
+# and there's no per-run cost to avoid on a public repo).
+#
+# GitHub's own schedule trigger is best-effort, not to-the-minute exact
+# (https://docs.github.com/actions/using-workflows/events-that-trigger-workflows#schedule) --
+# acceptable here since R-LEAD-003/R-STAGE-002 only need "checked
+# frequently enough", not millisecond precision.
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  response-timer:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call /api/cron/response-timer
+        run: |
+          curl -sS -f -o /dev/null -w "response-timer: HTTP %{http_code}\n" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ vars.PRODUCTION_URL }}/api/cron/response-timer"
+
+  stage-timer:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call /api/cron/stage-timer
+        run: |
+          curl -sS -f -o /dev/null -w "stage-timer: HTTP %{http_code}\n" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ vars.PRODUCTION_URL }}/api/cron/stage-timer"
