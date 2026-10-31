@@ -697,31 +697,67 @@ describe("markLeadWon", () => {
     expect(from).not.toHaveBeenCalled();
   });
 
-  it("succeeds with a valid positive job_value, sets status won and clears lost_reason", async () => {
+  // R-WON-001 (docs/BLUEPRINT_V1.md Section 8): "No advance -> cannot mark
+  // Won." advance_proof_reference is required -- checked after job_value
+  // (so a missing job_value's own error always wins), before any database
+  // access.
+
+  it("rejects marking Won with a valid job_value but no advance_proof_reference -- no database access whatsoever", async () => {
+    const { stub, from } = createFakeSupabase({});
+    fakeSupabase = stub;
+
+    const result = await markLeadWon(null, formDataWith({ lead_id: "lead-1", job_value: "50000" }));
+
+    expect(result).toEqual({ error: "Advance payment proof (a reference or note) is required to mark a lead as Won." });
+    expect(from).not.toHaveBeenCalled();
+  });
+
+  it("rejects an all-whitespace advance_proof_reference the same as a missing one", async () => {
+    const { stub, from } = createFakeSupabase({});
+    fakeSupabase = stub;
+
+    const result = await markLeadWon(null, formDataWith({ lead_id: "lead-1", job_value: "50000", advance_proof_reference: "   " }));
+
+    expect(result).toEqual({ error: "Advance payment proof (a reference or note) is required to mark a lead as Won." });
+    expect(from).not.toHaveBeenCalled();
+  });
+
+  it("succeeds with a valid job_value and advance_proof_reference, sets status won and clears lost_reason", async () => {
     const { stub, from } = createFakeSupabase({
       leads: [{ error: null }], // update
     });
     fakeSupabase = stub;
 
-    const result = await markLeadWon(null, formDataWith({ lead_id: "lead-1", job_value: "50000" }));
+    const result = await markLeadWon(
+      null,
+      formDataWith({ lead_id: "lead-1", job_value: "50000", advance_proof_reference: "UTR 123456789" }),
+    );
 
     expect(result).toBeNull();
     const updateBuilder = from.mock.results[0].value as { update: ReturnType<typeof vi.fn> };
-    expect(updateBuilder.update).toHaveBeenCalledWith({ status: "won", job_value: 50000, lost_reason: null });
+    expect(updateBuilder.update).toHaveBeenCalledWith({
+      status: "won",
+      job_value: 50000,
+      lost_reason: null,
+      advance_proof_reference: "UTR 123456789",
+    });
   });
 
-  it("preserves existing authorization: staff cannot mark Won a lead not assigned to them, even with a valid job_value", async () => {
+  it("preserves existing authorization: staff cannot mark Won a lead not assigned to them, even with valid fields", async () => {
     getCurrentProfileMock.mockResolvedValue(STAFF_PROFILE);
     const { stub, from } = createFakeSupabase({
       leads: [{ data: { assigned_to_id: "someone-else" }, error: null }], // checkLeadAccess
     });
     fakeSupabase = stub;
 
-    const result = await markLeadWon(null, formDataWith({ lead_id: "lead-1", job_value: "50000" }));
+    const result = await markLeadWon(
+      null,
+      formDataWith({ lead_id: "lead-1", job_value: "50000", advance_proof_reference: "UTR 123456789" }),
+    );
 
     expect(result).toEqual({ error: "You do not have access to this lead." });
-    // The job_value guard runs first and passes; only the access check
-    // should have touched the database after that.
+    // The job_value/advance-proof guards run first and pass; only the
+    // access check should have touched the database after that.
     expect(from.mock.calls.filter(([table]) => table === "leads")).toHaveLength(1);
   });
 
@@ -735,7 +771,10 @@ describe("markLeadWon", () => {
     });
     fakeSupabase = stub;
 
-    const result = await markLeadWon(null, formDataWith({ lead_id: "lead-1", job_value: "25000" }));
+    const result = await markLeadWon(
+      null,
+      formDataWith({ lead_id: "lead-1", job_value: "25000", advance_proof_reference: "Cash receipt #42" }),
+    );
 
     expect(result).toBeNull();
     expect(from.mock.calls.filter(([table]) => table === "leads")).toHaveLength(2);

@@ -60,6 +60,11 @@ export type LeadRow = {
   // this lead's phone sends an opt-out message ("stop") -- see
   // lib/whatsapp/opt-out.ts. Null means never opted out.
   opted_out_at: string | null;
+  // R-WON-001 (docs/BLUEPRINT_V1.md Section 8): required free-text advance
+  // payment proof (UTR/transaction id/note) captured by markLeadWon(). The
+  // "photo" half of "photo or reference" is not built -- see
+  // supabase/migrations/20261031120000_leads_advance_proof_reference.sql.
+  advance_proof_reference: string | null;
   wa_message_id: string | null;
   wa_phone_number_id: string | null;
   wa_message_timestamp: string | null;

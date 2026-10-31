@@ -387,18 +387,35 @@ export async function setLeadStatus(leadId: string, status: LeadStatus): Promise
   return null;
 }
 
+// R-WON-001 (docs/BLUEPRINT_V1.md Section 8): "Won needs an accepted
+// quotation and advance proof (photo or reference). No advance -> cannot
+// mark Won." The "accepted quotation" half is already structurally true by
+// the time this is reachable (canMarkWon() in lib/lead-stage-sections.ts
+// only offers Won from Quotation/Negotiation onward). "Advance proof"
+// covers the reference half only -- a required free-text UTR/transaction
+// id/note; the photo half isn't built (no staff-upload storage flow exists
+// anywhere in this app yet -- see the migration's own comment).
 export async function markLeadWon(_prevState: ActionState, formData: FormData): Promise<ActionState> {
   const leadId = str(formData, "lead_id");
   const jobValue = optionalNumber(formData, "job_value");
   if (jobValue === null || jobValue <= 0) {
     return { error: "A valid job value is required to mark a lead as Won." };
   }
+  const advanceProofReference = str(formData, "advance_proof_reference");
+  if (!advanceProofReference) {
+    return { error: "Advance payment proof (a reference or note) is required to mark a lead as Won." };
+  }
 
   const supabase = await createClient();
   const accessError = await checkLeadAccess(supabase, leadId);
   if (accessError) return accessError;
 
-  const wonUpdate: LeadUpdate = { status: "won", job_value: jobValue, lost_reason: null };
+  const wonUpdate: LeadUpdate = {
+    status: "won",
+    job_value: jobValue,
+    lost_reason: null,
+    advance_proof_reference: advanceProofReference,
+  };
   const { error } = await supabase.from("leads").update(wonUpdate).eq("id", leadId);
 
   revalidateLead(leadId);

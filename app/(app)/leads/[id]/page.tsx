@@ -206,6 +206,12 @@ export default async function LeadDetailPage({
                     <span className="font-medium text-surface-foreground">{formatCurrency(lead.job_value)}</span>
                   </>
                 )}
+                {lead.advance_proof_reference && (
+                  <>
+                    {" · advance: "}
+                    <span className="font-medium text-surface-foreground">{lead.advance_proof_reference}</span>
+                  </>
+                )}
               </p>
             )}
             {lead.status === "lost" && (lead.lost_reason_category || lead.lost_reason) && (
@@ -235,6 +241,7 @@ export default async function LeadDetailPage({
                   customerName={lead.customer_name}
                   status={lead.status}
                   jobValue={lead.job_value}
+                  advanceProofReference={lead.advance_proof_reference}
                   lostReason={lead.lost_reason}
                   lostReasonCategory={lead.lost_reason_category}
                 />

@@ -6,7 +6,19 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { LOST_REASON_CATEGORIES, LOST_REASON_CATEGORY_LABELS } from "@/lib/constants";
 import type { LostReasonCategory } from "@/lib/supabase/types";
 
-export function MarkWonForm({ leadId, jobValue }: { leadId: string; jobValue: number | null }) {
+// R-WON-001 (docs/BLUEPRINT_V1.md Section 8): "No advance -> cannot mark
+// Won." advanceProofReference is a required free-text field (UTR/
+// transaction id/note) -- the server action (markLeadWon) is the real
+// enforcement; this is just the matching required input.
+export function MarkWonForm({
+  leadId,
+  jobValue,
+  advanceProofReference,
+}: {
+  leadId: string;
+  jobValue: number | null;
+  advanceProofReference: string | null;
+}) {
   const [state, formAction] = useActionState(markLeadWon, null);
 
   return (
@@ -24,6 +36,20 @@ export function MarkWonForm({ leadId, jobValue }: { leadId: string; jobValue: nu
           step="1"
           required
           defaultValue={jobValue ?? ""}
+          className="mt-1 block h-11 w-full rounded-md border border-border bg-card px-3 text-sm text-foreground shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+        />
+      </div>
+      <div>
+        <label htmlFor="advance_proof_reference" className="block text-xs font-medium text-surface-foreground-muted">
+          Advance payment proof
+        </label>
+        <input
+          id="advance_proof_reference"
+          name="advance_proof_reference"
+          type="text"
+          required
+          placeholder="UTR / transaction ID / note"
+          defaultValue={advanceProofReference ?? ""}
           className="mt-1 block h-11 w-full rounded-md border border-border bg-card px-3 text-sm text-foreground shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
         />
       </div>

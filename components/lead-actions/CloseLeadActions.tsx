@@ -19,6 +19,7 @@ export function CloseLeadActions({
   customerName,
   status,
   jobValue,
+  advanceProofReference,
   lostReason,
   lostReasonCategory,
 }: {
@@ -26,6 +27,7 @@ export function CloseLeadActions({
   customerName: string | null;
   status: LeadStatus;
   jobValue: number | null;
+  advanceProofReference: string | null;
   lostReason: string | null;
   lostReasonCategory: LostReasonCategory | null;
 }) {
@@ -86,7 +88,7 @@ export function CloseLeadActions({
 
               <div className="mt-4">
                 {openModal === "won" ? (
-                  <MarkWonForm leadId={leadId} jobValue={jobValue} />
+                  <MarkWonForm leadId={leadId} jobValue={jobValue} advanceProofReference={advanceProofReference} />
                 ) : (
                   <MarkLostForm leadId={leadId} lostReason={lostReason} lostReasonCategory={lostReasonCategory} />
                 )}
