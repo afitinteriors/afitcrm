@@ -10,7 +10,7 @@ function loadServiceWorker() {
   const handlers: Record<string, Handler> = {};
   const showNotification = vi.fn().mockResolvedValue(undefined);
   const openWindow = vi.fn().mockResolvedValue(undefined);
-  const matchAll = vi.fn();
+  const matchAll = vi.fn().mockResolvedValue([]);
   const self = {
     addEventListener: (type: string, handler: Handler) => {
       handlers[type] = handler;
@@ -46,6 +46,7 @@ describe("public/sw.js -- push", () => {
   it("shows a notification from a controlled payload and keeps the route in its data", async () => {
     const { event, waitUntil } = pushEvent({ title: "New lead", body: "Assigned to you", route: "/leads/abc", notificationId: "n-1", tag: "lead-abc" });
     sw.handlers.push(event);
+    await waitUntil.mock.calls[0][0];
 
     expect(sw.showNotification).toHaveBeenCalledTimes(1);
     const [title, options] = sw.showNotification.mock.calls[0];
@@ -54,9 +55,11 @@ describe("public/sw.js -- push", () => {
     expect(waitUntil).toHaveBeenCalledTimes(1);
   });
 
-  it("falls back to safe defaults for an empty or malformed payload", () => {
-    sw.handlers.push(pushEvent(undefined).event);
-    sw.handlers.push(pushEvent("{not json", true).event);
+  it("falls back to safe defaults for an empty or malformed payload", async () => {
+    for (const { event, waitUntil } of [pushEvent(undefined), pushEvent("{not json", true)]) {
+      sw.handlers.push(event);
+      await waitUntil.mock.calls[0][0];
+    }
 
     for (const [title, options] of sw.showNotification.mock.calls) {
       expect(title).toBe("AFIT CRM");
@@ -65,12 +68,59 @@ describe("public/sw.js -- push", () => {
     expect(sw.showNotification).toHaveBeenCalledTimes(2);
   });
 
-  it("never carries an external or protocol-relative route", () => {
+  it("never carries an external or protocol-relative route", async () => {
     for (const route of ["https://evil.example/x", "//evil.example/x", "javascript:alert(1)", 42]) {
       sw.showNotification.mockClear();
-      sw.handlers.push(pushEvent({ title: "t", route }).event);
+      const { event, waitUntil } = pushEvent({ title: "t", route });
+      sw.handlers.push(event);
+      await waitUntil.mock.calls[0][0];
       expect(sw.showNotification.mock.calls[0][1].data.route).toBe("/today");
     }
+  });
+
+  it("uses the notification id as the tag so a repeat replaces instead of stacking", async () => {
+    const { event, waitUntil } = pushEvent({ title: "t", route: "/today", notificationId: "n-9" });
+    sw.handlers.push(event);
+    await waitUntil.mock.calls[0][0];
+    expect(sw.showNotification.mock.calls[0][1].tag).toBe("n-9");
+  });
+
+  it("shows NO OS notification when a CRM window is visible and hands the event to the page", async () => {
+    const postMessage = vi.fn();
+    sw.matchAll.mockResolvedValue([{ url: "https://afit.example/leads", visibilityState: "visible", postMessage }]);
+    const { event, waitUntil } = pushEvent({ title: "New lead", body: "b", route: "/leads/abc", notificationId: "n-1" });
+    sw.handlers.push(event);
+    await waitUntil.mock.calls[0][0];
+
+    expect(sw.showNotification).not.toHaveBeenCalled();
+    expect(postMessage).toHaveBeenCalledWith({ type: "crm-push", notificationId: "n-1", title: "New lead", body: "b", route: "/leads/abc" });
+  });
+
+  it("shows the OS notification when the CRM window is hidden (background / locked)", async () => {
+    const postMessage = vi.fn();
+    sw.matchAll.mockResolvedValue([{ url: "https://afit.example/leads", visibilityState: "hidden", postMessage }]);
+    const { event, waitUntil } = pushEvent({ title: "t", route: "/leads/abc", notificationId: "n-2" });
+    sw.handlers.push(event);
+    await waitUntil.mock.calls[0][0];
+
+    expect(sw.showNotification).toHaveBeenCalledTimes(1);
+    expect(postMessage).not.toHaveBeenCalled();
+  });
+
+  it("ignores visible windows from other origins and still shows the OS notification", async () => {
+    sw.matchAll.mockResolvedValue([{ url: "https://other.example/", visibilityState: "visible", postMessage: vi.fn() }]);
+    const { event, waitUntil } = pushEvent({ title: "t", route: "/today" });
+    sw.handlers.push(event);
+    await waitUntil.mock.calls[0][0];
+    expect(sw.showNotification).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to the OS notification if the windows cannot be inspected", async () => {
+    sw.matchAll.mockRejectedValue(new Error("boom"));
+    const { event, waitUntil } = pushEvent({ title: "t", route: "/today" });
+    sw.handlers.push(event);
+    await waitUntil.mock.calls[0][0];
+    expect(sw.showNotification).toHaveBeenCalledTimes(1);
   });
 
   it("registers no fetch handler, so it can never cache or intercept requests", () => {

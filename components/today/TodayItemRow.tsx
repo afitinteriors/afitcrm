@@ -152,7 +152,7 @@ export function TodayItemRow({
         </div>
       </div>
 
-      <LeadContactActions phone={item.phone} />
+      <LeadContactActions leadId={item.leadId} phone={item.phone} customerName={item.customerName} leadStatus={item.stage} />
       <LeadChevron />
 
       <p className="mt-1 flex items-start gap-1.5 text-xs leading-snug text-foreground/80 [grid-area:2/1/3/4] lg:mt-0 lg:[grid-area:2/2/3/3]">

@@ -5,6 +5,8 @@ export type StaffOption = {
   id: string;
   display_name: string | null;
   role: "admin" | "staff";
+  active: boolean;
+  telegram_username: string | null;
 };
 
 // Admin-only staff directory for the lead assignment picker. Mirrors
@@ -18,18 +20,22 @@ export async function getAssignableStaff(): Promise<StaffOption[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("profiles")
-    .select("id, display_name, role")
+    .select("id, display_name, role, active, telegram_username")
     .eq("role", "staff")
+    .eq("active", true)
     .order("display_name", { ascending: true });
 
   if (error) return [];
   return data ?? [];
 }
 
-// Admin + staff directory for the Team & Permissions preview (read-only;
-// no new table/column -- selects the same existing `profiles` columns as
-// getAssignableStaff(), just without the role filter). Mirrors
-// profiles_select_self_or_admin RLS: returns [] for a non-admin caller.
+// Admin + staff directory for Team & Permissions. Includes deactivated
+// members too (unlike getAssignableStaff) -- Blueprint Section 2:
+// "A member who leaves is deactivated, never deleted ... history stays",
+// so they must still be visible (with a Deactivated badge) to reactivate
+// or to see their old grants, just excluded from new lead assignment.
+// Mirrors profiles_select_self_or_admin RLS: returns [] for a non-admin
+// caller.
 export async function getAllTeamMembers(): Promise<StaffOption[]> {
   const profile = await getCurrentProfile();
   if (!profile || profile.role !== "admin") return [];
@@ -37,7 +43,7 @@ export async function getAllTeamMembers(): Promise<StaffOption[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("profiles")
-    .select("id, display_name, role")
+    .select("id, display_name, role, active, telegram_username")
     .order("role", { ascending: true })
     .order("display_name", { ascending: true });
 

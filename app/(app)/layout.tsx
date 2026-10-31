@@ -6,6 +6,8 @@ import { SidebarAdminNav } from "@/components/SidebarAdminNav";
 import { MobileBottomNav } from "@/components/MobileBottomNav";
 import { MobileMoreEntry } from "@/components/MobileMoreEntry";
 import { BuildingEmblem } from "@/components/BuildingEmblem";
+import { LiveNotifications } from "@/components/LiveNotifications";
+import { PendingCallGate } from "@/components/PendingCallGate";
 import { HeaderSearchForm } from "@/components/HeaderSearchForm";
 import { HeaderNotificationBell } from "@/components/HeaderNotificationBell";
 import { HeaderAccount } from "@/components/HeaderAccount";
@@ -31,6 +33,8 @@ function SidebarFooterSkeleton() {
 export default function AppLayout({ children }: LayoutProps<"/">) {
   return (
     <div className="flex min-h-screen bg-background">
+      <LiveNotifications />
+      <PendingCallGate />
       <Sidebar
         adminNav={
           <Suspense fallback={null}>

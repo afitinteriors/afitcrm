@@ -6,9 +6,10 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentProfile } from "@/lib/auth";
 import { recordAuditEvent } from "@/lib/audit";
-import type { Database, LeadStatus, LeadUpdate } from "@/lib/supabase/types";
-import { LEAD_STATUSES } from "@/lib/constants";
+import type { Database, LeadStatus, LeadUpdate, LostReasonCategory } from "@/lib/supabase/types";
+import { LEAD_STATUSES, LOST_REASON_CATEGORIES, MIN_CALLS_BEFORE_LOST } from "@/lib/constants";
 import { toCanonicalPhone } from "@/lib/phone";
+import { getLeadIdsInListOrder, buildLeadsQueryString, type LeadFilters } from "@/lib/leads";
 import { parseBusinessDateTime } from "@/lib/business-time";
 
 export type ActionState = { error: string } | null;
@@ -165,8 +166,15 @@ export async function createLead(_prevState: ActionState, formData: FormData): P
   redirect(`/leads/${data.id}`);
 }
 
-export async function updateLead(_prevState: ActionState, formData: FormData): Promise<ActionState> {
-  const leadId = str(formData, "lead_id");
+// Everything updateLead does except deciding where to navigate afterward --
+// shared with updateLeadAndNext so both actions validate/persist/audit
+// identically and can never drift apart. Returns an error to show inline
+// (form stays put), or null on success.
+async function performLeadUpdate(
+  supabase: SupabaseClient<Database>,
+  leadId: string,
+  formData: FormData
+): Promise<ActionState> {
   const rawPhone = str(formData, "phone");
   if (!rawPhone) return { error: "Phone number is required." };
 
@@ -176,7 +184,6 @@ export async function updateLead(_prevState: ActionState, formData: FormData): P
   }
   const phone = canonicalPhone.e164;
 
-  const supabase = await createClient();
   const accessError = await checkLeadAccess(supabase, leadId);
   if (accessError) return accessError;
 
@@ -215,8 +222,60 @@ export async function updateLead(_prevState: ActionState, formData: FormData): P
     });
   }
 
+  return null;
+}
+
+export async function updateLead(_prevState: ActionState, formData: FormData): Promise<ActionState> {
+  const leadId = str(formData, "lead_id");
+  const supabase = await createClient();
+
+  const result = await performLeadUpdate(supabase, leadId, formData);
+  if (result) return result;
+
   revalidateLead(leadId);
   redirect(`/leads/${leadId}`);
+}
+
+// "Save & Next": same save as updateLead, then advances to the next lead in
+// the exact Leads-list order/filters the user opened this lead from (hidden
+// list_search/list_status/list_campaign fields -- see LeadForm/EditLeadPage).
+// The next-lead id is resolved BEFORE the update runs, from the list as it
+// stood pre-save -- so a field change that drops this lead out of its own
+// active filter (e.g. editing Campaign while filtered by campaign) can never
+// corrupt which lead comes "next". A failed save never navigates. On the
+// last (or only) lead in the list, this redirects back to the same lead's
+// edit page with ?noNext=1 rather than wrapping around or going anywhere
+// unrelated.
+export async function updateLeadAndNext(_prevState: ActionState, formData: FormData): Promise<ActionState> {
+  const leadId = str(formData, "lead_id");
+  const filters: LeadFilters = {
+    search: optionalStr(formData, "list_search") ?? undefined,
+    status: optionalStr(formData, "list_status") ?? undefined,
+    campaign: optionalStr(formData, "list_campaign") ?? undefined,
+  };
+
+  const orderedIds = await getLeadIdsInListOrder(filters);
+  const currentIndex = orderedIds.indexOf(leadId);
+  const nextLeadId = currentIndex >= 0 && currentIndex < orderedIds.length - 1 ? orderedIds[currentIndex + 1] : null;
+
+  const supabase = await createClient();
+  const result = await performLeadUpdate(supabase, leadId, formData);
+  if (result) return result;
+
+  revalidateLead(leadId);
+  if (nextLeadId) revalidatePath(`/leads/${nextLeadId}`);
+
+  const qs = buildLeadsQueryString(filters);
+  const suffix = qs ? `?${qs}` : "";
+  // if/else, not two sequential redirect() calls -- real Next.js redirect()
+  // throws and never falls through, but this keeps the branch unambiguous
+  // (and correctly testable, since a mocked redirect() in tests doesn't
+  // throw) regardless.
+  if (nextLeadId) {
+    redirect(`/leads/${nextLeadId}/edit${suffix}`);
+  } else {
+    redirect(`/leads/${leadId}/edit${suffix}${suffix ? "&" : "?"}noNext=1`);
+  }
 }
 
 // Admin-only by design -- staff must never reassign a lead. This check is
@@ -328,18 +387,35 @@ export async function setLeadStatus(leadId: string, status: LeadStatus): Promise
   return null;
 }
 
+// R-WON-001 (docs/BLUEPRINT_V1.md Section 8): "Won needs an accepted
+// quotation and advance proof (photo or reference). No advance -> cannot
+// mark Won." The "accepted quotation" half is already structurally true by
+// the time this is reachable (canMarkWon() in lib/lead-stage-sections.ts
+// only offers Won from Quotation/Negotiation onward). "Advance proof"
+// covers the reference half only -- a required free-text UTR/transaction
+// id/note; the photo half isn't built (no staff-upload storage flow exists
+// anywhere in this app yet -- see the migration's own comment).
 export async function markLeadWon(_prevState: ActionState, formData: FormData): Promise<ActionState> {
   const leadId = str(formData, "lead_id");
   const jobValue = optionalNumber(formData, "job_value");
   if (jobValue === null || jobValue <= 0) {
     return { error: "A valid job value is required to mark a lead as Won." };
   }
+  const advanceProofReference = str(formData, "advance_proof_reference");
+  if (!advanceProofReference) {
+    return { error: "Advance payment proof (a reference or note) is required to mark a lead as Won." };
+  }
 
   const supabase = await createClient();
   const accessError = await checkLeadAccess(supabase, leadId);
   if (accessError) return accessError;
 
-  const wonUpdate: LeadUpdate = { status: "won", job_value: jobValue, lost_reason: null };
+  const wonUpdate: LeadUpdate = {
+    status: "won",
+    job_value: jobValue,
+    lost_reason: null,
+    advance_proof_reference: advanceProofReference,
+  };
   const { error } = await supabase.from("leads").update(wonUpdate).eq("id", leadId);
 
   revalidateLead(leadId);
@@ -359,16 +435,42 @@ export async function markLeadWon(_prevState: ActionState, formData: FormData): 
   return null;
 }
 
+function isLostReasonCategory(value: string): value is LostReasonCategory {
+  return (LOST_REASON_CATEGORIES as string[]).includes(value);
+}
+
+// R-LOST-001 (docs/BLUEPRINT_V1.md Section 8): "Lost needs at least 3
+// logged call attempts and a reason." lost_reason_category is the
+// required fixed-set reason (supabase/migrations/
+// 20261030180000_lost_reason_category.sql); lost_reason stays the
+// existing free-text column, now an optional supplementary note rather
+// than the required field it was before this rule existed.
 export async function markLeadLost(_prevState: ActionState, formData: FormData): Promise<ActionState> {
   const leadId = str(formData, "lead_id");
-  const reason = str(formData, "lost_reason");
-  if (!reason) return { error: "A lost reason is required." };
+  const reasonCategory = str(formData, "lost_reason_category");
+  const reasonNote = optionalStr(formData, "lost_reason");
+  if (!isLostReasonCategory(reasonCategory)) return { error: "Pick a lost reason." };
 
   const supabase = await createClient();
   const accessError = await checkLeadAccess(supabase, leadId);
   if (accessError) return accessError;
 
-  const lostUpdate: LeadUpdate = { status: "lost", lost_reason: reason };
+  // A "logged" attempt is a call_logs row whose outcome has actually been
+  // recorded (R-CALL-001's compulsory outcome popup resolves it) -- a
+  // call that was started but never resolved doesn't count.
+  const { count: callCount, error: countError } = await supabase
+    .from("call_logs")
+    .select("id", { count: "exact", head: true })
+    .eq("lead_id", leadId)
+    .not("resolved_at", "is", null);
+  if (countError) return { error: "Could not verify call history." };
+  if ((callCount ?? 0) < MIN_CALLS_BEFORE_LOST) {
+    return {
+      error: `At least ${MIN_CALLS_BEFORE_LOST} logged calls are required before marking a lead Lost (${callCount ?? 0} logged so far).`,
+    };
+  }
+
+  const lostUpdate: LeadUpdate = { status: "lost", lost_reason_category: reasonCategory, lost_reason: reasonNote };
   const { error } = await supabase.from("leads").update(lostUpdate).eq("id", leadId);
 
   revalidateLead(leadId);
@@ -457,40 +559,6 @@ export async function setSiteVisitDate(_prevState: ActionState, formData: FormDa
       targetType: "lead",
       targetId: leadId,
       metadata: { fields_changed: Object.keys(siteVisitUpdate) },
-    });
-  }
-
-  return null;
-}
-
-export async function setQuotationAmount(
-  _prevState: ActionState,
-  formData: FormData
-): Promise<ActionState> {
-  const leadId = str(formData, "lead_id");
-  const amount = optionalNumber(formData, "quotation_amount");
-  if (amount === null || amount < 0) return { error: "Enter a valid quotation amount." };
-
-  const supabase = await createClient();
-  const accessError = await checkLeadAccess(supabase, leadId);
-  if (accessError) return accessError;
-
-  // Same rule as setSiteVisitDate: recording an amount is an activity
-  // record, not a stage transition.
-  const quotationUpdate: LeadUpdate = { quotation_amount: amount };
-  const { error } = await supabase.from("leads").update(quotationUpdate).eq("id", leadId);
-
-  revalidateLead(leadId);
-  if (error) return { error: error.message };
-
-  const profile = await getCurrentProfile();
-  if (profile) {
-    await recordAuditEvent({
-      actorId: profile.id,
-      action: "lead_updated",
-      targetType: "lead",
-      targetId: leadId,
-      metadata: { fields_changed: Object.keys(quotationUpdate) },
     });
   }
 

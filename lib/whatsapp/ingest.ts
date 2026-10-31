@@ -4,6 +4,7 @@ import type { Database } from "@/lib/supabase/types";
 import { triggerAutomationForMessage } from "@/lib/automations/trigger";
 import { createOrLinkLeadForConversation } from "@/lib/automations/crm-actions";
 import { toCanonicalPhone } from "@/lib/phone";
+import { isOptOutMessage } from "@/lib/whatsapp/opt-out";
 
 // Minimal shape needed to ingest one inbound message into
 // conversations/messages, shared by every inbound source (Meta Cloud API,
@@ -266,21 +267,43 @@ export async function ingestInboundMessage(
     console.error("Failed to update conversation updated_at after inbound message:", touchError.message);
   }
 
+  // R-MSG-002 (docs/BLUEPRINT_V1.md Section 8): "stop" opts this lead's
+  // phone out of all follow-up/marketing sends. Same best-effort shape as
+  // the automation trigger below -- the message is already durably
+  // persisted regardless of what happens here. .is("opted_out_at", null)
+  // makes a repeated "stop" a no-op instead of moving the timestamp
+  // forward each time.
+  const optedOut = isOptOutMessage(message.body);
+  if (leadId && optedOut) {
+    const { error: optOutError } = await supabase
+      .from("leads")
+      .update({ opted_out_at: new Date().toISOString() })
+      .eq("id", leadId)
+      .is("opted_out_at", null);
+    if (optOutError) {
+      console.error("Failed to record opt-out:", optOutError.message);
+    }
+  }
+
   // Keyword-triggered service automation is a pure add-on to inbound
   // ingestion -- the message above is already durably persisted regardless
   // of what happens here. Any failure is caught locally so it can never
   // affect the webhook's own response or cause a retry that would
-  // re-process an already-recorded message.
-  try {
-    await triggerAutomationForMessage(supabase, {
-      messageId: inserted.id,
-      conversationId,
-      body: message.body,
-      phone: message.fromPhone,
-      customerName: message.customerName,
-    });
-  } catch (err) {
-    console.error("Automation trigger failed unexpectedly:", err instanceof Error ? err.message : err);
+  // re-process an already-recorded message. Skipped for the opt-out
+  // message itself -- "stop" is not a service inquiry, and auto-replying
+  // to it would defeat the point of the opt-out.
+  if (!optedOut) {
+    try {
+      await triggerAutomationForMessage(supabase, {
+        messageId: inserted.id,
+        conversationId,
+        body: message.body,
+        phone: message.fromPhone,
+        customerName: message.customerName,
+      });
+    } catch (err) {
+      console.error("Automation trigger failed unexpectedly:", err instanceof Error ? err.message : err);
+    }
   }
 
   return { status: "ingested" };

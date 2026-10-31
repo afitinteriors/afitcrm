@@ -12,7 +12,7 @@ type QuotedLead = LeadListRow & { quotation_amount: number };
 // touched first (same recency-first philosophy as the Leads list's own
 // default sort). Unlike site_visit_date, quotation_amount has no date axis
 // of its own, so there's no grouping here -- just a flat, sorted list.
-// Editing still happens on Lead Detail via the existing QuotationForm --
+// Editing still happens on Lead Detail via the existing QuotationManager --
 // this page is read-only. Desktop-only per §1 ("quotations" is listed under
 // Desktop's full CRM operations, not among Mobile's daily-work priorities),
 // so it stays out of the mobile bottom nav, but still renders responsively

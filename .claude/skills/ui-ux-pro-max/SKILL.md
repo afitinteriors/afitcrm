@@ -4,14 +4,15 @@ description: "Explicit UI/UX design exploration — generating a visual design d
 ---
 # UI/UX Pro Max - Design Intelligence
 
-> **Project note (AFIT CRM, added 2026-08-30):** `CLAUDE.md` §2 is this
-> project's authoritative design system — its tokens (brand green,
-> dark-chrome gradients, glassmorphism) are already implemented
-> throughout the codebase. Use this skill for design exploration only.
-> Never run `--persist` in this repo — it writes `design-system/
-> MASTER.md`, which would become a second, competing source of truth.
-> Any output here is a proposal: reconcile it into CLAUDE.md §2 by hand
-> before it governs anything.
+> **Project note (AFIT CRM, added 2026-08-30):** `CLAUDE.md`'s UI/UX
+> Rules & Design System section is this project's authoritative design
+> system — its tokens (brand green, dark-chrome gradients,
+> glassmorphism) are already implemented throughout the codebase. Use
+> this skill for design exploration only. Never run `--persist` in this
+> repo — it writes `design-system/MASTER.md`, which would become a
+> second, competing source of truth. Any output here is a proposal:
+> reconcile it into CLAUDE.md's UI/UX Rules & Design System section by
+> hand before it governs anything.
 
 Comprehensive design guide for web and mobile applications. Contains 67 styles, 96 color palettes, 57 font pairings, 99 UX guidelines, and 25 chart types across 13 technology stacks. Searchable database with priority-based recommendations.
 

@@ -30,6 +30,7 @@ export const AUDIT_ACTIONS: AuditAction[] = [
   "conversation_viewed",
   "message_sent",
   "audit_log_viewed",
+  "setting_changed",
 ];
 
 function isAuditAction(value: string): value is AuditAction {

@@ -106,6 +106,72 @@ export async function sendTextMessage(
   return { waMessageId };
 }
 
+export type SendTemplateMessageResult = { waMessageId: string };
+
+/**
+ * Sends a pre-approved WhatsApp template message via the Cloud API --
+ * unlike sendTextMessage, this works outside the 24-hour customer-service
+ * window too (that's the whole point of a template: Meta allows
+ * business-initiated re-engagement only through one). R-FUP-002
+ * (docs/BLUEPRINT_V1.md Section 8) is the first caller
+ * (lib/whatsapp/missed-call-template.ts) -- `templateName` must already
+ * exist and be approved in Meta Business Manager; this does not create or
+ * validate templates, it only references one by name. No `components` are
+ * sent (v1's templates take no variables); extend this if a future
+ * template needs them.
+ */
+export async function sendTemplateMessage(
+  phoneNumberId: string,
+  to: string,
+  templateName: string,
+  languageCode: string
+): Promise<SendTemplateMessageResult> {
+  const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
+  if (!accessToken) {
+    throw new SendMessageError("not_configured", "WHATSAPP_ACCESS_TOKEN is not configured.");
+  }
+
+  const apiVersion = process.env.WHATSAPP_GRAPH_API_VERSION || DEFAULT_GRAPH_API_VERSION;
+  const response = await fetch(
+    `https://graph.facebook.com/${apiVersion}/${encodeURIComponent(phoneNumberId)}/messages`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to,
+        type: "template",
+        template: { name: templateName, language: { code: languageCode } },
+      }),
+    }
+  );
+
+  const data = (await response.json().catch(() => ({}))) as {
+    error?: { code?: number; message?: string };
+    messages?: { id?: string }[];
+  };
+
+  if (!response.ok) {
+    const metaMessage = data.error?.message ?? `HTTP ${response.status}`;
+    throw new SendMessageError(
+      "meta_api_error",
+      `Meta template send failed: ${metaMessage}`,
+      `WhatsApp did not accept this template message: ${metaMessage}`
+    );
+  }
+
+  const waMessageId = data.messages?.[0]?.id;
+  if (typeof waMessageId !== "string") {
+    throw new SendMessageError("meta_api_error", "Meta response was missing a message id.");
+  }
+
+  return { waMessageId };
+}
+
 export type UploadMediaResult = { mediaId: string };
 
 /**

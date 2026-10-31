@@ -42,6 +42,16 @@ export function businessDate(date: Date = new Date()): string {
   return `${pad(p.year, 4)}-${pad(p.month)}-${pad(p.day)}`;
 }
 
+// R-LEAD-003/R-STAGE-002 (docs/BLUEPRINT_V1.md Section 8): "Business hours
+// default to 9:00 to 20:00 IST; timers pause outside them." start/end are
+// hours-of-day in BUSINESS_TZ (lib/constants.ts's BUSINESS_HOURS_START_HOUR/
+// BUSINESS_HOURS_END_HOUR); end is exclusive, so the default 9..20 covers
+// 09:00:00 up to (not including) 20:00:00.
+export function isBusinessHours(date: Date, startHour: number, endHour: number): boolean {
+  const { hour } = partsOf(date);
+  return hour >= startHour && hour < endHour;
+}
+
 // Business-zone calendar day of a stored timestamp string (ISO / timestamptz).
 export function businessDateOf(timestamp: string): string | null {
   const d = new Date(timestamp);

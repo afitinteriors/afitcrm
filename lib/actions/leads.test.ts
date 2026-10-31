@@ -2,12 +2,14 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 
-type QueryResult = { data?: unknown; error?: { code?: string; message?: string } | null };
+type QueryResult = { data?: unknown; error?: { code?: string; message?: string } | null; count?: number | null };
 
 // Same minimal chainable/thenable query-builder stand-in used across this
 // project's other Supabase-backed tests (lib/whatsapp/ingest.test.ts,
-// lib/automations/crm-actions.test.ts) -- extended with .neq(), which
-// updateLead's duplicate check uses to exclude the lead being edited.
+// lib/automations/crm-actions.test.ts) -- extended with .neq() (updateLead's
+// duplicate check, to exclude the lead being edited) and .order()/.or()
+// (updateLeadAndNext calls the real lib/leads.ts getLeadIdsInListOrder(),
+// which needs both -- same chain shape as lib/leads.test.ts's own builder).
 function makeBuilder(result: QueryResult) {
   const builder: Record<string, unknown> = {};
   const chain = () => builder;
@@ -15,6 +17,9 @@ function makeBuilder(result: QueryResult) {
   builder.eq = vi.fn(chain);
   builder.neq = vi.fn(chain);
   builder.is = vi.fn(chain);
+  builder.or = vi.fn(chain);
+  builder.order = vi.fn(chain);
+  builder.not = vi.fn(chain);
   builder.insert = vi.fn(chain);
   builder.update = vi.fn(chain);
   builder.delete = vi.fn(chain);
@@ -66,7 +71,16 @@ vi.mock("next/cache", () => ({
   revalidatePath: vi.fn(),
 }));
 
-import { createLead, updateLead, setLeadStatus, markLeadWon, markLeadLost, setSiteVisitDate, deleteLead } from "./leads";
+import {
+  createLead,
+  updateLead,
+  updateLeadAndNext,
+  setLeadStatus,
+  markLeadWon,
+  markLeadLost,
+  setSiteVisitDate,
+  deleteLead,
+} from "./leads";
 
 function formDataWith(fields: Record<string, string>): FormData {
   const fd = new FormData();
@@ -320,6 +334,173 @@ describe("updateLead", () => {
   });
 });
 
+// "Save & Next" -- Lead Detail phase. The next-lead id always comes from a
+// query run BEFORE the save (see updateLeadAndNext's own comment), so every
+// test here queues that id-listing query as the FIRST "leads" result,
+// ahead of whatever performLeadUpdate's own leads calls need.
+describe("updateLeadAndNext", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getCurrentProfileMock.mockResolvedValue(ADMIN_PROFILE);
+  });
+
+  it("middle lead: saves, then navigates to the immediate next lead in list order", async () => {
+    const { stub } = createFakeSupabase({
+      leads: [
+        { data: [{ id: "lead-1" }, { id: "lead-2" }, { id: "lead-3" }], error: null }, // getLeadIdsInListOrder
+        { data: [], error: null }, // duplicate check (canonical phone already, one query)
+        { error: null }, // update
+      ],
+    });
+    fakeSupabase = stub;
+
+    await updateLeadAndNext(null, formDataWith({ lead_id: "lead-2", phone: "+919876543210" }));
+
+    expect(redirectMock).toHaveBeenCalledWith("/leads/lead-3/edit");
+  });
+
+  it("first lead: navigates to the second lead", async () => {
+    const { stub } = createFakeSupabase({
+      leads: [
+        { data: [{ id: "lead-1" }, { id: "lead-2" }, { id: "lead-3" }], error: null },
+        { data: [], error: null },
+        { error: null },
+      ],
+    });
+    fakeSupabase = stub;
+
+    await updateLeadAndNext(null, formDataWith({ lead_id: "lead-1", phone: "+919876543210" }));
+
+    expect(redirectMock).toHaveBeenCalledWith("/leads/lead-2/edit");
+  });
+
+  it("last lead: saves, does not wrap to the first lead, stays on the current lead with a no-next signal", async () => {
+    const { stub } = createFakeSupabase({
+      leads: [
+        { data: [{ id: "lead-1" }, { id: "lead-2" }, { id: "lead-3" }], error: null },
+        { data: [], error: null },
+        { error: null },
+      ],
+    });
+    fakeSupabase = stub;
+
+    await updateLeadAndNext(null, formDataWith({ lead_id: "lead-3", phone: "+919876543210" }));
+
+    expect(redirectMock).toHaveBeenCalledWith("/leads/lead-3/edit?noNext=1");
+    expect(redirectMock).not.toHaveBeenCalledWith("/leads/lead-1/edit"); // never wraps to the first lead
+  });
+
+  it("single-item list: saves and stays on the current (only) lead", async () => {
+    const { stub } = createFakeSupabase({
+      leads: [
+        { data: [{ id: "lead-1" }], error: null },
+        { data: [], error: null },
+        { error: null },
+      ],
+    });
+    fakeSupabase = stub;
+
+    await updateLeadAndNext(null, formDataWith({ lead_id: "lead-1", phone: "+919876543210" }));
+
+    expect(redirectMock).toHaveBeenCalledWith("/leads/lead-1/edit?noNext=1");
+  });
+
+  it("save failure: does not advance or navigate anywhere", async () => {
+    const { stub } = createFakeSupabase({
+      leads: [{ data: [{ id: "lead-1" }, { id: "lead-2" }], error: null }], // getLeadIdsInListOrder only
+    });
+    fakeSupabase = stub;
+
+    const result = await updateLeadAndNext(null, formDataWith({ lead_id: "lead-1", phone: "garbage" }));
+
+    expect(result).toEqual({ error: expect.stringContaining("valid phone number") });
+    expect(redirectMock).not.toHaveBeenCalled();
+  });
+
+  it("active search/filter context: the next lead comes from the filtered list, not every lead", async () => {
+    const { stub, from } = createFakeSupabase({
+      leads: [
+        { data: [{ id: "lead-2" }, { id: "lead-5" }], error: null }, // only the filtered subset
+        { data: [], error: null },
+        { error: null },
+      ],
+    });
+    fakeSupabase = stub;
+
+    await updateLeadAndNext(
+      null,
+      formDataWith({
+        lead_id: "lead-2",
+        phone: "+919876543210",
+        list_search: "vinod",
+        list_status: "new",
+        list_campaign: "traffic ad",
+      })
+    );
+
+    const listBuilder = from.mock.results[0].value as {
+      or: ReturnType<typeof vi.fn>;
+      eq: ReturnType<typeof vi.fn>;
+    };
+    expect(listBuilder.or).toHaveBeenCalledWith("customer_name.ilike.%vinod%,phone.ilike.%vinod%");
+    expect(listBuilder.eq).toHaveBeenCalledWith("status", "new");
+    expect(listBuilder.eq).toHaveBeenCalledWith("campaign_name", "traffic ad");
+    // Next lead is lead-5 (the filtered list's own next item), and the same
+    // filter context is carried forward so the chain can continue.
+    expect(redirectMock).toHaveBeenCalledWith("/leads/lead-5/edit?search=vinod&status=new&campaign=traffic+ad");
+  });
+
+  it("follows the list's real ordering clause (created_at desc) -- not an invented order", async () => {
+    const { stub, from } = createFakeSupabase({
+      leads: [
+        { data: [{ id: "lead-1" }, { id: "lead-2" }], error: null },
+        { data: [], error: null },
+        { error: null },
+      ],
+    });
+    fakeSupabase = stub;
+
+    await updateLeadAndNext(null, formDataWith({ lead_id: "lead-1", phone: "+919876543210" }));
+
+    const listBuilder = from.mock.results[0].value as { order: ReturnType<typeof vi.fn> };
+    expect(listBuilder.order).toHaveBeenCalledWith("created_at", { ascending: false });
+  });
+
+  it("current lead falls out of the active filter after the update: next lead still comes from the ORIGINAL pre-save list, not a re-fetch", async () => {
+    const { stub, from } = createFakeSupabase({
+      leads: [
+        // The list as it stood BEFORE the save -- lead-1 is still in it
+        // (its campaign hasn't changed yet from this query's point of view).
+        { data: [{ id: "lead-1" }, { id: "lead-2" }], error: null },
+        { data: [], error: null }, // duplicate check
+        { error: null }, // update -- this is what would drop lead-1 out of a campaign filter
+      ],
+    });
+    fakeSupabase = stub;
+
+    // Editing campaign_name to something that would no longer match
+    // list_campaign="traffic ad" if the list were re-fetched afterward.
+    await updateLeadAndNext(
+      null,
+      formDataWith({
+        lead_id: "lead-1",
+        phone: "+919876543210",
+        campaign_name: "a totally different campaign",
+        list_campaign: "traffic ad",
+      })
+    );
+
+    // The id-listing query is the very first "leads" call this action makes
+    // -- structurally before performLeadUpdate's own calls -- so its result
+    // can only reflect pre-update state.
+    const listBuilder = from.mock.results[0].value as { select: ReturnType<typeof vi.fn> };
+    expect(listBuilder.select).toHaveBeenCalledWith("id");
+    // "Next" is still lead-2, resolved from the original list, unaffected
+    // by the campaign_name change just persisted.
+    expect(redirectMock).toHaveBeenCalledWith("/leads/lead-2/edit?campaign=traffic+ad");
+  });
+});
+
 describe("setLeadStatus", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -516,31 +697,67 @@ describe("markLeadWon", () => {
     expect(from).not.toHaveBeenCalled();
   });
 
-  it("succeeds with a valid positive job_value, sets status won and clears lost_reason", async () => {
+  // R-WON-001 (docs/BLUEPRINT_V1.md Section 8): "No advance -> cannot mark
+  // Won." advance_proof_reference is required -- checked after job_value
+  // (so a missing job_value's own error always wins), before any database
+  // access.
+
+  it("rejects marking Won with a valid job_value but no advance_proof_reference -- no database access whatsoever", async () => {
+    const { stub, from } = createFakeSupabase({});
+    fakeSupabase = stub;
+
+    const result = await markLeadWon(null, formDataWith({ lead_id: "lead-1", job_value: "50000" }));
+
+    expect(result).toEqual({ error: "Advance payment proof (a reference or note) is required to mark a lead as Won." });
+    expect(from).not.toHaveBeenCalled();
+  });
+
+  it("rejects an all-whitespace advance_proof_reference the same as a missing one", async () => {
+    const { stub, from } = createFakeSupabase({});
+    fakeSupabase = stub;
+
+    const result = await markLeadWon(null, formDataWith({ lead_id: "lead-1", job_value: "50000", advance_proof_reference: "   " }));
+
+    expect(result).toEqual({ error: "Advance payment proof (a reference or note) is required to mark a lead as Won." });
+    expect(from).not.toHaveBeenCalled();
+  });
+
+  it("succeeds with a valid job_value and advance_proof_reference, sets status won and clears lost_reason", async () => {
     const { stub, from } = createFakeSupabase({
       leads: [{ error: null }], // update
     });
     fakeSupabase = stub;
 
-    const result = await markLeadWon(null, formDataWith({ lead_id: "lead-1", job_value: "50000" }));
+    const result = await markLeadWon(
+      null,
+      formDataWith({ lead_id: "lead-1", job_value: "50000", advance_proof_reference: "UTR 123456789" }),
+    );
 
     expect(result).toBeNull();
     const updateBuilder = from.mock.results[0].value as { update: ReturnType<typeof vi.fn> };
-    expect(updateBuilder.update).toHaveBeenCalledWith({ status: "won", job_value: 50000, lost_reason: null });
+    expect(updateBuilder.update).toHaveBeenCalledWith({
+      status: "won",
+      job_value: 50000,
+      lost_reason: null,
+      advance_proof_reference: "UTR 123456789",
+    });
   });
 
-  it("preserves existing authorization: staff cannot mark Won a lead not assigned to them, even with a valid job_value", async () => {
+  it("preserves existing authorization: staff cannot mark Won a lead not assigned to them, even with valid fields", async () => {
     getCurrentProfileMock.mockResolvedValue(STAFF_PROFILE);
     const { stub, from } = createFakeSupabase({
       leads: [{ data: { assigned_to_id: "someone-else" }, error: null }], // checkLeadAccess
     });
     fakeSupabase = stub;
 
-    const result = await markLeadWon(null, formDataWith({ lead_id: "lead-1", job_value: "50000" }));
+    const result = await markLeadWon(
+      null,
+      formDataWith({ lead_id: "lead-1", job_value: "50000", advance_proof_reference: "UTR 123456789" }),
+    );
 
     expect(result).toEqual({ error: "You do not have access to this lead." });
-    // The job_value guard runs first and passes; only the access check
-    // should have touched the database after that.
+    // The job_value/advance-proof guards run first and pass; only the
+    // access check should have touched the database after that.
     expect(from.mock.calls.filter(([table]) => table === "leads")).toHaveLength(1);
   });
 
@@ -554,7 +771,10 @@ describe("markLeadWon", () => {
     });
     fakeSupabase = stub;
 
-    const result = await markLeadWon(null, formDataWith({ lead_id: "lead-1", job_value: "25000" }));
+    const result = await markLeadWon(
+      null,
+      formDataWith({ lead_id: "lead-1", job_value: "25000", advance_proof_reference: "Cash receipt #42" }),
+    );
 
     expect(result).toBeNull();
     expect(from.mock.calls.filter(([table]) => table === "leads")).toHaveLength(2);
@@ -567,35 +787,67 @@ describe("markLeadLost", () => {
     getCurrentProfileMock.mockResolvedValue(ADMIN_PROFILE);
   });
 
-  // Confirms markLeadLost's pre-existing behavior is unchanged by the
-  // markLeadWon fix above -- same validate-before-access-check shape, but
-  // its own required field (lost_reason) and success path are untouched.
+  // R-LOST-001 (docs/BLUEPRINT_V1.md Section 8): a fixed reason category
+  // is required, and a lead needs at least MIN_CALLS_BEFORE_LOST resolved
+  // call_logs rows before it can be marked Lost. lost_reason (free text)
+  // is now optional supplementary detail, not the required field it used
+  // to be.
 
-  it("still rejects marking Lost with no lost_reason -- no database access whatsoever", async () => {
+  it("rejects marking Lost with no (or an invalid) lost_reason_category -- no database access whatsoever", async () => {
     const { stub, from } = createFakeSupabase({});
     fakeSupabase = stub;
 
-    const result = await markLeadLost(null, formDataWith({ lead_id: "lead-1" }));
-
-    expect(result).toEqual({ error: "A lost reason is required." });
+    expect(await markLeadLost(null, formDataWith({ lead_id: "lead-1" }))).toEqual({ error: "Pick a lost reason." });
+    expect(await markLeadLost(null, formDataWith({ lead_id: "lead-1", lost_reason_category: "not_a_real_reason" }))).toEqual({
+      error: "Pick a lost reason.",
+    });
     expect(from).not.toHaveBeenCalled();
   });
 
-  it("still succeeds with a valid lost_reason, setting status lost", async () => {
+  it("rejects marking Lost with fewer than 3 logged calls, before any write, naming how many were logged", async () => {
     const { stub, from } = createFakeSupabase({
+      call_logs: [{ count: 2, error: null }],
+    });
+    fakeSupabase = stub;
+
+    const result = await markLeadLost(null, formDataWith({ lead_id: "lead-1", lost_reason_category: "price" }));
+
+    expect(result).toEqual({
+      error: "At least 3 logged calls are required before marking a lead Lost (2 logged so far).",
+    });
+    expect(from.mock.calls.filter(([table]) => table === "leads")).toHaveLength(0);
+  });
+
+  it("only counts resolved call_logs rows (filters resolved_at is not null)", async () => {
+    const { stub, from } = createFakeSupabase({
+      call_logs: [{ count: 3, error: null }],
+      leads: [{ error: null }], // update
+    });
+    fakeSupabase = stub;
+
+    await markLeadLost(null, formDataWith({ lead_id: "lead-1", lost_reason_category: "price" }));
+
+    const callLogsBuilder = from.mock.results[0].value as { not: ReturnType<typeof vi.fn> };
+    expect(callLogsBuilder.not).toHaveBeenCalledWith("resolved_at", "is", null);
+  });
+
+  it("succeeds with a valid category and >= 3 logged calls, setting status lost and the category, with lost_reason optional", async () => {
+    const { stub, from } = createFakeSupabase({
+      call_logs: [{ count: 3, error: null }],
       leads: [{ error: null }], // update
     });
     fakeSupabase = stub;
 
     const result = await markLeadLost(
       null,
-      formDataWith({ lead_id: "lead-1", lost_reason: "Went with a competitor" })
+      formDataWith({ lead_id: "lead-1", lost_reason_category: "chose_another", lost_reason: "Went with a competitor" }),
     );
 
     expect(result).toBeNull();
-    const updateBuilder = from.mock.results[0].value as { update: ReturnType<typeof vi.fn> };
+    const updateBuilder = from.mock.results[1].value as { update: ReturnType<typeof vi.fn> };
     expect(updateBuilder.update).toHaveBeenCalledWith({
       status: "lost",
+      lost_reason_category: "chose_another",
       lost_reason: "Went with a competitor",
     });
   });
@@ -607,10 +859,11 @@ describe("markLeadLost", () => {
     });
     fakeSupabase = stub;
 
-    const result = await markLeadLost(null, formDataWith({ lead_id: "lead-1", lost_reason: "Budget" }));
+    const result = await markLeadLost(null, formDataWith({ lead_id: "lead-1", lost_reason_category: "price" }));
 
     expect(result).toEqual({ error: "You do not have access to this lead." });
     expect(from.mock.calls.filter(([table]) => table === "leads")).toHaveLength(1);
+    expect(from.mock.calls.filter(([table]) => table === "call_logs")).toHaveLength(0);
   });
 });
 

@@ -9,6 +9,46 @@ const BAND_CLASSES: Record<QualificationBand, string> = {
   "Very High": "text-success",
 };
 
+// Hex counterpart of BAND_CLASSES -- the ring's stroke is an SVG attribute,
+// not a Tailwind class, so it needs a real color value. Same band→color
+// mapping, just in the form <circle stroke> needs; keep in sync.
+const BAND_RING_COLORS: Record<QualificationBand, string> = {
+  Low: "#A3A3A3",
+  Medium: "#F59E0B",
+  High: "#16A34A",
+  "Very High": "#16A34A",
+};
+
+const RING_RADIUS = 30;
+const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
+
+function ScoreRing({ score, band }: { score: number; band: QualificationBand }) {
+  const offset = RING_CIRCUMFERENCE * (1 - score / 100);
+  return (
+    <svg width="76" height="76" viewBox="0 0 76 76" aria-hidden="true" className="shrink-0">
+      <circle cx="38" cy="38" r={RING_RADIUS} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="8" />
+      <circle
+        cx="38"
+        cy="38"
+        r={RING_RADIUS}
+        fill="none"
+        stroke={BAND_RING_COLORS[band]}
+        strokeWidth="8"
+        strokeLinecap="round"
+        strokeDasharray={RING_CIRCUMFERENCE}
+        strokeDashoffset={offset}
+        transform="rotate(-90 38 38)"
+      />
+      <text x="38" y="34" textAnchor="middle" fontSize="18" fontWeight="600" fill="#FFFFFF">
+        {score}
+      </text>
+      <text x="38" y="48" textAnchor="middle" fontSize="10" fill="#A3A3A3">
+        / 100
+      </text>
+    </svg>
+  );
+}
+
 // Auto-computed, deterministic -- see lib/qualification-score.ts. Renders
 // as a plain content block (no Card wrapper) because it's one half of the
 // single "Qualification" section on the Lead Detail page -- the other half
@@ -30,12 +70,13 @@ export function QualificationScoreSummary({
   return (
     <div>
       <p className="text-xs font-medium uppercase tracking-wide text-surface-foreground-muted">Auto-computed</p>
-      <div className="mt-1 flex items-baseline gap-1.5">
-        <span className={`text-2xl font-semibold tabular-nums ${bandClass}`}>{result.score}</span>
-        <span className="text-sm text-surface-foreground-muted">/ 100</span>
-        <span className={`ml-1 text-sm font-medium ${bandClass}`}>{result.band}</span>
+      <div className="mt-2 flex items-center gap-4">
+        <ScoreRing score={result.score} band={result.band} />
+        <div>
+          <span className={`text-sm font-medium ${bandClass}`}>{result.band}</span>
+          <p className="mt-0.5 text-sm text-surface-foreground-muted">{result.summary}</p>
+        </div>
       </div>
-      <p className="mt-1 text-sm text-surface-foreground-muted">{result.summary}</p>
 
       <details className="group mt-3">
         <summary className="flex min-h-11 w-fit cursor-pointer list-none items-center gap-1.5 text-xs font-medium text-surface-foreground-muted marker:hidden hover:text-surface-foreground">

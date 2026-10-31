@@ -13,6 +13,10 @@ export type LeadStatus =
   | "lost"
   | "invalid";
 
+// R-LOST-001 (docs/BLUEPRINT_V1.md Section 8): the fixed reason set a
+// lead marked Lost must be categorized under.
+export type LostReasonCategory = "price" | "chose_another" | "plan_cancelled" | "no_response" | "out_of_area" | "other";
+
 export type LeadRow = {
   id: string;
   customer_name: string | null;
@@ -37,6 +41,7 @@ export type LeadRow = {
   quotation_amount: number | null;
   job_value: number | null;
   lost_reason: string | null;
+  lost_reason_category: LostReasonCategory | null;
   assigned_to: string | null;
   assigned_to_id: string | null;
   // Soft-retirement marker for the legacy phone-duplicate merge process
@@ -46,6 +51,20 @@ export type LeadRow = {
   merged_into_id: string | null;
   created_at: string;
   updated_at: string;
+  // R-STAGE-002 (docs/BLUEPRINT_V1.md Section 8): when `status` last
+  // changed -- maintained by the leads_set_status_changed_at trigger
+  // (supabase/migrations/20261031100000_leads_status_changed_at.sql), never
+  // written directly by application code.
+  status_changed_at: string;
+  // R-MSG-002 (docs/BLUEPRINT_V1.md Section 8): set once, the first time
+  // this lead's phone sends an opt-out message ("stop") -- see
+  // lib/whatsapp/opt-out.ts. Null means never opted out.
+  opted_out_at: string | null;
+  // R-WON-001 (docs/BLUEPRINT_V1.md Section 8): required free-text advance
+  // payment proof (UTR/transaction id/note) captured by markLeadWon(). The
+  // "photo" half of "photo or reference" is not built -- see
+  // supabase/migrations/20261031120000_leads_advance_proof_reference.sql.
+  advance_proof_reference: string | null;
   wa_message_id: string | null;
   wa_phone_number_id: string | null;
   wa_message_timestamp: string | null;
@@ -63,9 +82,21 @@ export type ProfileRow = {
   id: string;
   role: ProfileRole;
   display_name: string | null;
+  telegram_username: string | null;
+  active: boolean;
   created_at: string;
   updated_at: string;
 };
+
+export type ProfileInsert = {
+  id: string;
+  role: ProfileRole;
+  display_name?: string | null;
+  telegram_username?: string | null;
+  active?: boolean;
+};
+
+export type ProfileUpdate = Partial<Pick<ProfileRow, "role" | "display_name" | "telegram_username" | "active">>;
 
 export type ConversationStatus = "open" | "closed";
 
@@ -147,9 +178,14 @@ export type AuditAction =
   | "audit_log_viewed"
   | "follow_up_created"
   | "follow_up_completed"
-  | "lead_assigned";
+  | "lead_assigned"
+  | "call_logged"
+  | "setting_changed"
+  | "team_member_invited"
+  | "team_member_deactivated"
+  | "team_member_reactivated";
 
-export type AuditTargetType = "lead" | "conversation" | "message" | "follow_up";
+export type AuditTargetType = "lead" | "conversation" | "message" | "follow_up" | "setting" | "profile";
 
 export type AuditLogRow = {
   id: string;
@@ -365,6 +401,131 @@ export type NotificationInsert = {
 // Owners may only mark their own notifications read (column grant).
 export type NotificationUpdate = Partial<NotificationInsert>;
 
+// Phase "Call outcome popup" (docs/BLUEPRINT_V1.md Phase 3): R-CALL-001 /
+// R-CALL-002. A row is PENDING while outcome/resolved_at are both null
+// (the caller pressed "Call now" but hasn't logged an outcome yet) and
+// RESOLVED once both are set -- see
+// supabase/migrations/20261025120000_call_logs.sql for the DB-level
+// constraint that keeps those two states in sync and the RLS that makes
+// a resolved row immutable.
+export type CallOutcome = "answered" | "no_answer" | "busy" | "wrong_number" | "not_interested";
+
+export type CallLogRow = {
+  id: string;
+  lead_id: string;
+  caller_id: string;
+  outcome: CallOutcome | null;
+  notes: string | null;
+  next_follow_up_date: string | null;
+  started_at: string;
+  resolved_at: string | null;
+  created_at: string;
+};
+
+export type CallLogInsert = {
+  lead_id: string;
+  caller_id: string;
+};
+
+// Only the four columns the resolve-call RLS policy grants UPDATE on.
+export type CallLogUpdate = {
+  outcome: CallOutcome;
+  notes: string | null;
+  next_follow_up_date: string | null;
+  resolved_at: string;
+};
+
+// R-QUOTE-001 (docs/BLUEPRINT_V1.md Section 8): versioned quotations --
+// supabase/migrations/20261031130000_quotations.sql. A 'draft' row is
+// freely editable; once 'sent' it is locked (app-level enforcement in
+// lib/actions/quotations.ts) and any further change creates version + 1
+// instead of updating it.
+export type QuotationStatus = "draft" | "sent";
+
+export type QuotationRow = {
+  id: string;
+  lead_id: string;
+  version: number;
+  amount: number;
+  status: QuotationStatus;
+  notes: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  sent_at: string | null;
+  // R-QUOTE-002 (docs/BLUEPRINT_V1.md Section 8): set once an admin
+  // approves this version's discount (measured against v1 -- see
+  // lib/actions/quotations.ts). Null means not approved (not required, or
+  // still pending).
+  discount_approved_by: string | null;
+  discount_approved_at: string | null;
+};
+
+export type QuotationInsert = {
+  lead_id: string;
+  version: number;
+  amount: number;
+  status?: QuotationStatus;
+  notes?: string | null;
+  created_by?: string | null;
+};
+
+export type QuotationUpdate = Partial<Omit<QuotationRow, "id" | "lead_id" | "version" | "created_at" | "updated_at">>;
+
+// Settings -> WhatsApp Numbers (supabase/migrations/20261029130000_whatsapp_numbers.sql).
+export type WhatsAppNumberStatus = "connected" | "needs_attention" | "disconnected";
+export type WhatsAppNumberPurpose = "Sales" | "Support" | "General";
+
+export type WhatsAppNumberRow = {
+  id: string;
+  label: string;
+  phone_number: string;
+  status: WhatsAppNumberStatus;
+  purpose: WhatsAppNumberPurpose;
+  assigned_staff_ids: string[];
+  is_default: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type WhatsAppNumberInsert = {
+  label: string;
+  phone_number: string;
+  status?: WhatsAppNumberStatus;
+  purpose?: WhatsAppNumberPurpose;
+  assigned_staff_ids?: string[];
+  is_default?: boolean;
+};
+
+export type WhatsAppNumberUpdate = Partial<WhatsAppNumberInsert>;
+
+// Settings -> Team & Permissions grants (supabase/migrations/20261029140000_profile_permissions.sql).
+export type PermissionKey =
+  | "leads_view_all"
+  | "leads_reassign"
+  | "leads_bulk_export"
+  | "conversations_view_all"
+  | "reports_view"
+  | "automation_access"
+  | "audit_log_view"
+  | "settings_manage_whatsapp"
+  | "settings_manage_team";
+
+export type ProfilePermissionRow = {
+  profile_id: string;
+  permission_key: PermissionKey;
+  granted_at: string;
+  granted_by: string | null;
+};
+
+export type ProfilePermissionInsert = {
+  profile_id: string;
+  permission_key: PermissionKey;
+  granted_by?: string | null;
+};
+
+export type ProfilePermissionUpdate = Partial<ProfilePermissionInsert>;
+
 export type Database = {
   public: {
     Tables: {
@@ -376,8 +537,8 @@ export type Database = {
       };
       profiles: {
         Row: ProfileRow;
-        Insert: never;
-        Update: never;
+        Insert: ProfileInsert;
+        Update: ProfileUpdate;
         Relationships: [];
       };
       conversations: {
@@ -450,6 +611,30 @@ export type Database = {
         Row: NotificationRow;
         Insert: NotificationInsert;
         Update: NotificationUpdate;
+        Relationships: [];
+      };
+      call_logs: {
+        Row: CallLogRow;
+        Insert: CallLogInsert;
+        Update: CallLogUpdate;
+        Relationships: [];
+      };
+      quotations: {
+        Row: QuotationRow;
+        Insert: QuotationInsert;
+        Update: QuotationUpdate;
+        Relationships: [];
+      };
+      whatsapp_numbers: {
+        Row: WhatsAppNumberRow;
+        Insert: WhatsAppNumberInsert;
+        Update: WhatsAppNumberUpdate;
+        Relationships: [];
+      };
+      profile_permissions: {
+        Row: ProfilePermissionRow;
+        Insert: ProfilePermissionInsert;
+        Update: ProfilePermissionUpdate;
         Relationships: [];
       };
     };

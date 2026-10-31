@@ -16,6 +16,7 @@ function makeBuilder(result: QueryResult) {
   builder.order = vi.fn(chain);
   builder.gte = vi.fn(chain);
   builder.lt = vi.fn(chain);
+  builder.limit = vi.fn(chain);
   builder.then = (resolve: (value: QueryResult) => unknown) => Promise.resolve(result).then(resolve);
   return builder;
 }

@@ -1,4 +1,4 @@
-import type { FollowUpType, LeadStatus } from "@/lib/supabase/types";
+import type { CallOutcome, FollowUpType, LeadStatus, LostReasonCategory } from "@/lib/supabase/types";
 
 // Every value the `leads.status` column can hold. Used for schema-level
 // validation (e.g. isLeadStatus()) and internal bookkeeping -- NOT for
@@ -40,6 +40,28 @@ export const PIPELINE_STATUSES: LeadStatus[] = [...OPEN_LEAD_STATUSES, "won", "l
 export function isClosedLeadStatus(status: LeadStatus): boolean {
   return status === "won" || status === "lost";
 }
+
+// R-LOST-001 (docs/BLUEPRINT_V1.md Section 8): the only reasons a lead
+// can be marked Lost under. Minimum-3-logged-calls is enforced in
+// lib/actions/leads.ts's markLeadLost(), not here -- this list is just the
+// fixed category set.
+export const LOST_REASON_CATEGORIES: LostReasonCategory[] = [
+  "price",
+  "chose_another",
+  "plan_cancelled",
+  "no_response",
+  "out_of_area",
+  "other",
+];
+
+export const LOST_REASON_CATEGORY_LABELS: Record<LostReasonCategory, string> = {
+  price: "Price",
+  chose_another: "Chose another provider",
+  plan_cancelled: "Plan cancelled",
+  no_response: "No response",
+  out_of_area: "Out of area",
+  other: "Other",
+};
 
 export const LEAD_STATUS_LABELS: Record<LeadStatus, string> = {
   new: "New",
@@ -136,3 +158,54 @@ export const FOLLOW_UP_TYPE_LABELS: Record<FollowUpType, string> = {
   quotation: "Quotation",
   meeting: "Meeting",
 };
+
+// R-CALL-001 (docs/BLUEPRINT_V1.md Phase 3) -- the fixed 5-outcome set the
+// mandatory call popup offers. Order matches the blueprint's own example.
+export const CALL_OUTCOMES: CallOutcome[] = ["answered", "no_answer", "busy", "wrong_number", "not_interested"];
+
+export const CALL_OUTCOME_LABELS: Record<CallOutcome, string> = {
+  answered: "Answered",
+  no_answer: "No answer",
+  busy: "Busy",
+  wrong_number: "Wrong number",
+  not_interested: "Not interested",
+};
+
+// R-CALL-002: every outcome needs a next follow-up date except Wrong
+// number.
+export const CALL_OUTCOME_EXEMPT_FROM_FOLLOWUP: CallOutcome = "wrong_number";
+
+// Safety cap for list/report queries that have no pagination yet
+// (getLeads(), getFollowUps(), the Reports aggregation queries). Matches
+// this project's own configured PostgREST max_rows (supabase/config.toml
+// [api] max_rows = 1000) -- without an explicit .limit(), those queries
+// were silently relying on that server-side default, so a result past row
+// 1000 would already be truncated with no error and no indication
+// anywhere in the app. This makes that boundary explicit and intentional
+// instead of an invisible accident, but it is a stopgap, not a fix: real
+// pagination (or, for Reports, moving aggregation into SQL) is needed
+// before lead/follow-up volume actually approaches this number.
+export const UNPAGINATED_LIST_QUERY_LIMIT = 1000;
+
+// R-LOST-001 (docs/BLUEPRINT_V1.md Section 8): minimum resolved call_logs
+// rows a lead must have before it can be marked Lost.
+export const MIN_CALLS_BEFORE_LOST = 3;
+
+// R-LEAD-003 (docs/BLUEPRINT_V1.md Section 8): "A new lead must get a first
+// response within 15 minutes ... lead turns red ... staff at 15 min, owner
+// at 30 min." Editable in Settings per the blueprint; hard-coded here as the
+// default until a Settings page for rule timers exists (Blueprint V1
+// Decisions, CLAUDE.md).
+export const RESPONSE_ALERT_STAFF_MINUTES = 15;
+export const RESPONSE_ALERT_OWNER_MINUTES = 30;
+
+// Section 8: "Business hours default to 9:00 to 20:00 IST; timers pause
+// outside them." Same Settings-later caveat as above.
+export const BUSINESS_HOURS_START_HOUR = 9;
+export const BUSINESS_HOURS_END_HOUR = 20;
+
+// R-QUOTE-002 (docs/BLUEPRINT_V1.md Section 8): "Discount above the
+// owner's limit needs owner approval ... Limit 5%, Azhar enters 8% ->
+// approval request." Same Settings-later caveat as above. Measured against
+// a quotation's own version 1 -- see lib/actions/quotations.ts.
+export const DISCOUNT_APPROVAL_LIMIT_PERCENT = 5;

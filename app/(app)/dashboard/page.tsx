@@ -6,6 +6,7 @@ import {
   getStaffWorkload,
   getRecentLeads,
   getTodayFollowUpProgress,
+  getTodayActivityCounts,
   getLeadsTrend,
   getRevenueOverview,
   getLeadSourceDistribution,
@@ -16,7 +17,7 @@ import { getFollowUps } from "@/lib/follow-ups";
 import { getLeads, getStaffOverview, getDashboardStats } from "@/lib/leads";
 import { groupBySiteVisitDate, type SiteVisitLead } from "@/lib/site-visits";
 import { buildStaffHome } from "@/lib/staff-home";
-import { businessDate } from "@/lib/business-time";
+import { businessDate, businessDateOf } from "@/lib/business-time";
 import { StaffHome } from "@/components/dashboard/StaffHome";
 import { AdminHome } from "@/components/dashboard/AdminHome";
 
@@ -81,22 +82,29 @@ export default async function DashboardPage() {
   // Staff: the same canonical attention queue, plus the staff member's own
   // leads/pending follow-ups for display detail only (service, stage, due
   // time) -- the same trio /today uses, all RLS-scoped to their own leads.
-  const [queue, leads, followUps, todayProgress, overview] = await Promise.all([
+  const [queue, leads, followUps, todayProgress, todayActivity, overview] = await Promise.all([
     getMyDutyQueue(),
     getLeads({}),
     getFollowUps({ status: "pending" }),
     getTodayFollowUpProgress(),
+    getTodayActivityCounts(),
     getStaffOverview(),
   ]);
 
   const today = businessDate();
-  const siteVisitsToday = leads.filter((lead) => lead.site_visit_date === today).length;
+  // site_visit_date is a full timestamp (SiteVisitForm uses a
+  // datetime-local input), so a bare string === comparison against the
+  // "YYYY-MM-DD" business date never matches -- businessDateOf() is the
+  // same date-extraction already used everywhere else this comparison is
+  // made (groupBySiteVisitDate, buildTodayBoard).
+  const siteVisitsToday = leads.filter((lead) => lead.site_visit_date !== null && businessDateOf(lead.site_visit_date) === today).length;
 
   return (
     <StaffHome
       firstName={firstName}
       board={buildStaffHome({ dutyItems: queue.items, leads, followUps })}
       todayProgress={todayProgress}
+      todayActivity={todayActivity}
       siteVisitsToday={siteVisitsToday}
       overview={overview}
     />

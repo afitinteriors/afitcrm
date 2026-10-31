@@ -2,17 +2,17 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { getCurrentProfile } from "@/lib/auth";
 import { getAssignableStaff } from "@/lib/staff";
+import { getWhatsAppNumbers } from "@/lib/actions/whatsapp-numbers";
 import { WhatsAppNumbersWorkspace } from "@/components/settings/WhatsAppNumbersWorkspace";
 
 // Admin-only, same pattern as /automation and /audit-log: explicit
-// page-level check on top of what would become admin-only RLS if this data
-// ever moves to a real table (never solve a security problem by only
-// hiding a nav link).
+// page-level check on top of whatsapp_numbers' own admin-only RLS (never
+// solve a security problem by only hiding a nav link).
 export default async function WhatsAppNumbersPage() {
   const profile = await getCurrentProfile();
   if (!profile || profile.role !== "admin") notFound();
 
-  const staff = await getAssignableStaff();
+  const [staff, numbers] = await Promise.all([getAssignableStaff(), getWhatsAppNumbers()]);
 
   return (
     <div>
@@ -30,7 +30,7 @@ export default async function WhatsAppNumbersPage() {
       </p>
 
       <div className="mt-6">
-        <WhatsAppNumbersWorkspace staff={staff} />
+        <WhatsAppNumbersWorkspace staff={staff} numbers={numbers} />
       </div>
     </div>
   );

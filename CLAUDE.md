@@ -96,7 +96,11 @@ always renders; `Management` (Automation, Audit Log) and `System`
 **Unconfirmed / deprioritized nav modules** — do not start a build phase
 for any of these without asking again first; a prior master planning brief
 omitted them entirely from the intended nav:
-Customers, Services, Team, Mission Control, Documents.
+Customers, Services, Mission Control, Documents.
+
+**Team is no longer on this list** — Team & Permissions is approved scope
+as of 2026-10-25 (Blueprint V1 §2/§12; UI preview already committed,
+`6e655cc`). See Blueprint V1 Decisions below.
 
 ---
 
@@ -115,9 +119,17 @@ Customers, Services, Team, Mission Control, Documents.
 `Invalid` may exist internally for schema/data compatibility but is
 **never a user-facing pipeline stage.**
 
-The closed/default Lead Detail UI shows **only the current stage** — never
+**Superseded 2026-10-31** (owner-approved, see Blueprint V1 Decisions): Lead
+Detail now shows a permanent pipeline stepper (New → ... → Won/Lost) at the
+top of the page — a presentational progress indicator only. The stage
+selector (`StatusSelect`) remains the one functional control that actually
+changes `leads.status`; the stepper never writes to the database itself.
+This replaces the previous "only the current stage, never a permanent
+chain" rule below, which is kept here for history:
+
+~~The closed/default Lead Detail UI shows only the current stage — never
 the full New→...→Lost chain as a permanent section. The stage selector may
-expose all 8 when opened; the rest of the page stays compact.
+expose all 8 when opened; the rest of the page stays compact.~~
 
 **Stage-aware Lead Detail** (implemented via `lib/lead-stage-sections.ts`'s
 `STAGE_SECTIONS` config, gating which sections/actions render per stage —
@@ -346,6 +358,29 @@ unrelated historical regression suites.
 
 ---
 
+## Live Data Safety
+
+Added 2026-10-25, per explicit owner instruction. Non-negotiable; sits
+alongside Deployment Rules and Auth/RLS/Security above, and wins over
+convenience in any conflict.
+
+- **Never change** the WABIS webhook route (`app/api/webhooks/wabis/
+  [secret]/route.ts`), its secret, or `lib/whatsapp/ingest.ts`,
+  `lib/whatsapp/parse-wabis.ts`, `lib/whatsapp/wabis-auth.ts`. These carry
+  real live inbound leads today — touching them risks silently losing
+  them.
+- **Backup first, before any migration.** Migrations are additive only:
+  add columns, tables, or enum values. Never drop, rename, or delete an
+  existing column, enum value, or row.
+- **Test on a staging Supabase project and a Vercel preview deployment —
+  never on live data.** Production is not a test environment.
+- **Production deploy only with the owner's explicit approval.** After a
+  production deploy, confirm a real test WhatsApp message still creates a
+  lead before the deploy is considered done.
+- **Keep a one-click rollback path available at all times.**
+
+---
+
 ## Deployment Rules
 
 ```
@@ -488,20 +523,102 @@ layout.
 
 ## Current Phase
 
-All of the original 10 build phases (design tokens → AppShell → Dashboard
-→ Leads list → stage-aware Lead Detail → Follow-ups → Site Visits/
-Quotations → Deals → Reports → Admin/Settings/Automation/Audit Log
-foundation) are complete. WhatsApp live integration (webhook, outbound
-sender, Realtime, Conversations UI) is built. The keyword-triggered
-automation track is extensively built (see Completed Work Log) but mostly
-**uncommitted** and has a real live-Meta-send gap (recipient authorization
-unresolved).
+Blueprint V1 (`docs/BLUEPRINT_V1.md`) is the active plan. Build its phases
+in order, one per session.
 
-**Do not start the WABIS/Meta live-webhook phase without explicit
-instruction.** Before picking a next phase, ask, or pick from the still-open
-items in the Completed Work Log's automation-track and WhatsApp-integration
-entries (all explicitly flagged there as not-yet-done), rather than
-inventing new scope.
+---
+
+## Blueprint V1 Decisions (Recorded)
+
+Decisions below are binding (owner-approved, 2026-10-25 unless noted).
+
+- **Phase 7, R-QUOTE-002 discount approval, no Telegram (owner-approved
+  2026-10-31)**: "Discount above the owner's limit needs owner approval in
+  Telegram" -- Telegram/Hermes don't exist yet (Phase 5), so this is an
+  in-app approval gate instead, with the owner alerted via the existing
+  notifications/push infra (same `lib/rules/alert.ts` R-LEAD-003/
+  R-STAGE-002 already use) rather than Telegram. "Discount" is measured
+  against a quotation's own version 1 (`lib/quotation-discount.ts`) --
+  this app has no catalog/list-price concept to discount from instead.
+  `DISCOUNT_APPROVAL_LIMIT_PERCENT` (default 5, `lib/constants.ts`) gates
+  `sendQuotation()`: a later version priced more than that far below v1
+  cannot be marked sent until an admin calls the new
+  `approveQuotationDiscount()` action. Verified live, including the full
+  staff-creates-discount -> admin-alerted -> admin-approves -> staff-sends
+  round trip.
+
+- **Phase 4 rules engine, R-FUP-002 + R-MSG-002 (owner-approved
+  2026-10-31)**: R-FUP-002 -- `resolveCallOutcome()` (lib/actions/calls.ts)
+  best-effort-triggers `lib/whatsapp/missed-call-template.ts` on a
+  `no_answer`/`busy` outcome, which always sends a Meta WhatsApp TEMPLATE
+  (never free-form text -- a missed call almost certainly means the
+  24-hour window is closed). The template itself must be created and
+  approved in Meta Business Manager first; `WHATSAPP_MISSED_CALL_TEMPLATE_NAME`
+  (not committed) is required, and this returns `not_configured` rather
+  than guessing a name Meta would reject. R-MSG-002 -- an exact
+  (case-insensitive) "stop" in an inbound message
+  (`lib/whatsapp/opt-out.ts`) sets `leads.opted_out_at` (new column,
+  additive migration) and skips that message's own automation trigger;
+  `sendMissedCallTemplate` checks it and refuses to send. Scope: this
+  gates only the new missed-call template send -- the pre-existing
+  Automation Builder's own outbound-sending nodes do NOT check
+  `opted_out_at` yet (separate, deferred follow-up), and a human staff
+  reply via the Conversation UI is never blocked (R-MSG-002 is "follow-up
+  and marketing messages", not a ban on a person replying).
+
+- **Phase 4 rules engine, R-LEAD-003 + R-STAGE-002 only (owner-approved
+  2026-10-31)**: Vercel Cron (`vercel.json`) drives two routes --
+  `/api/cron/response-timer` (every 5 min: R-LEAD-003, no call logged/no
+  outbound WhatsApp reply within 15 min alerts the assigned staff, 30 min
+  escalates to every admin) and `/api/cron/stage-timer` (every 30 min:
+  R-STAGE-002 for Qualified/2d, Site Visit/2d-after-visit-date,
+  Negotiation/7d only -- Quotation's day-1/3/7 follow-up cadence is not a
+  single hard limit and was left out). Alerts reuse the existing
+  notifications/push infra, deduped via `notifications.dedupe_key`.
+  Business hours (9:00-20:00 IST) gate sending, simplified to "skip
+  outside the window" rather than a true pause/resume per-lead timer.
+  `leads.status_changed_at` (new column + trigger,
+  `supabase/migrations/20261031100000_leads_status_changed_at.sql`) backs
+  the stage timer. R-LEAD-004 (needs the unbuilt AI agent) is still not
+  built; R-FUP-002 and R-MSG-002 are covered separately below. Requires a
+  `CRON_SECRET` env var in Vercel (not committed) before this works in
+  production.
+
+- **Lead Detail redesign (owner-approved 2026-10-31)**: two-column layout
+  (HubSpot/Pipedrive style) replacing the previous stacked single-column
+  page. Permanent pipeline stepper at the top (presentational only --
+  `StatusSelect` is still the one control that writes `leads.status`).
+  Left column: compact identity/contact panel (avatar, phone, source/
+  location badges, WhatsApp/Call/Edit, stage selector), Assigned-to,
+  Next Action, and Mark Won/Lost (now behind a confirm modal, same
+  `markLeadWon()`/`markLeadLost()` actions as before -- no new write
+  path). Right column: Overview, Follow-ups, Site Visit, Quotation,
+  Qualification (score ring added, same computed score), Commercial,
+  Conversation, admin Activity -- same sections/stage-gating as before,
+  just relaid out. Superseded the "only current stage, never a permanent
+  chain" rule above.
+
+- **Pipeline status values**: keep all existing stored status values
+  as-is. Add a new `visit_scheduled` value when Blueprint Phase 2/7 is
+  actually built (not yet added to schema or to this file's "Exactly 8
+  user-facing pipeline stages" table — that table still describes current
+  live reality and must be updated in the same change that adds the
+  column value). Relabel only the *display label* of `site_visit` →
+  "Visit done" and `quotation` → "Quote sent" — the underlying stored
+  values/enum do not change. `ai_talking` is added later, in the AI agent
+  phase (Blueprint §6) — do not add it now. "Nurture" is a UI-level date
+  filter over existing leads, not a new status. "Junk" maps to the
+  existing `Invalid` status — no new status is created for it.
+- **Mobile bottom bar stays at exactly 4 tabs** — re-confirms the existing
+  Product Strategy rule above; no change needed.
+- **Team & Permissions is now approved scope** (previously listed as
+  deprioritized/unconfirmed in Desktop vs Mobile — Navigation above, now
+  corrected). A UI preview already exists (commit `6e655cc`).
+- The Ollama-based lead assistant (`app/api/ai/lead-assistant/route.ts`,
+  already committed but previously undocumented in this file) will be
+  **replaced**, in Blueprint's AI agent phase (§6/§12), by a
+  provider-setting-driven AI client (Gemini default, switchable without
+  code). Do not extend the Ollama path further in the meantime.
 
 ---
 
@@ -802,7 +919,56 @@ clean. Production `dpl_EUiZhEUtcbb9XhNkj2TLkR3TZpai` Ready, SHA exactly matches
 `a95d120`. A real production WABIS message exercising the assignment is still
 pending.
 
+**Phase 1 — Staff Home** — 2026-09-25, committed
+`868de388ce3793fe5958b0772b215bde8f8af757`. Staff `/dashboard` simplified to
+Follow up now → Follow up today → New leads → Also check (compact cards,
+Call/WhatsApp), grouped from the canonical `DutyItem[]` (`lib/staff-home.ts`);
+one card per lead; no Duty wording. `getUnansweredConversations()` now
+excludes closed leads (Won/Lost/Invalid), so they no longer show as work.
+Admin Home unchanged. Production `dpl_GLfDNeYSLnuFSr72a4jrsVHoVRb1` Ready, SHA
+matches; production Staff and Admin smoke tests passed, 0 server errors.
+
+**Staff Tasks / Follow-ups** — 2026-09-25, committed
+`d5e226ac764411b12311afd860e871df8a166406`. Staff `/follow-ups` now shows only
+Follow up now → Follow up today → Upcoming (old "My Duty Now" card, "Needs a
+Next Step" and Duty wording removed; new leads stay on Home). Existing
+follow-up rows and their Complete action preserved (not seen live: 0 pending
+rows). Admin Follow-ups unchanged. Verified locally at 1440/360/390/414
+(Staff); production `dpl_AcFFMFhFiysqumNrTLyzRoaPHaFj` Ready, SHA matches;
+production Staff and Admin `/follow-ups` passed (Admin at desktop and mobile
+widths), 0 server errors.
+
 **2026-09-05** — This file restructured from 215k+ to under the 100k
 limit per explicit instruction: verbose per-session narratives compacted
 into the summary above, permanent rules deduplicated and reorganized under
 topic headings. No application code touched.
+
+**Lead Edit "Save & Next" + in-app push suppression** — 2026-10-25,
+NOT COMMITTED (picked up uncommitted from a prior session, verified this
+session). `updateLeadAndNext()` (`lib/actions/leads.ts`) resolves the next
+lead in the current list order/filters *before* saving, so a field edit
+that drops the lead out of its own filter can't corrupt "next"; last-lead
+case redirects back with `?noNext=1` instead of wrapping. `LeadForm`/
+`SubmitButton` gained a second independent `useActionState`-bound button
+so a failed save on either button only shows its own error. Fixed a real
+gap while verifying: `app/(app)/leads/page.tsx`'s List view (table rows +
+mobile cards) wasn't passing the already-computed `listQuery` into
+`LeadRow`/`LeadCard`, so entering Edit from List view (as opposed to
+Pipeline view, which already had it) silently lost the filter context —
+now threaded through. Separately, `public/sw.js` now suppresses the OS
+push banner and `postMessage`s the page instead when a same-origin CRM
+window is visible; unit-verified only (6 new cases in `lib/push/sw.test.ts`
+against the real shipped file) — Playwright can't simulate a real
+backgrounded-tab Web Push delivery, so that path has no live check.
+Verified: tsc/lint/build clean, 1227/1227 tests pass. Live-verified against
+production data (non-mutating same-value saves only) as both Admin and
+Staff at 1440×900/390×844/375×812: filtered-list → Save & Next → next lead
+with filters preserved; single-result list → Save & Next → same lead with
+the "no next lead" message; no horizontal overflow; 0 console errors.
+
+**Blueprint V1 adoption (docs-only)** — 2026-10-25, NOT application code.
+Added the Live Data Safety section, pointed Current Phase at
+`docs/BLUEPRINT_V1.md`, recorded four Blueprint decisions (pipeline status
+values, 4-tab bottom bar reconfirmed, Team & Permissions now approved,
+Ollama lead-assistant to be replaced by a provider setting), and removed
+Team from the deprioritized-nav list. No schema, RLS, or app code touched.

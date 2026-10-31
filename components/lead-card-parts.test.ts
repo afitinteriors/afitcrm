@@ -56,9 +56,10 @@ describe("LeadCard", () => {
 
   it("renders independent Call and WhatsApp actions", () => {
     const html = render(lead(), false);
-    expect(html).toContain('href="tel:');
+    // Call is a button (opens the mandatory outcome popup, R-CALL-001),
+    // not a bare tel: link -- see components/lead-actions/CallButton.tsx.
+    expect(html).toContain('<button type="button" aria-label="Call customer"');
     expect(html).toContain("wa.me");
-    expect(html).toContain('aria-label="Call customer"');
     expect(html).toContain('aria-label="WhatsApp customer"');
     expect(html).toContain("h-11 w-11");
   });
