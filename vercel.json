@@ -1,3 +1,13 @@
 {
-  "regions": ["hnd1"]
+  "regions": ["hnd1"],
+  "crons": [
+    {
+      "path": "/api/cron/response-timer",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/stage-timer",
+      "schedule": "*/30 * * * *"
+    }
+  ]
 }

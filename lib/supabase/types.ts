@@ -51,6 +51,11 @@ export type LeadRow = {
   merged_into_id: string | null;
   created_at: string;
   updated_at: string;
+  // R-STAGE-002 (docs/BLUEPRINT_V1.md Section 8): when `status` last
+  // changed -- maintained by the leads_set_status_changed_at trigger
+  // (supabase/migrations/20261031100000_leads_status_changed_at.sql), never
+  // written directly by application code.
+  status_changed_at: string;
   wa_message_id: string | null;
   wa_phone_number_id: string | null;
   wa_message_timestamp: string | null;

@@ -6,6 +6,7 @@ import {
   businessDatePlusDays,
   businessDayRangeToUtcBounds,
   businessMonthRange,
+  isBusinessHours,
   parseBusinessDateTime,
   toBusinessDateTimeLocal,
 } from "@/lib/business-time";
@@ -150,5 +151,39 @@ describe("display formatting is in IST", () => {
   it("H: date-only follow-up due dates render unchanged", () => {
     expect(formatDate("2026-09-25")).toMatch(/^25 Sept? 2026$/);
     expect(formatDate("2026-09-25")).toBe(formatDate("2026-09-25T00:00:00Z"));
+  });
+});
+
+describe("isBusinessHours -- R-LEAD-003 (docs/BLUEPRINT_V1.md Section 8)", () => {
+  // 9:00 IST = 03:30Z, 20:00 IST = 14:30Z.
+  it("09:00 IST (the start, inclusive) is within business hours", () => {
+    expect(isBusinessHours(new Date("2026-10-05T03:30:00Z"), 9, 20)).toBe(true);
+  });
+
+  it("08:59 IST (just before the start) is outside business hours", () => {
+    expect(isBusinessHours(new Date("2026-10-05T03:29:00Z"), 9, 20)).toBe(false);
+  });
+
+  it("19:59 IST (just before the end) is within business hours", () => {
+    expect(isBusinessHours(new Date("2026-10-05T14:29:00Z"), 9, 20)).toBe(true);
+  });
+
+  it("20:00 IST (the end, exclusive) is outside business hours", () => {
+    expect(isBusinessHours(new Date("2026-10-05T14:30:00Z"), 9, 20)).toBe(false);
+  });
+
+  it("midday is within business hours, midnight is not", () => {
+    expect(isBusinessHours(new Date("2026-10-05T08:00:00Z"), 9, 20)).toBe(true); // 13:30 IST
+    expect(isBusinessHours(new Date("2026-10-05T18:30:00Z"), 9, 20)).toBe(false); // 00:00 IST
+  });
+
+  it("does not depend on the process time zone", () => {
+    const original = process.env.TZ;
+    for (const tz of ["UTC", "America/Los_Angeles", "Pacific/Auckland"]) {
+      process.env.TZ = tz;
+      expect(isBusinessHours(new Date("2026-10-05T03:30:00Z"), 9, 20)).toBe(true);
+      expect(isBusinessHours(new Date("2026-10-05T14:30:00Z"), 9, 20)).toBe(false);
+    }
+    process.env.TZ = original;
   });
 });

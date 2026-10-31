@@ -119,9 +119,17 @@ as of 2026-10-25 (Blueprint V1 §2/§12; UI preview already committed,
 `Invalid` may exist internally for schema/data compatibility but is
 **never a user-facing pipeline stage.**
 
-The closed/default Lead Detail UI shows **only the current stage** — never
+**Superseded 2026-10-31** (owner-approved, see Blueprint V1 Decisions): Lead
+Detail now shows a permanent pipeline stepper (New → ... → Won/Lost) at the
+top of the page — a presentational progress indicator only. The stage
+selector (`StatusSelect`) remains the one functional control that actually
+changes `leads.status`; the stepper never writes to the database itself.
+This replaces the previous "only the current stage, never a permanent
+chain" rule below, which is kept here for history:
+
+~~The closed/default Lead Detail UI shows only the current stage — never
 the full New→...→Lost chain as a permanent section. The stage selector may
-expose all 8 when opened; the rest of the page stays compact.
+expose all 8 when opened; the rest of the page stays compact.~~
 
 **Stage-aware Lead Detail** (implemented via `lib/lead-stage-sections.ts`'s
 `STAGE_SECTIONS` config, gating which sections/actions render per stage —
@@ -522,9 +530,38 @@ in order, one per session.
 
 ## Blueprint V1 Decisions (Recorded)
 
-Decisions below are binding (owner-approved, 2026-10-25). This was a
-docs-only session — none of these are implemented in code or schema yet.
-Whoever builds the relevant phase implements them then, not before.
+Decisions below are binding (owner-approved, 2026-10-25 unless noted).
+
+- **Phase 4 rules engine, R-LEAD-003 + R-STAGE-002 only (owner-approved
+  2026-10-31)**: Vercel Cron (`vercel.json`) drives two routes --
+  `/api/cron/response-timer` (every 5 min: R-LEAD-003, no call logged/no
+  outbound WhatsApp reply within 15 min alerts the assigned staff, 30 min
+  escalates to every admin) and `/api/cron/stage-timer` (every 30 min:
+  R-STAGE-002 for Qualified/2d, Site Visit/2d-after-visit-date,
+  Negotiation/7d only -- Quotation's day-1/3/7 follow-up cadence is not a
+  single hard limit and was left out). Alerts reuse the existing
+  notifications/push infra, deduped via `notifications.dedupe_key`.
+  Business hours (9:00-20:00 IST) gate sending, simplified to "skip
+  outside the window" rather than a true pause/resume per-lead timer.
+  `leads.status_changed_at` (new column + trigger,
+  `supabase/migrations/20261031100000_leads_status_changed_at.sql`) backs
+  the stage timer. R-LEAD-004 (needs the unbuilt AI agent), R-FUP-002, and
+  R-MSG-002 are still not built. Requires a `CRON_SECRET` env var in
+  Vercel (not committed) before this works in production.
+
+- **Lead Detail redesign (owner-approved 2026-10-31)**: two-column layout
+  (HubSpot/Pipedrive style) replacing the previous stacked single-column
+  page. Permanent pipeline stepper at the top (presentational only --
+  `StatusSelect` is still the one control that writes `leads.status`).
+  Left column: compact identity/contact panel (avatar, phone, source/
+  location badges, WhatsApp/Call/Edit, stage selector), Assigned-to,
+  Next Action, and Mark Won/Lost (now behind a confirm modal, same
+  `markLeadWon()`/`markLeadLost()` actions as before -- no new write
+  path). Right column: Overview, Follow-ups, Site Visit, Quotation,
+  Qualification (score ring added, same computed score), Commercial,
+  Conversation, admin Activity -- same sections/stage-gating as before,
+  just relaid out. Superseded the "only current stage, never a permanent
+  chain" rule above.
 
 - **Pipeline status values**: keep all existing stored status values
   as-is. Add a new `visit_scheduled` value when Blueprint Phase 2/7 is

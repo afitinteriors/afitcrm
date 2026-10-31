@@ -24,9 +24,10 @@ function isPipelineStatus(s: LeadStatus): boolean {
 // silently skip markLeadWon's job_value capture and, worse, markLeadLost's
 // *required* lost_reason. That was a real, previously-reachable path to a
 // "lost" lead with no reason recorded at all. Instead, picking either one
-// reverts the visible selection and opens/scrolls to the Close Lead section
-// (#close-lead) below, which captures that context properly. The server
-// action rejects these transitions too (see setLeadStatus in
+// reverts the visible selection and scrolls to the Close Lead section
+// (#close-lead) below -- CloseLeadActions' "Mark won"/"Mark lost" buttons,
+// which open the confirm modal that actually captures that context. The
+// server action rejects these transitions too (see setLeadStatus in
 // lib/actions/leads.ts) -- this client redirect is a courtesy, not the
 // enforcement.
 export function StatusSelect({ leadId, status }: { leadId: string; status: LeadStatus }) {
@@ -94,14 +95,10 @@ export function StatusSelect({ leadId, status }: { leadId: string; status: LeadS
             if (next === "won" || next === "lost") {
               // Not a real status change -- revert the DOM selection (no
               // state update happens, so React won't do this on its own)
-              // and send the user to the form that actually captures the
-              // required data for that transition.
+              // and scroll to the section with the buttons that actually
+              // capture the required data for that transition.
               e.currentTarget.value = selectValue;
-              const section = document.getElementById("close-lead");
-              if (section instanceof HTMLDetailsElement) {
-                section.open = true;
-                section.scrollIntoView({ behavior: "smooth", block: "start" });
-              }
+              document.getElementById("close-lead")?.scrollIntoView({ behavior: "smooth", block: "center" });
               return;
             }
 

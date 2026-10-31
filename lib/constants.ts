@@ -190,3 +190,16 @@ export const UNPAGINATED_LIST_QUERY_LIMIT = 1000;
 // R-LOST-001 (docs/BLUEPRINT_V1.md Section 8): minimum resolved call_logs
 // rows a lead must have before it can be marked Lost.
 export const MIN_CALLS_BEFORE_LOST = 3;
+
+// R-LEAD-003 (docs/BLUEPRINT_V1.md Section 8): "A new lead must get a first
+// response within 15 minutes ... lead turns red ... staff at 15 min, owner
+// at 30 min." Editable in Settings per the blueprint; hard-coded here as the
+// default until a Settings page for rule timers exists (Blueprint V1
+// Decisions, CLAUDE.md).
+export const RESPONSE_ALERT_STAFF_MINUTES = 15;
+export const RESPONSE_ALERT_OWNER_MINUTES = 30;
+
+// Section 8: "Business hours default to 9:00 to 20:00 IST; timers pause
+// outside them." Same Settings-later caveat as above.
+export const BUSINESS_HOURS_START_HOUR = 9;
+export const BUSINESS_HOURS_END_HOUR = 20;
