@@ -2,7 +2,7 @@ import { cache } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import type { Database, LeadRow, LeadStatus } from "@/lib/supabase/types";
-import { LEAD_STATUSES, OPEN_LEAD_STATUSES, UNPAGINATED_LIST_QUERY_LIMIT } from "@/lib/constants";
+import { LEAD_STATUSES, OPEN_LEAD_STATUSES, STAGE_WIN_CHANCE, UNPAGINATED_LIST_QUERY_LIMIT } from "@/lib/constants";
 import { getCurrentProfile, type CurrentProfile } from "@/lib/auth";
 import { recordAuditEvent } from "@/lib/audit";
 import { businessDate, businessDateOf, businessDayRangeToUtcBounds } from "@/lib/business-time";
@@ -194,6 +194,21 @@ const EMPTY_DASHBOARD_STATS: DashboardStats = {
   siteVisitScheduledCount: 0,
   statusBreakdown: EMPTY_STATUS_BREAKDOWN,
 };
+
+// Blueprint V1 Section 10 (docs/BLUEPRINT_V1.md): "Expected business this
+// month (open deal value x stage win chance)." A pure pipeline-value
+// forecast over already-fetched leads -- no DB round trip of its own, same
+// pattern as buildLeadsQueryString() above. Only OPEN_LEAD_STATUSES leads
+// contribute; Won/Lost/Invalid are excluded (won is realized revenue, not
+// a forecast, and lost/invalid never convert). Value fallback
+// (quotation_amount ?? job_value ?? 0) matches the existing stalledValue/
+// activeDeals convention in components/dashboard/AdminHome.tsx and
+// app/(app)/dashboard/page.tsx.
+export function calculateExpectedBusiness(leads: Pick<LeadRow, "status" | "quotation_amount" | "job_value">[]): number {
+  return leads
+    .filter((lead) => OPEN_LEAD_STATUSES.includes(lead.status))
+    .reduce((sum, lead) => sum + (lead.quotation_amount ?? lead.job_value ?? 0) * STAGE_WIN_CHANCE[lead.status], 0);
+}
 
 export async function getDashboardStats(): Promise<DashboardStats> {
   const profile = await getCurrentProfile();

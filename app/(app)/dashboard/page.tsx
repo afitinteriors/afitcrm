@@ -14,7 +14,7 @@ import {
   getTodaysSchedule,
 } from "@/lib/dashboard-brain";
 import { getFollowUps } from "@/lib/follow-ups";
-import { getLeads, getStaffOverview, getDashboardStats } from "@/lib/leads";
+import { getLeads, getStaffOverview, getDashboardStats, calculateExpectedBusiness } from "@/lib/leads";
 import { groupBySiteVisitDate, type SiteVisitLead } from "@/lib/site-visits";
 import { buildStaffHome } from "@/lib/staff-home";
 import { businessDate, businessDateOf } from "@/lib/business-time";
@@ -59,6 +59,10 @@ export default async function DashboardPage() {
     const withVisit = allLeads.filter((lead): lead is SiteVisitLead => lead.site_visit_date !== null);
     const siteVisitGroups = groupBySiteVisitDate(withVisit);
 
+    // Blueprint V1 Section 10 (docs/BLUEPRINT_V1.md): "Expected business
+    // this month (open deal value x stage win chance)."
+    const expectedBusiness = calculateExpectedBusiness(allLeads);
+
     return (
       <AdminHome
         queue={queue}
@@ -75,6 +79,7 @@ export default async function DashboardPage() {
         activeDeals={activeDeals}
         siteVisitsToday={siteVisitGroups.today}
         siteVisitsUpcoming={siteVisitGroups.upcoming.slice(0, 5)}
+        expectedBusiness={expectedBusiness}
       />
     );
   }
