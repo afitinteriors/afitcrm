@@ -65,6 +65,12 @@ export type LeadRow = {
   // "photo" half of "photo or reference" is not built -- see
   // supabase/migrations/20261031120000_leads_advance_proof_reference.sql.
   advance_proof_reference: string | null;
+  // Blueprint V1 Section 7: recorded once the "Visit done" step happens --
+  // see supabase/migrations/20261031150000_leads_site_visit_measurements.sql.
+  // "Photos" is a free-text reference for the same reason
+  // advance_proof_reference is: no staff-upload storage flow exists yet.
+  site_visit_measurements: string | null;
+  site_visit_photo_reference: string | null;
   wa_message_id: string | null;
   wa_phone_number_id: string | null;
   wa_message_timestamp: string | null;

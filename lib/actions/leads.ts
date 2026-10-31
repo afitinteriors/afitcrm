@@ -565,6 +565,45 @@ export async function setSiteVisitDate(_prevState: ActionState, formData: FormDa
   return null;
 }
 
+// Blueprint V1 Section 7: the "Visit done" step -- recorded once the site
+// visit has actually happened, separate from setSiteVisitDate() which only
+// schedules it. Same "activity record, not a stage transition" rule: this
+// never touches leads.status.
+export async function setSiteVisitDetails(_prevState: ActionState, formData: FormData): Promise<ActionState> {
+  const leadId = str(formData, "lead_id");
+  const measurements = optionalStr(formData, "site_visit_measurements");
+  const photoReference = optionalStr(formData, "site_visit_photo_reference");
+  if (!measurements && !photoReference) {
+    return { error: "Add measurements or a photo reference for the visit." };
+  }
+
+  const supabase = await createClient();
+  const accessError = await checkLeadAccess(supabase, leadId);
+  if (accessError) return accessError;
+
+  const visitDetailsUpdate: LeadUpdate = {
+    site_visit_measurements: measurements,
+    site_visit_photo_reference: photoReference,
+  };
+  const { error } = await supabase.from("leads").update(visitDetailsUpdate).eq("id", leadId);
+
+  revalidateLead(leadId);
+  if (error) return { error: error.message };
+
+  const profile = await getCurrentProfile();
+  if (profile) {
+    await recordAuditEvent({
+      actorId: profile.id,
+      action: "lead_updated",
+      targetType: "lead",
+      targetId: leadId,
+      metadata: { fields_changed: Object.keys(visitDetailsUpdate) },
+    });
+  }
+
+  return null;
+}
+
 // Admin-only, hard delete -- no soft-delete/archive concept exists in this
 // schema (unlike the merge system's merged_into_id soft-retirement), so
 // this is a real, irreversible row removal. leads_delete_admin_only (RLS)
