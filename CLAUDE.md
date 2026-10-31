@@ -532,6 +532,21 @@ in order, one per session.
 
 Decisions below are binding (owner-approved, 2026-10-25 unless noted).
 
+- **Phase 7, R-QUOTE-002 discount approval, no Telegram (owner-approved
+  2026-10-31)**: "Discount above the owner's limit needs owner approval in
+  Telegram" -- Telegram/Hermes don't exist yet (Phase 5), so this is an
+  in-app approval gate instead, with the owner alerted via the existing
+  notifications/push infra (same `lib/rules/alert.ts` R-LEAD-003/
+  R-STAGE-002 already use) rather than Telegram. "Discount" is measured
+  against a quotation's own version 1 (`lib/quotation-discount.ts`) --
+  this app has no catalog/list-price concept to discount from instead.
+  `DISCOUNT_APPROVAL_LIMIT_PERCENT` (default 5, `lib/constants.ts`) gates
+  `sendQuotation()`: a later version priced more than that far below v1
+  cannot be marked sent until an admin calls the new
+  `approveQuotationDiscount()` action. Verified live, including the full
+  staff-creates-discount -> admin-alerted -> admin-approves -> staff-sends
+  round trip.
+
 - **Phase 4 rules engine, R-FUP-002 + R-MSG-002 (owner-approved
   2026-10-31)**: R-FUP-002 -- `resolveCallOutcome()` (lib/actions/calls.ts)
   best-effort-triggers `lib/whatsapp/missed-call-template.ts` on a

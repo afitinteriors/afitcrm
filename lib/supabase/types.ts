@@ -453,6 +453,12 @@ export type QuotationRow = {
   created_at: string;
   updated_at: string;
   sent_at: string | null;
+  // R-QUOTE-002 (docs/BLUEPRINT_V1.md Section 8): set once an admin
+  // approves this version's discount (measured against v1 -- see
+  // lib/actions/quotations.ts). Null means not approved (not required, or
+  // still pending).
+  discount_approved_by: string | null;
+  discount_approved_at: string | null;
 };
 
 export type QuotationInsert = {

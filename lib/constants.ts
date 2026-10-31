@@ -203,3 +203,9 @@ export const RESPONSE_ALERT_OWNER_MINUTES = 30;
 // outside them." Same Settings-later caveat as above.
 export const BUSINESS_HOURS_START_HOUR = 9;
 export const BUSINESS_HOURS_END_HOUR = 20;
+
+// R-QUOTE-002 (docs/BLUEPRINT_V1.md Section 8): "Discount above the
+// owner's limit needs owner approval ... Limit 5%, Azhar enters 8% ->
+// approval request." Same Settings-later caveat as above. Measured against
+// a quotation's own version 1 -- see lib/actions/quotations.ts.
+export const DISCOUNT_APPROVAL_LIMIT_PERCENT = 5;

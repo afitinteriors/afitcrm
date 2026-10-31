@@ -1,7 +1,9 @@
 "use client";
 
 import { useActionState } from "react";
-import { saveQuotationDraft, sendQuotation } from "@/lib/actions/quotations";
+import { approveQuotationDiscount, saveQuotationDraft, sendQuotation } from "@/lib/actions/quotations";
+import { discountPercent, needsDiscountApproval } from "@/lib/quotation-discount";
+import { DISCOUNT_APPROVAL_LIMIT_PERCENT } from "@/lib/constants";
 import { SubmitButton } from "@/components/SubmitButton";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 import type { QuotationRow } from "@/lib/supabase/types";
@@ -11,14 +13,34 @@ import type { QuotationRow } from "@/lib/supabase/types";
 // first (lib/quotations.ts's getQuotationsForLead) -- [0] is "current".
 // The caller passes key={quotations[0]?.id ?? "new"} so this remounts
 // (resetting form state/defaultValue) whenever the latest version changes
-// -- a new version created, or the current one flips draft -> sent.
-export function QuotationManager({ leadId, quotations }: { leadId: string; quotations: QuotationRow[] }) {
+// -- a new version created, or the current one flips draft -> sent. An
+// approval alone does NOT change which row is "latest", so it does not
+// need a remount -- the fresh `quotations` prop re-renders this in place.
+export function QuotationManager({
+  leadId,
+  quotations,
+  isAdmin,
+}: {
+  leadId: string;
+  quotations: QuotationRow[];
+  isAdmin: boolean;
+}) {
   const latest = quotations[0] ?? null;
   const history = quotations.slice(1);
   const isDraft = latest?.status === "draft";
 
+  const v1 = quotations.find((q) => q.version === 1) ?? null;
+  // R-QUOTE-002 (docs/BLUEPRINT_V1.md Section 8): discount is measured
+  // against v1 -- see lib/quotation-discount.ts for why. v1 itself is
+  // never "discounted" against anything.
+  const discountPct = latest && v1 && latest.version > 1 ? discountPercent(v1.amount, latest.amount) : 0;
+  const needsApproval = needsDiscountApproval(discountPct, DISCOUNT_APPROVAL_LIMIT_PERCENT);
+  const isApproved = Boolean(latest?.discount_approved_at);
+  const blockedBySendGate = needsApproval && !isApproved;
+
   const [draftState, draftAction] = useActionState(saveQuotationDraft, null);
   const [sendState, sendAction] = useActionState(sendQuotation, null);
+  const [approveState, approveAction] = useActionState(approveQuotationDiscount, null);
 
   return (
     <div className="space-y-4">
@@ -39,7 +61,29 @@ export function QuotationManager({ leadId, quotations }: { leadId: string; quota
           {latest.notes && <p className="mt-1 text-xs text-surface-foreground-muted">{latest.notes}</p>}
           {latest.sent_at && <p className="mt-1 text-xs text-surface-foreground-muted">Sent {formatDateTime(latest.sent_at)}</p>}
 
-          {isDraft && (
+          {needsApproval && (
+            <p className={`mt-2 text-xs font-medium ${isApproved ? "text-success" : "text-warning"}`}>
+              {isApproved
+                ? `Discount ${Math.round(discountPct)}% approved`
+                : `Discount ${Math.round(discountPct)}% exceeds the ${DISCOUNT_APPROVAL_LIMIT_PERCENT}% limit -- needs admin approval before it can be sent.`}
+            </p>
+          )}
+
+          {isDraft && blockedBySendGate && isAdmin && (
+            <form action={approveAction} className="mt-3">
+              <input type="hidden" name="quotation_id" value={latest.id} />
+              <input type="hidden" name="lead_id" value={leadId} />
+              {approveState?.error && <p className="mb-2 text-xs text-danger">{approveState.error}</p>}
+              <SubmitButton
+                className="h-9 rounded-md border border-warning/40 px-3 text-xs font-medium text-warning hover:bg-warning/10 disabled:opacity-60"
+                pendingLabel="Approving…"
+              >
+                Approve discount
+              </SubmitButton>
+            </form>
+          )}
+
+          {isDraft && !blockedBySendGate && (
             <form action={sendAction} className="mt-3">
               <input type="hidden" name="quotation_id" value={latest.id} />
               <input type="hidden" name="lead_id" value={leadId} />

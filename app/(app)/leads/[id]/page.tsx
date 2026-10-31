@@ -4,6 +4,7 @@ import { getLeadById } from "@/lib/leads";
 import { getFollowUpsForLead } from "@/lib/follow-ups";
 import { getLeadEngagement } from "@/lib/conversations";
 import { getQuotationsForLead } from "@/lib/quotations";
+import { getCurrentProfile } from "@/lib/auth";
 import { Card } from "@/components/Card";
 import { StatusSelect } from "@/components/lead-actions/StatusSelect";
 import { PipelineStepper } from "@/components/lead-actions/PipelineStepper";
@@ -46,11 +47,12 @@ export default async function LeadDetailPage({
   // carried through to the Edit link so "Save & Next" resolves against the
   // right list.
   const listQuery = buildLeadsQueryString({ search: sp.search, status: sp.status, campaign: sp.campaign });
-  const [lead, followUps, engagement, quotations] = await Promise.all([
+  const [lead, followUps, engagement, quotations, profile] = await Promise.all([
     getLeadById(id),
     getFollowUpsForLead(id),
     getLeadEngagement(id),
     getQuotationsForLead(id),
+    getCurrentProfile(),
   ]);
   if (!lead) notFound();
 
@@ -318,7 +320,12 @@ export default async function LeadDetailPage({
                   latest version actually changes -- a new version created,
                   or the current one flips draft -> sent -- same idiom as
                   CloseLeadActions' key={lead.status} above. */}
-              <QuotationManager key={quotations[0]?.id ?? "new"} leadId={lead.id} quotations={quotations} />
+              <QuotationManager
+                key={quotations[0]?.id ?? "new"}
+                leadId={lead.id}
+                quotations={quotations}
+                isAdmin={profile?.role === "admin"}
+              />
               <p className="mt-2 text-xs text-surface-foreground-muted">
                 R-QUOTE-001: a sent quotation is locked -- a change creates a new version. Saving here does not change the pipeline
                 stage; the current amount is shown under Commercial.
