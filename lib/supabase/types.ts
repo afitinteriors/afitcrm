@@ -89,6 +89,11 @@ export type ProfileRow = {
   role: ProfileRole;
   display_name: string | null;
   telegram_username: string | null;
+  // Blueprint V1 Section 9: set by the Telegram webhook the first time this
+  // staff member messages the bot -- see
+  // supabase/migrations/20261031170000_profiles_telegram_chat_id.sql. Null
+  // means not linked yet; Hermes cannot message them until it is.
+  telegram_chat_id: string | null;
   active: boolean;
   created_at: string;
   updated_at: string;
@@ -99,10 +104,11 @@ export type ProfileInsert = {
   role: ProfileRole;
   display_name?: string | null;
   telegram_username?: string | null;
+  telegram_chat_id?: string | null;
   active?: boolean;
 };
 
-export type ProfileUpdate = Partial<Pick<ProfileRow, "role" | "display_name" | "telegram_username" | "active">>;
+export type ProfileUpdate = Partial<Pick<ProfileRow, "role" | "display_name" | "telegram_username" | "telegram_chat_id" | "active">>;
 
 export type ConversationStatus = "open" | "closed";
 
