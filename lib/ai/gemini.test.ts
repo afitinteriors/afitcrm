@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { generateReply, GeminiError } from "./gemini";
+import { generateReply, generateStructured, GeminiError } from "./gemini";
 
 describe("generateReply", () => {
   const originalKey = process.env.GEMINI_API_KEY;
@@ -81,5 +81,49 @@ describe("generateReply", () => {
 
       await expect(generateReply("s", "u")).rejects.toMatchObject({ code: "empty_response" });
     });
+  });
+});
+
+describe("generateStructured", () => {
+  const originalKey = process.env.GEMINI_API_KEY;
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    process.env.GEMINI_API_KEY = originalKey;
+    global.fetch = originalFetch;
+  });
+
+  beforeEach(() => {
+    process.env.GEMINI_API_KEY = "test-gemini-key";
+  });
+
+  const SCHEMA = { type: "OBJECT" as const, properties: { answered: { type: "BOOLEAN" as const }, value: { type: "STRING" as const } }, required: ["answered", "value"] };
+
+  it("sends responseMimeType/responseSchema and parses the JSON response", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ candidates: [{ content: { parts: [{ text: '{"answered":true,"value":"Kollam"}' }] } }] }) });
+    global.fetch = fetchMock as never;
+
+    const result = await generateStructured<{ answered: boolean; value: string }>("system", "user", SCHEMA);
+
+    const [, options] = fetchMock.mock.calls[0];
+    const body = JSON.parse((options as { body: string }).body);
+    expect(body.generationConfig.responseMimeType).toBe("application/json");
+    expect(body.generationConfig.responseSchema).toEqual(SCHEMA);
+    expect(result).toEqual({ answered: true, value: "Kollam" });
+  });
+
+  it("throws empty_response (not a raw JSON parse crash) when Gemini returns malformed JSON", async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ candidates: [{ content: { parts: [{ text: "not json" }] } }] }) }) as never;
+
+    await expect(generateStructured("s", "u", SCHEMA)).rejects.toMatchObject({ code: "empty_response" });
+  });
+
+  it("throws not_configured before any network call when the key is missing", async () => {
+    delete process.env.GEMINI_API_KEY;
+    const fetchMock = vi.fn();
+    global.fetch = fetchMock as never;
+
+    await expect(generateStructured("s", "u", SCHEMA)).rejects.toMatchObject({ code: "not_configured" });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

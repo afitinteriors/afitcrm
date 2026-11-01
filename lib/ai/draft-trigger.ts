@@ -2,7 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 import { draftFirstReply } from "@/lib/ai/first-reply";
-import { RealOutboundSender } from "@/lib/automations/outbound-sender";
+import { deliverAiMessage } from "@/lib/ai/deliver";
 
 export type AiDraftTriggerParams = {
   conversationId: string;
@@ -18,8 +18,11 @@ export type AiDraftTriggerParams = {
 // automation triggering: the caller catches, this never blocks message
 // ingestion.
 //
-// Scoped to the FIRST response only (see lib/ai/first-reply.ts's own
-// comment): skipped entirely once this conversation has sent any outbound
+// Scoped to the FIRST response only -- a brand new conversation, nothing
+// asked yet. Increment 2's lib/ai/session-trigger.ts picks up everything
+// after that (lib/whatsapp/ingest.ts checks for an active session before
+// ever reaching this function, so the two never both fire for the same
+// message). Skipped entirely once this conversation has sent any outbound
 // message, or already has an undealt-with pending draft.
 export async function triggerAiDraftForMessage(supabase: SupabaseClient<Database>, params: AiDraftTriggerParams): Promise<void> {
   if (!params.leadId || !params.messageBody) return;
@@ -44,17 +47,5 @@ export async function triggerAiDraftForMessage(supabase: SupabaseClient<Database
   const draft = await draftFirstReply({ ...lead, messageBody: params.messageBody });
   if (!draft) return; // Gemini not configured -- skip silently, same as the not_configured guard elsewhere.
 
-  if (settings.mode === "automatic") {
-    const sender = new RealOutboundSender(supabase);
-    await sender.sendText(params.conversationId, draft);
-    return;
-  }
-
-  const { error } = await supabase
-    .from("conversations")
-    .update({ pending_ai_draft: draft, pending_ai_draft_created_at: new Date().toISOString() })
-    .eq("id", params.conversationId);
-  if (error) {
-    throw new Error(`Failed to save the AI's pending draft: ${error.message}`);
-  }
+  await deliverAiMessage(supabase, { conversationId: params.conversationId, mode: settings.mode, text: draft.text, kind: "question", field: draft.field });
 }

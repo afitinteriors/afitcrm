@@ -53,7 +53,7 @@ const LEAD = { service_required: "Gypsum", project_type: null, location: null, e
 
 describe("triggerAiDraftForMessage", () => {
   beforeEach(() => {
-    draftFirstReplyMock.mockReset().mockResolvedValue("Hi! Could you share your site location?");
+    draftFirstReplyMock.mockReset().mockResolvedValue({ text: "Hi! Could you share your site location?", field: "location" });
     sendTextMock.mockClear();
   });
 
@@ -98,13 +98,14 @@ describe("triggerAiDraftForMessage", () => {
     expect(updateCalls[0].payload).toMatchObject({ pending_ai_draft: "Hi! Could you share your site location?" });
   });
 
-  it("sends immediately via RealOutboundSender in automatic mode, without saving a draft", async () => {
+  it("sends immediately via RealOutboundSender in automatic mode, without saving a draft, and starts the session", async () => {
     const { stub, updateCalls } = createFakeSupabase({ settings: { enabled: true, mode: "automatic" }, lead: LEAD });
 
     await triggerAiDraftForMessage(stub, { conversationId: "c1", leadId: "l1", messageBody: "hi" });
 
     expect(sendTextMock).toHaveBeenCalledWith("c1", "Hi! Could you share your site location?");
-    expect(updateCalls).toHaveLength(0);
+    expect(updateCalls).toHaveLength(1);
+    expect(updateCalls[0].payload).toMatchObject({ ai_session_status: "asking", ai_pending_field: "location" });
   });
 
   it("does nothing when the AI declines to draft (not configured)", async () => {

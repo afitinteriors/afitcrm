@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 import { triggerAutomationForMessage } from "@/lib/automations/trigger";
 import { triggerAiDraftForMessage } from "@/lib/ai/draft-trigger";
+import { continueAiSession } from "@/lib/ai/session-trigger";
 import { createOrLinkLeadForConversation } from "@/lib/automations/crm-actions";
 import { toCanonicalPhone } from "@/lib/phone";
 import { isOptOutMessage } from "@/lib/whatsapp/opt-out";
@@ -294,32 +295,51 @@ export async function ingestInboundMessage(
   // message itself -- "stop" is not a service inquiry, and auto-replying
   // to it would defeat the point of the opt-out.
   if (!optedOut) {
-    let automationResult;
+    // Blueprint V1 Phase 6, increment 2: a conversation already mid AI
+    // qualification must never also be matched against an automation flow
+    // or re-trigger increment 1's first-reply logic -- this message is
+    // this conversation's answer to the AI's last question, not a fresh
+    // inbound inquiry. Checked first, same best-effort shape as every
+    // other trigger here.
+    let aiSessionHandled = false;
     try {
-      automationResult = await triggerAutomationForMessage(supabase, {
-        messageId: inserted.id,
+      aiSessionHandled = await continueAiSession(supabase, {
         conversationId,
-        body: message.body,
-        phone: message.fromPhone,
-        customerName: message.customerName,
+        leadId,
+        messageBody: message.body,
       });
     } catch (err) {
-      console.error("Automation trigger failed unexpectedly:", err instanceof Error ? err.message : err);
+      console.error("AI session continuation failed unexpectedly:", err instanceof Error ? err.message : err);
     }
 
-    // Blueprint V1 Phase 6: the AI agent only gets a turn when no
-    // admin-configured automation flow matched -- see
-    // lib/ai/draft-trigger.ts's own comment for why. Same best-effort
-    // shape as automation triggering above.
-    if (automationResult?.status === "no_match") {
+    if (!aiSessionHandled) {
+      let automationResult;
       try {
-        await triggerAiDraftForMessage(supabase, {
+        automationResult = await triggerAutomationForMessage(supabase, {
+          messageId: inserted.id,
           conversationId,
-          leadId,
-          messageBody: message.body,
+          body: message.body,
+          phone: message.fromPhone,
+          customerName: message.customerName,
         });
       } catch (err) {
-        console.error("AI draft trigger failed unexpectedly:", err instanceof Error ? err.message : err);
+        console.error("Automation trigger failed unexpectedly:", err instanceof Error ? err.message : err);
+      }
+
+      // Blueprint V1 Phase 6: the AI agent only gets a turn when no
+      // admin-configured automation flow matched -- see
+      // lib/ai/draft-trigger.ts's own comment for why. Same best-effort
+      // shape as automation triggering above.
+      if (automationResult?.status === "no_match") {
+        try {
+          await triggerAiDraftForMessage(supabase, {
+            conversationId,
+            leadId,
+            messageBody: message.body,
+          });
+        } catch (err) {
+          console.error("AI draft trigger failed unexpectedly:", err instanceof Error ? err.message : err);
+        }
       }
     }
   }

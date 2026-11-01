@@ -33,6 +33,39 @@ export class GeminiError extends Error {
 // lib/ai/first-reply.ts), keeping this wrapper a thin, swappable transport
 // rather than something that encodes AFIT-specific conversation shape.
 export async function generateReply(systemInstruction: string, userText: string): Promise<string> {
+  const text = await callGemini(systemInstruction, userText);
+  return text;
+}
+
+// JSON Schema subset Gemini's responseSchema accepts (uppercase type
+// names, per the REST API -- see lib/ai/qualification.ts's callers).
+export type GeminiJsonSchema = {
+  type: "OBJECT" | "STRING" | "NUMBER" | "BOOLEAN" | "ARRAY";
+  properties?: Record<string, GeminiJsonSchema>;
+  required?: string[];
+  items?: GeminiJsonSchema;
+};
+
+// Structured extraction (Blueprint V1 Phase 6, increment 2): used where
+// the caller needs a typed value back, not free text -- e.g. "did the
+// customer answer the location question, and what did they say?" Keeping
+// this a generic transport (caller supplies the schema and does its own
+// parsing/validation of the returned JSON) rather than baking AFIT-specific
+// shapes in here, same separation as generateReply/lib/ai/first-reply.ts.
+export async function generateStructured<T>(systemInstruction: string, userText: string, schema: GeminiJsonSchema): Promise<T> {
+  const text = await callGemini(systemInstruction, userText, { responseMimeType: "application/json", responseSchema: schema });
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new GeminiError("empty_response", "Gemini returned invalid JSON.");
+  }
+}
+
+async function callGemini(
+  systemInstruction: string,
+  userText: string,
+  jsonConfig?: { responseMimeType: "application/json"; responseSchema: GeminiJsonSchema },
+): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new GeminiError("not_configured", "GEMINI_API_KEY is not configured.");
@@ -48,7 +81,7 @@ export async function generateReply(systemInstruction: string, userText: string)
     body: JSON.stringify({
       system_instruction: { parts: [{ text: systemInstruction }] },
       contents: [{ parts: [{ text: userText }] }],
-      generationConfig: { maxOutputTokens: 400 },
+      generationConfig: { maxOutputTokens: 400, ...jsonConfig },
     }),
   });
 
