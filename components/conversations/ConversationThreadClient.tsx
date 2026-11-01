@@ -4,6 +4,7 @@ import Link from "next/link";
 import { MobileChatHeader } from "@/components/conversations/MobileChatHeader";
 import { LeadDetailsContent } from "@/components/conversations/LeadDetailsContent";
 import { ReplyComposer } from "@/components/conversations/ReplyComposer";
+import { AiDraftCard } from "@/components/conversations/AiDraftCard";
 import { LiveMessageList } from "@/components/conversations/LiveMessageList";
 import { useLiveMessages } from "@/lib/realtime/conversations";
 import type { ConversationDetail, MessageListItem } from "@/lib/conversations";
@@ -34,7 +35,11 @@ export function ConversationThreadClient({
         <div className="min-h-0 flex-1 overflow-y-auto bg-muted p-3" data-scroll-container>
           <LiveMessageList messages={messages} lastUpdateSource={lastUpdateSource} />
         </div>
-        <ReplyComposer conversationId={conversation.id} />
+        {conversation.pending_ai_draft ? (
+          <AiDraftCard conversationId={conversation.id} draftText={conversation.pending_ai_draft} />
+        ) : (
+          <ReplyComposer conversationId={conversation.id} />
+        )}
       </div>
 
       {/* Desktop: three-column workspace -- this thread is the center
@@ -53,7 +58,11 @@ export function ConversationThreadClient({
           <div className="min-h-0 flex-1 overflow-y-auto bg-muted p-4" data-scroll-container>
             <LiveMessageList messages={messages} lastUpdateSource={lastUpdateSource} />
           </div>
-          <ReplyComposer conversationId={conversation.id} />
+          {conversation.pending_ai_draft ? (
+            <AiDraftCard conversationId={conversation.id} draftText={conversation.pending_ai_draft} />
+          ) : (
+            <ReplyComposer conversationId={conversation.id} />
+          )}
         </div>
 
         <div className="w-72 shrink-0 overflow-y-auto rounded-xl border border-border bg-card shadow-sm">

@@ -120,6 +120,11 @@ export type ConversationRow = {
   status: ConversationStatus;
   created_at: string;
   updated_at: string;
+  // Blueprint V1 Phase 6: the AI agent's drafted first reply, waiting for
+  // staff to send/edit/discard in draft mode. Null = no pending draft. See
+  // supabase/migrations/20261101090000_ai_agent_settings_and_drafts.sql.
+  pending_ai_draft: string | null;
+  pending_ai_draft_created_at: string | null;
 };
 
 export type ConversationInsert = Partial<Omit<ConversationRow, "id" | "created_at" | "updated_at">> & {
@@ -128,6 +133,21 @@ export type ConversationInsert = Partial<Omit<ConversationRow, "id" | "created_a
 };
 
 export type ConversationUpdate = Partial<Omit<ConversationRow, "id" | "created_at">>;
+
+// Blueprint V1 Phase 6 / Section 12: the customer AI agent's owner-editable
+// draft/automatic mode toggle. Singleton row, id always `true` -- see the
+// migration's own comment for why.
+export type AiAgentMode = "draft" | "automatic";
+
+export type AiAgentSettingsRow = {
+  id: true;
+  enabled: boolean;
+  mode: AiAgentMode;
+  updated_by: string | null;
+  updated_at: string;
+};
+
+export type AiAgentSettingsUpdate = Partial<Pick<AiAgentSettingsRow, "enabled" | "mode" | "updated_by" | "updated_at">>;
 
 export type MessageDirection = "inbound" | "outbound";
 
@@ -578,6 +598,12 @@ export type Database = {
         Row: ConversationRow;
         Insert: ConversationInsert;
         Update: ConversationUpdate;
+        Relationships: [];
+      };
+      ai_agent_settings: {
+        Row: AiAgentSettingsRow;
+        Insert: never;
+        Update: AiAgentSettingsUpdate;
         Relationships: [];
       };
       messages: {

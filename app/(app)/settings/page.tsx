@@ -35,6 +35,14 @@ export default async function SettingsPage() {
             Who&apos;s on your team, their role, and checkbox-level access to each part of the CRM.
           </p>
         </Link>
+
+        <Link
+          href="/settings/ai-agent"
+          className="rounded-xl border border-border bg-card p-4 shadow-sm hover:border-primary/40 hover:bg-secondary"
+        >
+          <p className="text-sm font-semibold text-foreground">AI agent</p>
+          <p className="mt-1 text-xs text-muted-foreground">Draft or automatic mode, and turning the AI agent on or off.</p>
+        </Link>
       </div>
     </div>
   );
