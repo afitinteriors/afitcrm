@@ -4,6 +4,7 @@ import type { Database } from "@/lib/supabase/types";
 import { ingestInboundMessage, findLeadByExactPhone, type InboundWhatsAppMessage } from "./ingest";
 import { createOrLinkLeadForConversation } from "@/lib/automations/crm-actions";
 import { triggerAutomationForMessage } from "@/lib/automations/trigger";
+import { triggerAiDraftForMessage } from "@/lib/ai/draft-trigger";
 import { parseWabisMessage } from "./parse-wabis";
 
 // Automation matching/execution is a separate, already-covered concern with
@@ -13,6 +14,16 @@ import { parseWabisMessage } from "./parse-wabis";
 // unrelated infrastructure.
 vi.mock("@/lib/automations/trigger", () => ({
   triggerAutomationForMessage: vi.fn().mockResolvedValue({ runId: null, status: "no_match" }),
+}));
+
+// Same reasoning as triggerAutomationForMessage above -- lib/ai/draft-trigger.ts's
+// own settings/first-response-only gating is unit tested directly in
+// lib/ai/draft-trigger.test.ts. Here it's stubbed so these tests stay
+// targeted at ingest.ts's own concern: that it's called only on
+// "no_match", never on a match, and that its own failure can't break
+// message persistence.
+vi.mock("@/lib/ai/draft-trigger", () => ({
+  triggerAiDraftForMessage: vi.fn().mockResolvedValue(undefined),
 }));
 
 // createOrLinkLeadForConversation's own business rules (exact-phone
@@ -580,6 +591,61 @@ describe("ingestInboundMessage", () => {
       expect(triggerAutomationForMessage).toHaveBeenCalledTimes(1);
       // Only ONE leads.from() call (the phone lookup) -- no opt-out update attempted.
       expect(from.mock.calls.filter(([table]) => table === "leads")).toHaveLength(1);
+    });
+  });
+
+  describe("AI draft trigger gating", () => {
+    it("is called when automation found no match", async () => {
+      const { stub } = createFakeSupabase({
+        conversations: [{ data: null, error: null }, { data: { id: "conv-ai-1" }, error: null }, { error: null }],
+        leads: [{ data: [{ id: "lead-ai-1" }], error: null }],
+        messages: [{ data: { id: "msg-ai-1" }, error: null }],
+      });
+
+      await ingestInboundMessage(stub, { ...BASE_MESSAGE, body: "I need gypsum plastering" });
+
+      expect(triggerAiDraftForMessage).toHaveBeenCalledWith(
+        stub,
+        expect.objectContaining({ conversationId: "conv-ai-1", leadId: "lead-ai-1", messageBody: "I need gypsum plastering" }),
+      );
+    });
+
+    it("is NOT called when an automation flow matched", async () => {
+      vi.mocked(triggerAutomationForMessage).mockResolvedValueOnce({ runId: "run-1", status: "matched" });
+      const { stub } = createFakeSupabase({
+        conversations: [{ data: null, error: null }, { data: { id: "conv-ai-2" }, error: null }, { error: null }],
+        leads: [{ data: [{ id: "lead-ai-2" }], error: null }],
+        messages: [{ data: { id: "msg-ai-2" }, error: null }],
+      });
+
+      await ingestInboundMessage(stub, { ...BASE_MESSAGE, body: "hi" });
+
+      expect(triggerAiDraftForMessage).not.toHaveBeenCalled();
+    });
+
+    it("is NOT called for an opt-out message", async () => {
+      const { stub } = createFakeSupabase({
+        conversations: [{ data: null, error: null }, { data: { id: "conv-ai-3" }, error: null }, { error: null }],
+        leads: [{ data: [{ id: "lead-ai-3" }], error: null }, { error: null }],
+        messages: [{ data: { id: "msg-ai-3" }, error: null }],
+      });
+
+      await ingestInboundMessage(stub, { ...BASE_MESSAGE, body: "stop" });
+
+      expect(triggerAiDraftForMessage).not.toHaveBeenCalled();
+    });
+
+    it("a thrown AI draft trigger failure never breaks ingestion", async () => {
+      vi.mocked(triggerAiDraftForMessage).mockRejectedValueOnce(new Error("gemini down"));
+      const { stub } = createFakeSupabase({
+        conversations: [{ data: null, error: null }, { data: { id: "conv-ai-4" }, error: null }, { error: null }],
+        leads: [{ data: [{ id: "lead-ai-4" }], error: null }],
+        messages: [{ data: { id: "msg-ai-4" }, error: null }],
+      });
+
+      const result = await ingestInboundMessage(stub, { ...BASE_MESSAGE, body: "hi" });
+
+      expect(result).toEqual({ status: "ingested" });
     });
   });
 });
