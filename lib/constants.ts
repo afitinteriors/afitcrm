@@ -225,6 +225,14 @@ export const STAGE_WIN_CHANCE: Record<LeadStatus, number> = {
   invalid: 0,
 };
 
+// Blueprint V1 Section 9 (docs/BLUEPRINT_V1.md): Hermes's "System health"
+// job ("Webhook silent too long ... every 15 minutes"). The blueprint gives
+// no exact number for "too long" (unlike R-LEAD-003/R-STAGE-002's explicit
+// minutes/days) -- this implementation's own reasonable default, not a
+// number from the blueprint. Same Settings-later caveat as the other rule
+// constants above.
+export const WEBHOOK_SILENCE_ALERT_MINUTES = 120;
+
 // R-QUOTE-002 (docs/BLUEPRINT_V1.md Section 8): "Discount above the
 // owner's limit needs owner approval ... Limit 5%, Azhar enters 8% ->
 // approval request." Same Settings-later caveat as above. Measured against
