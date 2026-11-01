@@ -112,6 +112,14 @@ export type ProfileUpdate = Partial<Pick<ProfileRow, "role" | "display_name" | "
 
 export type ConversationStatus = "open" | "closed";
 
+// Blueprint V1 Phase 6: kept here (not in lib/ai/qualification.ts) since
+// this is the DB-persisted vocabulary conversations.* actually stores --
+// lib/ai/qualification.ts's QUALIFICATION_FIELDS is the same four values,
+// just expressed as a runtime array for iteration rather than a type.
+export type QualificationField = "location" | "estimated_sqft" | "project_type" | "expected_start_date";
+export type AiDraftKind = "question" | "confirmation" | "closing";
+export type AiSessionStatus = "asking" | "confirming";
+
 export type ConversationRow = {
   id: string;
   lead_id: string | null;
@@ -120,11 +128,24 @@ export type ConversationRow = {
   status: ConversationStatus;
   created_at: string;
   updated_at: string;
-  // Blueprint V1 Phase 6: the AI agent's drafted first reply, waiting for
-  // staff to send/edit/discard in draft mode. Null = no pending draft. See
+  // Blueprint V1 Phase 6: the AI agent's drafted reply, waiting for staff
+  // to send/edit/discard in draft mode. Null = no pending draft. See
   // supabase/migrations/20261101090000_ai_agent_settings_and_drafts.sql.
   pending_ai_draft: string | null;
   pending_ai_draft_created_at: string | null;
+  // Phase 6, increment 2: what kind of draft this is and (for a
+  // question) which field it's about -- see
+  // supabase/migrations/20261101100000_ai_qualification_session.sql's own
+  // comment for why this is separate from ai_session_status below.
+  pending_ai_draft_kind: AiDraftKind | null;
+  pending_ai_draft_field: QualificationField | null;
+  // What the customer was already SENT and is expected to answer next --
+  // only set once a question is actually sent, not merely drafted.
+  ai_session_status: AiSessionStatus | null;
+  ai_pending_field: QualificationField | null;
+  // Tentative answers, not yet written to leads.* -- cleared (never
+  // persisted) if the customer doesn't confirm them.
+  ai_collected_data: Record<string, string> | null;
 };
 
 export type ConversationInsert = Partial<Omit<ConversationRow, "id" | "created_at" | "updated_at">> & {

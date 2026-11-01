@@ -6,6 +6,7 @@ import { getCurrentProfile } from "@/lib/auth";
 import { recordAuditEvent } from "@/lib/audit";
 import { sendTextMessage, SendMessageError } from "@/lib/whatsapp/send-message";
 import { handOffActiveSession } from "@/lib/automations/sessions";
+import { applyPostSendSessionState } from "@/lib/ai/deliver";
 
 export type AiDraftActionState = { error: string } | null;
 
@@ -39,7 +40,7 @@ export async function sendAiDraft(_prevState: AiDraftActionState, formData: Form
 
   const { data: conversation, error: convError } = await supabase
     .from("conversations")
-    .select("id, wa_id, phone_number_id")
+    .select("id, wa_id, phone_number_id, pending_ai_draft_kind, pending_ai_draft_field")
     .eq("id", conversationId)
     .maybeSingle();
   if (convError || !conversation) {
@@ -65,6 +66,16 @@ export async function sendAiDraft(_prevState: AiDraftActionState, formData: Form
 
   await clearDraft(supabase, conversation.id);
   await handOffActiveSession(supabase, conversation.id);
+
+  // Blueprint V1 Phase 6, increment 2: this is the moment a drafted
+  // question/confirmation actually reaches the customer in draft mode --
+  // the one place besides lib/ai/deliver.ts's automatic-mode path where a
+  // session genuinely starts/continues. pending_ai_draft_kind is only
+  // null for a draft saved before this increment existed; nothing sane to
+  // transition into for those, so skipped rather than guessed.
+  if (conversation.pending_ai_draft_kind) {
+    await applyPostSendSessionState(supabase, conversation.id, conversation.pending_ai_draft_kind, conversation.pending_ai_draft_field);
+  }
 
   await recordAuditEvent({
     actorId: profile.id,
@@ -102,7 +113,7 @@ export async function discardAiDraft(_prevState: AiDraftActionState, formData: F
 async function clearDraft(supabase: Awaited<ReturnType<typeof createClient>>, conversationId: string): Promise<void> {
   const { error } = await supabase
     .from("conversations")
-    .update({ pending_ai_draft: null, pending_ai_draft_created_at: null })
+    .update({ pending_ai_draft: null, pending_ai_draft_created_at: null, pending_ai_draft_kind: null, pending_ai_draft_field: null })
     .eq("id", conversationId);
   if (error) {
     console.error("Failed to clear AI draft:", error.message);

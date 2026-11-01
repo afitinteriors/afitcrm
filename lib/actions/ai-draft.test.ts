@@ -108,6 +108,41 @@ describe("sendAiDraft", () => {
     expect(recordAuditEventMock).toHaveBeenCalledWith(expect.objectContaining({ action: "message_sent", metadata: { message_type: "text", source: "ai_draft" } }));
   });
 
+  it("starts the AI session when the pending draft was a question, and clears its kind/field", async () => {
+    const { stub, from } = createFakeSupabase({
+      conversations: [
+        { data: { id: "c1", wa_id: "wa1", phone_number_id: "pn1", pending_ai_draft_kind: "question", pending_ai_draft_field: "location" } },
+        { error: null }, // clearDraft's update
+        { error: null }, // applyPostSendSessionState's update
+      ],
+      messages: [{ data: { id: "msg-1" }, error: null }],
+    });
+    fakeSupabase = stub;
+
+    const result = await sendAiDraft(null, formDataWith({ conversation_id: "c1", text: "Sure, could you share the location?" }));
+
+    expect(result).toBeNull();
+    const conversationBuilders = from.mock.results.filter((_, i) => from.mock.calls[i][0] === "conversations").map((r) => r.value as { update: ReturnType<typeof vi.fn> });
+    expect(conversationBuilders).toHaveLength(3);
+    expect(conversationBuilders[1].update).toHaveBeenCalledWith(
+      expect.objectContaining({ pending_ai_draft: null, pending_ai_draft_kind: null, pending_ai_draft_field: null }),
+    );
+    expect(conversationBuilders[2].update).toHaveBeenCalledWith(expect.objectContaining({ ai_session_status: "asking", ai_pending_field: "location" }));
+  });
+
+  it("does not touch session state when the pending draft predates the kind/field columns", async () => {
+    const { stub, from } = createFakeSupabase({
+      conversations: [{ data: { id: "c1", wa_id: "wa1", phone_number_id: "pn1", pending_ai_draft_kind: null, pending_ai_draft_field: null } }, { error: null }],
+      messages: [{ data: { id: "msg-1" }, error: null }],
+    });
+    fakeSupabase = stub;
+
+    await sendAiDraft(null, formDataWith({ conversation_id: "c1", text: "hi" }));
+
+    const conversationCalls = from.mock.calls.filter((call) => call[0] === "conversations");
+    expect(conversationCalls).toHaveLength(2); // fetch + clearDraft only, no session-state update
+  });
+
   it("surfaces the SendMessageError's public message on send failure", async () => {
     fakeSupabase = createFakeSupabase({ conversations: [{ data: { id: "c1", wa_id: "wa1", phone_number_id: "pn1" } }] }).stub;
     sendTextMessageMock.mockRejectedValue(new SendMessageError("meta_api_error", "internal", "WhatsApp did not accept this message."));

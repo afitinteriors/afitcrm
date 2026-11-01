@@ -648,4 +648,50 @@ describe("ingestInboundMessage", () => {
       expect(result).toEqual({ status: "ingested" });
     });
   });
+
+  // Blueprint V1 Phase 6, increment 2: lib/ai/session-trigger.ts itself is
+  // unit tested directly in lib/ai/session-trigger.test.ts (the
+  // asking/confirming logic). Here, continueAiSession runs for real
+  // (not mocked) against this fake Supabase -- the point is ingest.ts's
+  // own wiring: an active session must pre-empt automation/first-reply
+  // entirely, not just the gating between those two.
+  describe("AI session continuation gating", () => {
+    it("skips automation and the first-reply trigger entirely once a session is active", async () => {
+      const { stub } = createFakeSupabase({
+        conversations: [
+          { data: null, error: null },
+          { data: { id: "conv-session-1" }, error: null },
+          { error: null },
+          { data: { ai_session_status: "asking", ai_pending_field: "location", ai_collected_data: {}, pending_ai_draft: null }, error: null },
+        ],
+        leads: [{ data: [{ id: "lead-session-1" }], error: null }],
+        messages: [{ data: { id: "msg-session-1" }, error: null }],
+        ai_agent_settings: [{ data: { enabled: false, mode: "draft" }, error: null }],
+      });
+
+      const result = await ingestInboundMessage(stub, { ...BASE_MESSAGE, body: "it's in Kollam" });
+
+      expect(result).toEqual({ status: "ingested" });
+      expect(triggerAutomationForMessage).not.toHaveBeenCalled();
+      expect(triggerAiDraftForMessage).not.toHaveBeenCalled();
+    });
+
+    it("falls back to automation when there is no active session for this conversation", async () => {
+      const { stub } = createFakeSupabase({
+        conversations: [
+          { data: null, error: null },
+          { data: { id: "conv-session-2" }, error: null },
+          { error: null },
+          { data: { ai_session_status: null }, error: null },
+        ],
+        leads: [{ data: [{ id: "lead-session-2" }], error: null }],
+        messages: [{ data: { id: "msg-session-2" }, error: null }],
+      });
+
+      const result = await ingestInboundMessage(stub, { ...BASE_MESSAGE, body: "hi" });
+
+      expect(result).toEqual({ status: "ingested" });
+      expect(triggerAutomationForMessage).toHaveBeenCalled();
+    });
+  });
 });

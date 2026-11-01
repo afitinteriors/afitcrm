@@ -30,7 +30,7 @@ describe("draftFirstReply", () => {
     ).rejects.toThrow("boom");
   });
 
-  it("includes the message body and known fields in the prompt, trims the result", async () => {
+  it("asks about the first missing field, includes the message body and known fields in the prompt, trims the result", async () => {
     generateReplyMock.mockResolvedValue("  Sure, could you share the site location?  ");
 
     const result = await draftFirstReply({
@@ -42,12 +42,26 @@ describe("draftFirstReply", () => {
       messageBody: "chuvar smooth aakkanam",
     });
 
-    expect(result).toBe("Sure, could you share the site location?");
+    expect(result).toEqual({ text: "Sure, could you share the site location?", field: "location" });
     const [systemInstruction, userText] = generateReplyMock.mock.calls[0];
     expect(systemInstruction).toContain("Never quote a final price");
     expect(userText).toContain("Gypsum plastering");
-    expect(userText).toContain("1200 sqft");
+    expect(userText).toContain("size: 1200");
     expect(userText).toContain("chuvar smooth aakkanam");
+  });
+
+  it("returns null once every qualification field is already known", async () => {
+    const result = await draftFirstReply({
+      service_required: "Gypsum plastering",
+      project_type: "Residential",
+      location: "Kollam",
+      estimated_sqft: 1200,
+      expected_start_date: "next month",
+      messageBody: "hi",
+    });
+
+    expect(result).toBeNull();
+    expect(generateReplyMock).not.toHaveBeenCalled();
   });
 
   it("describes nothing known when no fields are set", async () => {
