@@ -29,16 +29,26 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const isAuthRoute = request.nextUrl.pathname === "/login";
+  const pathname = request.nextUrl.pathname;
+  // Reachable without a session: /login and /forgot-password obviously, but
+  // also /auth/callback (it's what *establishes* the session -- requiring
+  // one first would make the redirect link from Supabase/Google unusable)
+  // and /auth/update-password (reached via a short-lived recovery session
+  // from that same callback, not a normal logged-in state).
+  const isPublicPath = pathname === "/login" || pathname === "/forgot-password" || pathname.startsWith("/auth/");
+  // Only bounce an *already* logged-in user away from the login/forgot-
+  // password forms -- not from /auth/update-password, which a logged-in-
+  // via-recovery user is supposed to land on.
+  const isGuestOnlyPath = pathname === "/login" || pathname === "/forgot-password";
 
-  if (!user && !isAuthRoute) {
+  if (!user && !isPublicPath) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("next", request.nextUrl.pathname);
     return NextResponse.redirect(url);
   }
 
-  if (user && isAuthRoute) {
+  if (user && isGuestOnlyPath) {
     const url = request.nextUrl.clone();
     url.pathname = "/dashboard";
     url.search = "";
